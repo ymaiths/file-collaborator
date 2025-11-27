@@ -274,6 +274,7 @@ export type Database = {
           id: string
           inverter_brand: Database["public"]["Enums"]["inverter_brand"]
           is_exact_kw: boolean | null
+          is_percent_price: boolean | null
           kw_max: number | null
           kw_min: number
           note: string | null
@@ -289,6 +290,7 @@ export type Database = {
           id?: string
           inverter_brand: Database["public"]["Enums"]["inverter_brand"]
           is_exact_kw?: boolean | null
+          is_percent_price?: boolean | null
           kw_max?: number | null
           kw_min: number
           note?: string | null
@@ -304,6 +306,7 @@ export type Database = {
           id?: string
           inverter_brand?: Database["public"]["Enums"]["inverter_brand"]
           is_exact_kw?: boolean | null
+          is_percent_price?: boolean | null
           kw_max?: number | null
           kw_min?: number
           note?: string | null
