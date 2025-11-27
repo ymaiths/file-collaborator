@@ -51,8 +51,8 @@ export const DatabaseTabContent = () => {
       const uniqueCategories = Array.from(
         new Set(data?.map((p) => p.product_category) || [])
       ).map((category) => ({
-        id: category,
-        name: enumToDisplayName[category] || category,
+        id: category as string,
+        name: enumToDisplayName[category as string] || (category as string),
       }));
 
       setEquipmentCategories(uniqueCategories);
@@ -80,12 +80,18 @@ export const DatabaseTabContent = () => {
       if (error) throw error;
 
       // Get unique sale names
-      const uniquePrograms = Array.from(
-        new Map(data?.map((p) => [p.sale_name, p]) || []).values()
-      ).map((program) => ({
-        id: program.sale_name,
-        name: program.sale_name,
-      }));
+      const seenNames = new Set<string>();
+      const uniquePrograms: { id: string; name: string }[] = [];
+      
+      for (const p of data || []) {
+        if (!seenNames.has(p.sale_name)) {
+          seenNames.add(p.sale_name);
+          uniquePrograms.push({
+            id: p.sale_name,
+            name: p.sale_name,
+          });
+        }
+      }
 
       setSalesPrograms(uniquePrograms);
     } catch (error) {
