@@ -24,6 +24,7 @@ interface SalePackagePrice {
   kw_max: number | null;
   is_exact_kw: boolean;
   price: number;
+  is_percent_price: boolean;
   payment_terms: string | null;
   warranty_terms: string | null;
   note: string | null;
@@ -236,6 +237,7 @@ export const SalesProgramDetail = ({
       kw_max: null,
       is_exact_kw: true,
       price: 0,
+      is_percent_price: false,
       payment_terms: paymentTerms,
       warranty_terms: warrantyTerms,
       note: note,
@@ -257,6 +259,7 @@ export const SalesProgramDetail = ({
       kw_max: null,
       is_exact_kw: true,
       price: 0,
+      is_percent_price: false,
       payment_terms: paymentTerms,
       warranty_terms: warrantyTerms,
       note: note,
@@ -566,21 +569,50 @@ export const SalesProgramDetail = ({
                           {/* Price */}
                           <td className="p-3">
                             {isEditMode ? (
-                              <Input
-                                type="number"
-                                step="any"
-                                value={price.price}
-                                onChange={(e) =>
-                                  handleUpdatePrice(
-                                    price.id,
-                                    "price",
-                                    parseFloat(e.target.value)
-                                  )
-                                }
-                                className="w-32 h-8"
-                              />
+                              <div className="flex items-center gap-2">
+                                <Input
+                                  type="number"
+                                  step="any"
+                                  value={price.price}
+                                  onChange={(e) =>
+                                    handleUpdatePrice(
+                                      price.id,
+                                      "price",
+                                      parseFloat(e.target.value) || 0
+                                    )
+                                  }
+                                  className="w-24 h-8"
+                                />
+                                <Select
+                                  value={price.is_percent_price ? "percent" : "exact"}
+                                  onValueChange={(value) =>
+                                    handleUpdatePrice(
+                                      price.id,
+                                      "is_percent_price",
+                                      value === "percent"
+                                    )
+                                  }
+                                >
+                                  <SelectTrigger className="h-8 w-24">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="exact">Exact</SelectItem>
+                                    <SelectItem value="percent">%</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                {price.is_percent_price && (
+                                  <span className="text-muted-foreground text-sm">
+                                    = {(price.price * price.kw_min * 1000).toLocaleString()}
+                                  </span>
+                                )}
+                              </div>
                             ) : (
-                              <span>{price.price.toLocaleString()}</span>
+                              <span>
+                                {price.is_percent_price
+                                  ? (price.price * price.kw_min * 1000).toLocaleString()
+                                  : price.price.toLocaleString()}
+                              </span>
                             )}
                           </td>
                         </tr>
