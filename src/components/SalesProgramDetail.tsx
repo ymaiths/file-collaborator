@@ -313,6 +313,7 @@ export const SalesProgramDetail = ({
     other: "Other",
     huawei__optimizer: "Huawei Optimizer",
     huaweioptimizer: "Huawei Optimizer",
+    solaredge: "SolarEdge",
   };
 
   const allBrandOptions = React.useMemo(() => {
