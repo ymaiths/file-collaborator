@@ -384,9 +384,9 @@ export const SalesProgramDetail = ({
       </div>
 
       {/* Content - Two sections */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
         {/* Left - Table */}
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-4">
           <div className="border rounded-lg overflow-hidden">
             <table className="w-full">
               <thead className="bg-muted">
@@ -661,7 +661,7 @@ export const SalesProgramDetail = ({
                           </button>
                         </div>
                         {showBrandSuggestions && (
-                          <div className="absolute z-50 w-full mt-1 bg-background border rounded-md shadow-lg">
+                          <div className="absolute z-[100] w-full bottom-full mb-1 bg-background border rounded-md shadow-lg">
                             <div className="p-2 space-y-1">
                               {allBrandOptions.map((opt) => (
                                 <button
