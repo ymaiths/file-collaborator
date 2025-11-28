@@ -391,10 +391,10 @@ export const SalesProgramDetail = ({
             <table className="w-full">
               <thead className="bg-muted">
                 <tr>
-                  <th className="p-3 text-left font-medium">Inverter Brand</th>
-                  <th className="p-3 text-left font-medium">ขนาดการติดตั้ง</th>
-                  <th className="p-3 text-left font-medium">ประเภทไฟบ้าน</th>
-                  <th className="p-3 text-left font-medium">ราคาโครงการ</th>
+                  <th className="px-2 py-1.5 text-left font-medium text-sm">Inverter Brand</th>
+                  <th className="px-2 py-1.5 text-left font-medium text-sm">ขนาดการติดตั้ง</th>
+                  <th className="px-2 py-1.5 text-left font-medium text-sm">ประเภทไฟบ้าน</th>
+                  <th className="px-2 py-1.5 text-left font-medium text-sm">ราคาโครงการ</th>
                 </tr>
               </thead>
               <tbody>
@@ -406,12 +406,12 @@ export const SalesProgramDetail = ({
                           {/* Inverter Brand - merged cell */}
                           {priceIndex === 0 && (
                             <td
-                              className="p-3 align-top border-r"
+                              className="px-2 py-1.5 align-top border-r"
                               rowSpan={
                                 brandPrices.length + (isEditMode ? 1 : 0)
                               }
                             >
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-1">
                                 {isEditMode && (
                                   <button
                                     onClick={() => {
@@ -466,8 +466,8 @@ export const SalesProgramDetail = ({
                             </td>
                           )}
                           {/* Size */}
-                          <td className="p-3 border-r">
-                            <div className="flex items-center gap-2">
+                          <td className="px-2 py-1.5 border-r">
+                            <div className="flex items-center gap-1">
                               {isEditMode && (
                                 <button
                                   onClick={() => handleDeletePrice(price.id)}
@@ -477,7 +477,7 @@ export const SalesProgramDetail = ({
                                 </button>
                               )}
                               {isEditMode ? (
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-1">
                                   <Input
                                     type="number"
                                     step="any"
@@ -489,11 +489,11 @@ export const SalesProgramDetail = ({
                                         parseFloat(e.target.value)
                                       )
                                     }
-                                    className="w-20 h-8"
+                                    className="w-16 h-7 text-sm px-1.5"
                                   />
                                   {!price.is_exact_kw && (
                                     <>
-                                      <span>-</span>
+                                      <span className="text-xs">-</span>
                                       <Input
                                         type="number"
                                         step="any"
@@ -505,7 +505,7 @@ export const SalesProgramDetail = ({
                                             parseFloat(e.target.value)
                                           )
                                         }
-                                        className="w-20 h-8"
+                                        className="w-16 h-7 text-sm px-1.5"
                                       />
                                     </>
                                   )}
@@ -521,7 +521,7 @@ export const SalesProgramDetail = ({
                                       )
                                     }
                                   >
-                                    <SelectTrigger className="h-8 w-24">
+                                    <SelectTrigger className="h-7 w-20 text-xs px-1.5">
                                       <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -544,7 +544,7 @@ export const SalesProgramDetail = ({
                             </div>
                           </td>
                           {/* Phase */}
-                          <td className="p-3 border-r">
+                          <td className="px-2 py-1.5 border-r">
                             {isEditMode ? (
                               <Select
                                 value={price.electronic_phase}
@@ -556,7 +556,7 @@ export const SalesProgramDetail = ({
                                   )
                                 }
                               >
-                                <SelectTrigger className="h-8 w-24">
+                                <SelectTrigger className="h-7 w-16 text-xs px-1.5">
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -573,9 +573,9 @@ export const SalesProgramDetail = ({
                             )}
                           </td>
                           {/* Price */}
-                          <td className="p-3">
+                          <td className="px-2 py-1.5">
                             {isEditMode ? (
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-1">
                                 <Input
                                   type="number"
                                   step="any"
@@ -588,7 +588,7 @@ export const SalesProgramDetail = ({
                                       handleUpdatePrice(price.id, "price_percentage", value);
                                     }
                                   }}
-                                  className="w-24 h-8"
+                                  className="w-20 h-7 text-sm px-1.5"
                                 />
                                 <Select
                                   value={price.is_exact_price ? "exact" : "percent"}
@@ -596,7 +596,7 @@ export const SalesProgramDetail = ({
                                     handleUpdatePrice(price.id, "is_exact_price", value === "exact");
                                   }}
                                 >
-                                  <SelectTrigger className="h-8 w-24">
+                                  <SelectTrigger className="h-7 w-16 text-xs px-1.5">
                                     <SelectValue />
                                   </SelectTrigger>
                                   <SelectContent>
@@ -605,7 +605,7 @@ export const SalesProgramDetail = ({
                                   </SelectContent>
                                 </Select>
                                 {!price.is_exact_price && (
-                                  <span className="text-muted-foreground text-sm">
+                                  <span className="text-muted-foreground text-xs">
                                     = {((price.price_percentage || 0) * price.kw_min * 1000).toLocaleString()}
                                   </span>
                                 )}
@@ -623,7 +623,7 @@ export const SalesProgramDetail = ({
                       {/* Add Item row for this brand group */}
                       {isEditMode && (
                         <tr className="border-t">
-                          <td className="p-3" colSpan={3}>
+                          <td className="px-2 py-1" colSpan={3}>
                             <button
                               onClick={() =>
                                 handleAddSize(brand as InverterBrand)
@@ -641,7 +641,7 @@ export const SalesProgramDetail = ({
                 )}
                 {isEditMode && (
                   <tr className="border-t">
-                    <td className="p-3">
+                    <td className="px-2 py-1.5">
                       <div className="relative">
                         <div className="flex items-center gap-2">
                           <Input
