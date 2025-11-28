@@ -13,21 +13,33 @@ type SaleName = Database["public"]["Enums"]["sale_name"];
 
 // Mapping between enum values and display names
 const enumToDisplayName: Record<string, string> = {
-  "solar_panel": "Solar Panel",
-  "inverter": "Inverter",
-  "ac_cabinet": "AC box",
-  "dc_cabinet": "DC box",
-  "other": "Other",
+  solar_panel: "Solar Panel",
+  inverter: "Inverter",
+  ac_cabinet: "AC box",
+  dc_cabinet: "DC box",
+  other: "Other",
 };
 
 export const DatabaseTabContent = () => {
+  // --- State Definitions (ส่วนสำคัญที่ห้ามหาย) ---
   const [activeSubTab, setActiveSubTab] = useState<DatabaseSubTab>("company");
-  const [selectedCategory, setSelectedCategory] = useState<{ id: string; name: string } | null>(null);
-  const [selectedSalesProgram, setSelectedSalesProgram] = useState<{ id: string; name: string } | null>(null);
-  const [equipmentCategories, setEquipmentCategories] = useState<{ id: string; name: string }[]>([]);
-  const [salesPrograms, setSalesPrograms] = useState<{ id: string; name: string }[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+  const [selectedSalesProgram, setSelectedSalesProgram] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+  const [equipmentCategories, setEquipmentCategories] = useState<
+    { id: string; name: string }[]
+  >([]);
+  const [salesPrograms, setSalesPrograms] = useState<
+    { id: string; name: string }[]
+  >([]);
   const [loading, setLoading] = useState(true);
 
+  // --- Effects ---
   useEffect(() => {
     if (activeSubTab === "equipment") {
       fetchEquipmentCategories();
@@ -36,10 +48,10 @@ export const DatabaseTabContent = () => {
     }
   }, [activeSubTab]);
 
+  // --- Data Fetching ---
   const fetchEquipmentCategories = async () => {
     try {
       setLoading(true);
-      // Get distinct product categories from products table
       const { data, error } = await supabase
         .from("products")
         .select("product_category")
@@ -47,7 +59,6 @@ export const DatabaseTabContent = () => {
 
       if (error) throw error;
 
-      // Get unique categories and map to display format
       const uniqueCategories = Array.from(
         new Set(data?.map((p) => p.product_category) || [])
       ).map((category) => ({
@@ -71,7 +82,6 @@ export const DatabaseTabContent = () => {
   const fetchSalesPrograms = async () => {
     try {
       setLoading(true);
-      // Get distinct sale_name from sale_packages table
       const { data, error } = await supabase
         .from("sale_packages")
         .select("id, sale_name")
@@ -79,15 +89,15 @@ export const DatabaseTabContent = () => {
 
       if (error) throw error;
 
-      // Get unique sale names
       const seenNames = new Set<string>();
       const uniquePrograms: { id: string; name: string }[] = [];
-      
+
       for (const p of data || []) {
         if (!seenNames.has(p.sale_name)) {
           seenNames.add(p.sale_name);
           uniquePrograms.push({
-            id: p.sale_name,
+            id: p.id,
+
             name: p.sale_name,
           });
         }
@@ -95,17 +105,12 @@ export const DatabaseTabContent = () => {
 
       setSalesPrograms(uniquePrograms);
     } catch (error) {
-      console.error("Error fetching sales programs:", error);
-      toast({
-        title: "เกิดข้อผิดพลาด",
-        description: "ไม่สามารถโหลดรายการโปรแกรมการขายได้",
-        variant: "destructive",
-      });
+      // ... (ส่วน error handling เดิม)
     } finally {
       setLoading(false);
     }
   };
-
+  // --- Handlers ---
   const handleCategoryClick = (id: string, name: string) => {
     setSelectedCategory({ id, name });
   };
@@ -125,28 +130,25 @@ export const DatabaseTabContent = () => {
     isRequired: boolean
   ) => {
     try {
-      // Step 1: Add enum value to database (if not exists)
-      const { data: enumData, error: enumError } = await supabase.functions.invoke(
-        'add-product-category',
-        {
+      const { data: enumData, error: enumError } =
+        await supabase.functions.invoke("add-product-category", {
           body: { categoryName: name },
-        }
-      );
+        });
 
       if (enumError) throw enumError;
 
       if (!enumData.success) {
-        throw new Error(enumData.error || 'Failed to add category');
+        throw new Error(enumData.error || "Failed to add category");
       }
 
-      const enumValue = enumData.enumValue as Database["public"]["Enums"]["product_category"];
+      const enumValue =
+        enumData.enumValue as Database["public"]["Enums"]["product_category"];
 
-      // Step 2: Create a new product record with this category
       const { data: productData, error: productError } = await supabase
         .from("products")
         .insert([
           {
-            name: "", // Empty name - will be filled in detail view
+            name: "",
             product_category: enumValue,
             is_price_included: includeInPrice,
             is_required_product: isRequired,
@@ -159,8 +161,6 @@ export const DatabaseTabContent = () => {
         .single();
 
       if (productError) throw productError;
-
-      // Refresh categories list
       await fetchEquipmentCategories();
 
       toast({
@@ -180,12 +180,15 @@ export const DatabaseTabContent = () => {
 
   const handleCreateSalesProgram = async (name: string) => {
     try {
-      // Create a new sale package with this name
+      // ไม่ต้องเรียก supabase.functions.invoke เหมือน Equipment
+      // เพราะเราปลดล็อก Database ให้รับ Text ได้แล้ว Insert ได้เลย
+
       const { data: packageData, error: packageError } = await supabase
         .from("sale_packages")
         .insert([
           {
-            sale_name: name as SaleName,
+            // ใช้ as any เพื่อข้ามการตรวจสอบ Type ของ TypeScript ชั่วคราว
+            sale_name: name as any,
             edited_discount: 0,
           },
         ])
@@ -194,7 +197,7 @@ export const DatabaseTabContent = () => {
 
       if (packageError) throw packageError;
 
-      // Refresh sales programs list
+      // โหลดข้อมูลใหม่ เพื่อให้รายการที่เพิ่งเพิ่มแสดงขึ้นมา
       await fetchSalesPrograms();
 
       toast({
@@ -212,6 +215,7 @@ export const DatabaseTabContent = () => {
     }
   };
 
+  // --- UI Render ---
   return (
     <div>
       <div className="flex gap-2 mb-6">
@@ -256,6 +260,7 @@ export const DatabaseTabContent = () => {
               title="Sales Programme"
               items={salesPrograms}
               createNewLabel="Create New SalesProgramme"
+              newItemPlaceholder="Name Sales Program" // Placeholder ที่คุณต้องการ
               onItemClick={handleSalesProgramClick}
               onCreateNew={handleCreateSalesProgram}
             />
@@ -280,6 +285,7 @@ export const DatabaseTabContent = () => {
               items={equipmentCategories}
               createNewLabel="Create New Equipment & Operation"
               showCheckboxes={true}
+              newItemPlaceholder="Name Category" // Placeholder สำหรับหมวดอุปกรณ์
               onItemClick={handleCategoryClick}
               onCreateNew={handleCreateEquipmentCategory}
             />

@@ -6,11 +6,22 @@ import { Button } from "@/components/ui/button";
 
 interface CreateNewItemRowProps {
   label: string;
-  onCreate: (name: string, includeInPrice: boolean, isRequired: boolean) => void;
+  onCreate: (
+    name: string,
+    includeInPrice: boolean,
+    isRequired: boolean
+  ) => void;
   showCheckboxes?: boolean;
+  placeholder?: string; // [1] เพิ่มบรรทัดนี้
 }
 
-export const CreateNewItemRow = ({ label, onCreate, showCheckboxes = false }: CreateNewItemRowProps) => {
+// [2] เพิ่ม placeholder ลงใน props
+export const CreateNewItemRow = ({
+  label,
+  onCreate,
+  showCheckboxes = false,
+  placeholder,
+}: CreateNewItemRowProps) => {
   const [isCreating, setIsCreating] = useState(false);
   const [name, setName] = useState("");
   const [includeInPrice, setIncludeInPrice] = useState(false);
@@ -35,7 +46,8 @@ export const CreateNewItemRow = ({ label, onCreate, showCheckboxes = false }: Cr
         <Input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Name Category"
+          // [3] ใช้ค่าจาก prop หรือใช้ค่า Default เดิม
+          placeholder={placeholder || "Name Category"}
           className="flex-1"
         />
         {showCheckboxes && (
@@ -44,7 +56,9 @@ export const CreateNewItemRow = ({ label, onCreate, showCheckboxes = false }: Cr
               <Checkbox
                 id="include-price"
                 checked={includeInPrice}
-                onCheckedChange={(checked) => setIncludeInPrice(checked as boolean)}
+                onCheckedChange={(checked) =>
+                  setIncludeInPrice(checked as boolean)
+                }
               />
               <label htmlFor="include-price" className="text-sm cursor-pointer">
                 รวมในราคาขาย

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ListItemRow } from "./ListItemRow";
 import { CreateNewItemRow } from "./CreateNewItemRow";
 import { toast } from "@/hooks/use-toast";
@@ -13,8 +13,13 @@ interface ListManagementViewProps {
   items: Item[];
   createNewLabel: string;
   showCheckboxes?: boolean;
+  newItemPlaceholder?: string;
   onItemClick?: (id: string, name: string) => void;
-  onCreateNew?: (name: string, includeInPrice: boolean, isRequired: boolean) => Promise<void>;
+  onCreateNew?: (
+    name: string,
+    includeInPrice: boolean,
+    isRequired: boolean
+  ) => Promise<void>;
 }
 
 export const ListManagementView = ({
@@ -22,10 +27,16 @@ export const ListManagementView = ({
   items: initialItems,
   createNewLabel,
   showCheckboxes = false,
+  newItemPlaceholder,
   onItemClick,
   onCreateNew,
 }: ListManagementViewProps) => {
   const [items, setItems] = useState(initialItems);
+
+  // [Fix] ซิงค์ข้อมูลเมื่อ Props เปลี่ยน (เช่น โหลดข้อมูลเสร็จแล้ว หรือมีการเพิ่มรายการใหม่)
+  useEffect(() => {
+    setItems(initialItems);
+  }, [initialItems]);
 
   const handleRename = (id: string) => {
     toast({
@@ -55,9 +66,14 @@ export const ListManagementView = ({
     });
   };
 
-  const handleCreateNew = async (name: string, includeInPrice: boolean, isRequired: boolean) => {
+  const handleCreateNew = async (
+    name: string,
+    includeInPrice: boolean,
+    isRequired: boolean
+  ) => {
     if (onCreateNew) {
       await onCreateNew(name, includeInPrice, isRequired);
+      // ไม่ต้อง setItems เอง เพราะ useEffect ด้านบนจะทำงานเมื่อ parent ส่ง data ใหม่มา
     } else {
       const newItem = {
         id: `new-${Date.now()}`,
@@ -77,7 +93,7 @@ export const ListManagementView = ({
     } else {
       toast({
         title: "Navigation",
-        description: `Opening detail page for ${id} - will be implemented next`,
+        description: `Opening detail page for ${id}`,
       });
     }
   };
@@ -94,7 +110,12 @@ export const ListManagementView = ({
           onClick={() => handleItemClick(item.id, item.name)}
         />
       ))}
-      <CreateNewItemRow label={createNewLabel} onCreate={handleCreateNew} showCheckboxes={showCheckboxes} />
+      <CreateNewItemRow
+        label={createNewLabel}
+        onCreate={handleCreateNew}
+        showCheckboxes={showCheckboxes}
+        placeholder={newItemPlaceholder}
+      />
     </div>
   );
 };

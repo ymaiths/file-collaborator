@@ -54,6 +54,7 @@ export const SalesProgramDetail = ({
   const [customBrandNames, setCustomBrandNames] = useState<
     Record<string, string>
   >({});
+  const [deletedIds, setDeletedIds] = useState<string[]>([]);
   const brandInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -90,6 +91,7 @@ export const SalesProgramDetail = ({
       const { data, error } = await supabase
         .from("sale_package_prices")
         .select("*")
+        .eq("sale_package_id", programId)
         .order("inverter_brand")
         .order("kw_min");
 
@@ -108,45 +110,71 @@ export const SalesProgramDetail = ({
   };
 
   const handleSave = async () => {
+    console.log("Program ID:", programId);
     try {
-      // Separate new records (temp ids) from existing records
+      setLoading(true); // เพิ่ม loading state เพื่อกัน User กดซ้ำ
+
+      // 1. ลบรายการที่ถูกลบออกจาก DB
+      if (deletedIds.length > 0) {
+        const { error: deleteError } = await supabase
+          .from("sale_package_prices")
+          .delete()
+          .in("id", deletedIds);
+
+        if (deleteError) {
+          console.error("Delete Error:", deleteError);
+          throw deleteError;
+        }
+      }
+
+      // 2. แยกรายการ "ใหม่" (Insert)
       const newRecords = prices
         .filter((price) => price.id.startsWith("temp-"))
         .map((price) => {
+          // ตัด ID ชั่วคราว (temp-...) ทิ้งไป เพื่อให้ DB สร้าง ID จริงให้
           const { id, ...rest } = price;
           return {
             ...rest,
+            sale_package_id: programId, // <--- [สำคัญ] ระบุว่าราคานี้เป็นของโปรแกรมนี้
             payment_terms: paymentTerms,
             warranty_terms: warrantyTerms,
             note: note,
           };
         });
 
+      // 3. แยกรายการ "เก่า" (Update/Upsert)
       const existingRecords = prices
         .filter((price) => !price.id.startsWith("temp-"))
         .map((price) => ({
           ...price,
+          sale_package_id: programId, // <--- [สำคัญ] ย้ำ ID แม่อีกครั้งกันพลาด
           payment_terms: paymentTerms,
           warranty_terms: warrantyTerms,
           note: note,
         }));
 
-      // Insert new records
+      // 4. สั่งบันทึก
       if (newRecords.length > 0) {
+        // ใช้ as any เพื่อเลี่ยงปัญหา Type ที่ยังไม่อัปเดต
         const { error: insertError } = await supabase
           .from("sale_package_prices")
-          .insert(newRecords);
+          .insert(newRecords as any);
 
-        if (insertError) throw insertError;
+        if (insertError) {
+          console.error("Insert Error:", insertError);
+          throw insertError;
+        }
       }
 
-      // Update existing records
       if (existingRecords.length > 0) {
         const { error: updateError } = await supabase
           .from("sale_package_prices")
-          .upsert(existingRecords);
+          .upsert(existingRecords as any);
 
-        if (updateError) throw updateError;
+        if (updateError) {
+          console.error("Update Error:", updateError);
+          throw updateError;
+        }
       }
 
       toast({
@@ -154,15 +182,20 @@ export const SalesProgramDetail = ({
         description: "ข้อมูลถูกบันทึกเรียบร้อยแล้ว",
       });
 
+      // Reset ค่าต่างๆ
+      setDeletedIds([]);
       setIsEditMode(false);
-      fetchPrices();
+      await fetchPrices(); // โหลดข้อมูลใหม่
     } catch (error) {
-      console.error("Error saving:", error);
+      console.error("Final Save Error:", error);
       toast({
         title: "เกิดข้อผิดพลาด",
-        description: "ไม่สามารถบันทึกข้อมูลได้",
+        description:
+          error instanceof Error ? error.message : "ไม่สามารถบันทึกข้อมูลได้",
         variant: "destructive",
       });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -279,6 +312,10 @@ export const SalesProgramDetail = ({
   };
 
   const handleDeletePrice = (id: string) => {
+    // ถ้าเป็นข้อมูลเก่า (ไม่มีคำว่า temp-) ให้เก็บ ID ไว้ลบออกจาก DB ทีหลัง
+    if (!id.startsWith("temp-")) {
+      setDeletedIds((prev) => [...prev, id]);
+    }
     setPrices(prices.filter((p) => p.id !== id));
   };
 
@@ -423,7 +460,22 @@ export const SalesProgramDetail = ({
                                 {isEditMode && (
                                   <button
                                     onClick={() => {
-                                      // Delete all prices of this brand
+                                      // 1. หา ID ของรายการที่จะถูกลบ (เฉพาะรายการที่มีอยู่ใน DB แล้ว)
+                                      const idsToDelete = prices
+                                        .filter(
+                                          (p) =>
+                                            p.inverter_brand === brand &&
+                                            !p.id.startsWith("temp-")
+                                        )
+                                        .map((p) => p.id);
+
+                                      // 2. เก็บ ID พวกนี้ลงถังขยะ (deletedIds) เพื่อรอสั่งลบตอนกด Save
+                                      setDeletedIds((prev) => [
+                                        ...prev,
+                                        ...idsToDelete,
+                                      ]);
+
+                                      // 3. ลบออกจากหน้าจอ (UI) ตามปกติ
                                       setPrices(
                                         prices.filter(
                                           (p) => p.inverter_brand !== brand
@@ -582,77 +634,113 @@ export const SalesProgramDetail = ({
                           </td>
                           {/* Price */}
                           <td className="px-2 py-1.5">
-                            {isEditMode ? (
-                              <div className="flex items-center gap-1">
-                                <Input
-                                  type="number"
-                                  step="any"
-                                  value={
-                                    price.is_exact_price
-                                      ? price.price_exact || 0
-                                      : price.price_percentage || 0
-                                  }
-                                  onChange={(e) => {
-                                    const value =
-                                      parseFloat(e.target.value) || 0;
-                                    if (price.is_exact_price) {
-                                      handleUpdatePrice(
-                                        price.id,
-                                        "price_exact",
-                                        value
-                                      );
-                                    } else {
-                                      handleUpdatePrice(
-                                        price.id,
-                                        "price_percentage",
-                                        value
-                                      );
-                                    }
-                                  }}
-                                  className="w-20 h-7 text-sm px-1.5"
-                                />
-                                <Select
-                                  value={
-                                    price.is_exact_price ? "exact" : "percent"
-                                  }
-                                  onValueChange={(value) => {
-                                    handleUpdatePrice(
-                                      price.id,
-                                      "is_exact_price",
-                                      value === "exact"
-                                    );
-                                  }}
-                                >
-                                  <SelectTrigger className="h-7 w-16 text-xs px-1.5">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="exact">Exact</SelectItem>
-                                    <SelectItem value="percent">%</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                                {!price.is_exact_price && (
-                                  <span className="text-muted-foreground text-xs">
-                                    ={" "}
-                                    {(
-                                      (price.price_percentage || 0) *
-                                      price.kw_min *
-                                      1000
-                                    ).toLocaleString()}
+                            {(() => {
+                              const isExact = price.is_exact_price;
+                              const valExact = price.price_exact;
+                              const valPercent = price.price_percentage;
+                              const kwMin = price.kw_min || 0;
+                              const kwMax = price.kw_max || kwMin;
+                              const isRange =
+                                price.kw_max && price.kw_max !== price.kw_min;
+
+                              // calulate for display
+                              const displayMin = isExact
+                                ? valExact || 0
+                                : (valPercent || 0) * kwMin * 1000;
+
+                              const displayMax = isExact
+                                ? valExact || 0
+                                : (valPercent || 0) * kwMax * 1000;
+
+                              return isEditMode ? (
+                                // --- (Edit Mode) ---
+                                <div className="flex flex-col gap-1.5">
+                                  <div className="flex items-center gap-1">
+                                    {/* input price */}
+                                    <Input
+                                      type="number"
+                                      step="any"
+                                      value={
+                                        isExact
+                                          ? valExact ?? ""
+                                          : valPercent ?? ""
+                                      }
+                                      onChange={(e) => {
+                                        const raw = e.target.value;
+                                        const value =
+                                          raw === "" ? null : parseFloat(raw);
+
+                                        if (isExact) {
+                                          handleUpdatePrice(
+                                            price.id,
+                                            "price_exact",
+                                            value
+                                          );
+                                        } else {
+                                          handleUpdatePrice(
+                                            price.id,
+                                            "price_percentage",
+                                            value
+                                          );
+                                        }
+                                      }}
+                                      className="w-20 h-7 text-sm px-1.5"
+                                      placeholder={isExact ? "บาท" : "c"}
+                                    />
+
+                                    {/* exact or percent */}
+                                    <Select
+                                      value={isExact ? "exact" : "percent"}
+                                      onValueChange={(value) => {
+                                        handleUpdatePrice(
+                                          price.id,
+                                          "is_exact_price",
+                                          value === "exact"
+                                        );
+                                      }}
+                                    >
+                                      <SelectTrigger className="h-7 w-16 text-xs px-1.5 bg-muted/50">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="exact">
+                                          bath
+                                        </SelectItem>
+                                        <SelectItem value="percent">
+                                          bath/watt
+                                        </SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+
+                                  {/* Preview */}
+                                  {!isExact && (
+                                    <div className="text-xs text-muted-foreground whitespace-nowrap px-1">
+                                      = {displayMin.toLocaleString()}
+                                      {isRange &&
+                                        ` - ${displayMax.toLocaleString()}`}
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                // --- (View Mode) ---
+                                <div className="flex flex-col">
+                                  {/* display price */}
+                                  <span className="font-medium">
+                                    {displayMin.toLocaleString()}
+                                    {/* show - max */}
+                                    {!isExact &&
+                                      isRange &&
+                                      ` - ${displayMax.toLocaleString()}`}
                                   </span>
-                                )}
-                              </div>
-                            ) : (
-                              <span>
-                                {price.is_exact_price
-                                  ? (price.price_exact || 0).toLocaleString()
-                                  : (
-                                      (price.price_percentage || 0) *
-                                      price.kw_min *
-                                      1000
-                                    ).toLocaleString()}
-                              </span>
-                            )}
+
+                                  {/* indicate type */}
+                                  <span className="text-[10px] text-muted-foreground">
+                                    {isExact ? "" : `(x${valPercent || 0})`}
+                                  </span>
+                                </div>
+                              );
+                            })()}
                           </td>
                         </tr>
                       ))}
