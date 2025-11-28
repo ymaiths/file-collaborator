@@ -21,7 +21,9 @@ const CreateQuotation = () => {
   const [showQuotation, setShowQuotation] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
-  const [currentQuotationId, setCurrentQuotationId] = useState<string | null>(null);
+  const [currentQuotationId, setCurrentQuotationId] = useState<string | null>(
+    null
+  );
   const [formData, setFormData] = useState({
     customerName: "",
     installLocation: "",

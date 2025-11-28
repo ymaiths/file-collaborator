@@ -55,7 +55,7 @@ export const SalesProgramDetail = ({
     Record<string, string>
   >({});
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
-  const brandInputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchPrices();
@@ -71,11 +71,11 @@ export const SalesProgramDetail = ({
   }, [prices]);
 
   useEffect(() => {
-    // Close suggestions when clicking outside
     const handleClickOutside = (event: MouseEvent) => {
+      // เช็คว่าคลิกเกิดขึ้น "นอกกล่อง Container" หรือไม่
       if (
-        brandInputRef.current &&
-        !brandInputRef.current.contains(event.target as Node)
+        containerRef.current &&
+        !containerRef.current.contains(event.target as Node)
       ) {
         setShowBrandSuggestions(false);
       }
@@ -352,13 +352,9 @@ export const SalesProgramDetail = ({
     );
   };
 
-  const brandNames: Record<InverterBrand, string> = {
+  const brandNames: Partial<Record<InverterBrand, string>> = {
     huawei: "Huawei",
-    sungrow: "Sungrow",
-    growatt: "Growatt",
-    other: "Other",
     huawei__optimizer: "Huawei Optimizer",
-    huaweioptimizer: "Huawei Optimizer",
     solaredge: "SolarEdge",
   };
 
@@ -766,10 +762,9 @@ export const SalesProgramDetail = ({
                 {isEditMode && (
                   <tr className="border-t">
                     <td className="px-2 py-1.5">
-                      <div className="relative">
+                      <div className="relative" ref={containerRef}>
                         <div className="flex items-center gap-2">
                           <Input
-                            ref={brandInputRef}
                             value={newBrandInput}
                             onChange={(e) => setNewBrandInput(e.target.value)}
                             onFocus={() => setShowBrandSuggestions(true)}
@@ -790,8 +785,8 @@ export const SalesProgramDetail = ({
                               {allBrandOptions.map((opt) => (
                                 <button
                                   key={opt.value}
+                                  type="button"
                                   onClick={() => {
-                                    setNewBrandInput(opt.value);
                                     setShowBrandSuggestions(false);
                                     handleAddBrand(opt.value);
                                   }}
