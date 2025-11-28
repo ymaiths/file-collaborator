@@ -697,7 +697,7 @@ export const SalesProgramDetail = ({
                           </button>
                         </div>
                         {showBrandSuggestions && (
-                          <div className="absolute z-[100] w-full bottom-full mb-1 bg-background border rounded-md shadow-lg">
+                          <div className="absolute z-[100] w-full top-full mb-1 bg-background border rounded-md shadow-lg">
                             <div className="p-2 space-y-1">
                               {allBrandOptions.map((opt) => (
                                 <button
