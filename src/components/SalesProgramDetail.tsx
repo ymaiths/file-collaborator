@@ -387,14 +387,22 @@ export const SalesProgramDetail = ({
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
         {/* Left - Table */}
         <div className="lg:col-span-4">
-          <div className="border rounded-lg overflow-hidden">
+          <div className="border rounded-lg">
             <table className="w-full">
               <thead className="bg-muted">
                 <tr>
-                  <th className="px-2 py-1.5 text-left font-medium text-sm">Inverter Brand</th>
-                  <th className="px-2 py-1.5 text-left font-medium text-sm">ขนาดการติดตั้ง</th>
-                  <th className="px-2 py-1.5 text-left font-medium text-sm">ประเภทไฟบ้าน</th>
-                  <th className="px-2 py-1.5 text-left font-medium text-sm">ราคาโครงการ</th>
+                  <th className="px-2 py-1.5 text-left font-medium text-sm">
+                    Inverter Brand
+                  </th>
+                  <th className="px-2 py-1.5 text-left font-medium text-sm">
+                    ขนาดการติดตั้ง
+                  </th>
+                  <th className="px-2 py-1.5 text-left font-medium text-sm">
+                    ประเภทไฟบ้าน
+                  </th>
+                  <th className="px-2 py-1.5 text-left font-medium text-sm">
+                    ราคาโครงการ
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -579,21 +587,40 @@ export const SalesProgramDetail = ({
                                 <Input
                                   type="number"
                                   step="any"
-                                  value={price.is_exact_price ? (price.price_exact || 0) : (price.price_percentage || 0)}
+                                  value={
+                                    price.is_exact_price
+                                      ? price.price_exact || 0
+                                      : price.price_percentage || 0
+                                  }
                                   onChange={(e) => {
-                                    const value = parseFloat(e.target.value) || 0;
+                                    const value =
+                                      parseFloat(e.target.value) || 0;
                                     if (price.is_exact_price) {
-                                      handleUpdatePrice(price.id, "price_exact", value);
+                                      handleUpdatePrice(
+                                        price.id,
+                                        "price_exact",
+                                        value
+                                      );
                                     } else {
-                                      handleUpdatePrice(price.id, "price_percentage", value);
+                                      handleUpdatePrice(
+                                        price.id,
+                                        "price_percentage",
+                                        value
+                                      );
                                     }
                                   }}
                                   className="w-20 h-7 text-sm px-1.5"
                                 />
                                 <Select
-                                  value={price.is_exact_price ? "exact" : "percent"}
+                                  value={
+                                    price.is_exact_price ? "exact" : "percent"
+                                  }
                                   onValueChange={(value) => {
-                                    handleUpdatePrice(price.id, "is_exact_price", value === "exact");
+                                    handleUpdatePrice(
+                                      price.id,
+                                      "is_exact_price",
+                                      value === "exact"
+                                    );
                                   }}
                                 >
                                   <SelectTrigger className="h-7 w-16 text-xs px-1.5">
@@ -606,7 +633,12 @@ export const SalesProgramDetail = ({
                                 </Select>
                                 {!price.is_exact_price && (
                                   <span className="text-muted-foreground text-xs">
-                                    = {((price.price_percentage || 0) * price.kw_min * 1000).toLocaleString()}
+                                    ={" "}
+                                    {(
+                                      (price.price_percentage || 0) *
+                                      price.kw_min *
+                                      1000
+                                    ).toLocaleString()}
                                   </span>
                                 )}
                               </div>
@@ -614,7 +646,11 @@ export const SalesProgramDetail = ({
                               <span>
                                 {price.is_exact_price
                                   ? (price.price_exact || 0).toLocaleString()
-                                  : ((price.price_percentage || 0) * price.kw_min * 1000).toLocaleString()}
+                                  : (
+                                      (price.price_percentage || 0) *
+                                      price.kw_min *
+                                      1000
+                                    ).toLocaleString()}
                               </span>
                             )}
                           </td>
