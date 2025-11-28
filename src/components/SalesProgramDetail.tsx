@@ -24,7 +24,9 @@ interface SalePackagePrice {
   kw_max: number | null;
   is_exact_kw: boolean;
   price: number;
-  is_percent_price: boolean;
+  is_exact_price: boolean;
+  price_percentage: number | null;
+  price_exact: number | null;
   payment_terms: string | null;
   warranty_terms: string | null;
   note: string | null;
@@ -237,7 +239,9 @@ export const SalesProgramDetail = ({
       kw_max: null,
       is_exact_kw: true,
       price: 0,
-      is_percent_price: false,
+      is_exact_price: true,
+      price_percentage: null,
+      price_exact: 0,
       payment_terms: paymentTerms,
       warranty_terms: warrantyTerms,
       note: note,
@@ -259,7 +263,9 @@ export const SalesProgramDetail = ({
       kw_max: null,
       is_exact_kw: true,
       price: 0,
-      is_percent_price: false,
+      is_exact_price: true,
+      price_percentage: null,
+      price_exact: 0,
       payment_terms: paymentTerms,
       warranty_terms: warrantyTerms,
       note: note,
@@ -573,25 +579,22 @@ export const SalesProgramDetail = ({
                                 <Input
                                   type="number"
                                   step="any"
-                                  value={price.price}
-                                  onChange={(e) =>
-                                    handleUpdatePrice(
-                                      price.id,
-                                      "price",
-                                      parseFloat(e.target.value) || 0
-                                    )
-                                  }
+                                  value={price.is_exact_price ? (price.price_exact || 0) : (price.price_percentage || 0)}
+                                  onChange={(e) => {
+                                    const value = parseFloat(e.target.value) || 0;
+                                    if (price.is_exact_price) {
+                                      handleUpdatePrice(price.id, "price_exact", value);
+                                    } else {
+                                      handleUpdatePrice(price.id, "price_percentage", value);
+                                    }
+                                  }}
                                   className="w-24 h-8"
                                 />
                                 <Select
-                                  value={price.is_percent_price ? "percent" : "exact"}
-                                  onValueChange={(value) =>
-                                    handleUpdatePrice(
-                                      price.id,
-                                      "is_percent_price",
-                                      value === "percent"
-                                    )
-                                  }
+                                  value={price.is_exact_price ? "exact" : "percent"}
+                                  onValueChange={(value) => {
+                                    handleUpdatePrice(price.id, "is_exact_price", value === "exact");
+                                  }}
                                 >
                                   <SelectTrigger className="h-8 w-24">
                                     <SelectValue />
@@ -601,17 +604,17 @@ export const SalesProgramDetail = ({
                                     <SelectItem value="percent">%</SelectItem>
                                   </SelectContent>
                                 </Select>
-                                {price.is_percent_price && (
+                                {!price.is_exact_price && (
                                   <span className="text-muted-foreground text-sm">
-                                    = {(price.price * price.kw_min * 1000).toLocaleString()}
+                                    = {((price.price_percentage || 0) * price.kw_min * 1000).toLocaleString()}
                                   </span>
                                 )}
                               </div>
                             ) : (
                               <span>
-                                {price.is_percent_price
-                                  ? (price.price * price.kw_min * 1000).toLocaleString()
-                                  : price.price.toLocaleString()}
+                                {price.is_exact_price
+                                  ? (price.price_exact || 0).toLocaleString()
+                                  : ((price.price_percentage || 0) * price.kw_min * 1000).toLocaleString()}
                               </span>
                             )}
                           </td>
