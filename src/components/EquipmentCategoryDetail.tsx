@@ -25,7 +25,7 @@ const categoryNameToEnum: Record<string, ProductCategory> = {
   Other: "other",
 };
 
-// Reverse mapping - enum to display name (with fallback for dynamic enums)
+// Reverse mapping
 const enumToDisplayName: Partial<Record<ProductCategory, string>> &
   Record<string, string> = {
   solar_panel: "Solar Panel",
@@ -52,6 +52,8 @@ interface Product {
   is_price_included: boolean;
   is_required_product: boolean;
   product_category: ProductCategory;
+  // [1] เพิ่ม field นี้
+  electrical_phase: string | null;
 }
 
 interface EquipmentCategoryDetailProps {
@@ -71,6 +73,12 @@ export const EquipmentCategoryDetail = ({
   const [isPriceIncluded, setIsPriceIncluded] = useState(true);
   const [isRequired, setIsRequired] = useState(false);
 
+  // Determine current category enum
+  const currentCategoryEnum = (categoryNameToEnum[categoryName] ||
+    categoryName) as ProductCategory;
+  // [2] เช็คว่าเป็น Inverter หรือไม่
+  const isInverter = currentCategoryEnum === "inverter";
+
   useEffect(() => {
     if (products.length > 0) {
       setIsPriceIncluded(products[0]?.is_price_included ?? true);
@@ -85,16 +93,13 @@ export const EquipmentCategoryDetail = ({
   const fetchProducts = async () => {
     try {
       setLoading(true);
-      // Try to get enum value from mapping, or use categoryName as-is if it's already an enum value
-      const enumValue = (categoryNameToEnum[categoryName] ||
-        categoryName) as ProductCategory;
       const { data, error } = await supabase
         .from("products")
         .select("*")
-        .eq("product_category", enumValue);
+        .eq("product_category", currentCategoryEnum);
 
       if (error) throw error;
-      setProducts(data || []);
+      setProducts((data as unknown as Product[]) || []);
     } catch (error) {
       console.error("Error fetching products:", error);
       toast({
@@ -108,8 +113,6 @@ export const EquipmentCategoryDetail = ({
   };
 
   const handleAddItem = () => {
-    const enumValue = (categoryNameToEnum[categoryName] ||
-      categoryName) as ProductCategory;
     const newProduct: Product = {
       id: `temp-${Date.now()}`,
       name: "",
@@ -126,7 +129,9 @@ export const EquipmentCategoryDetail = ({
       is_exact_kw: true,
       is_price_included: isPriceIncluded,
       is_required_product: isRequired,
-      product_category: enumValue,
+      product_category: currentCategoryEnum,
+      // [3] กำหนดค่าเริ่มต้นเป็น null
+      electrical_phase: null,
     };
     setProducts([...products, newProduct]);
   };
@@ -175,6 +180,8 @@ export const EquipmentCategoryDetail = ({
   const handleSaveAll = async () => {
     try {
       for (const product of products) {
+        // Prepare data (exclude temp id)
+        // Note: electrical_phase will be included automatically
         if (product.id.startsWith("temp-")) {
           const { id, ...productData } = product;
           const { error } = await supabase
@@ -208,11 +215,11 @@ export const EquipmentCategoryDetail = ({
   };
 
   const formatCost = (product: Product, type: "equipment" | "installation") => {
+    // ... (Logic เดิม ไม่ต้องแก้)
     if (type === "equipment") {
       if (product.is_fixed_cost) {
         return product.cost_fixed?.toLocaleString() || "-";
       } else {
-        // Calculate based on percentage and size
         const percentage = product.cost_percentage || 0;
         if (product.is_exact_kw) {
           const cost = (product.min_kw || 0) * percentage;
@@ -227,7 +234,6 @@ export const EquipmentCategoryDetail = ({
       if (product.is_fixed_installation_cost) {
         return product.fixed_installation_cost?.toLocaleString() || "-";
       } else {
-        // Calculate based on percentage and equipment cost
         const percentage = product.installation_cost_percentage || 0;
         const equipmentCost = product.is_fixed_cost
           ? product.cost_fixed || 0
@@ -269,7 +275,7 @@ export const EquipmentCategoryDetail = ({
       <div className="flex items-center justify-between p-4 bg-card border border-border rounded-md">
         <div className="flex items-center gap-4">
           <h2 className="text-lg font-semibold text-foreground">
-            {enumToDisplayName[categoryName as ProductCategory] || categoryName}
+            {enumToDisplayName[currentCategoryEnum] || categoryName}
           </h2>
           {isEditMode && (
             <div className="flex items-center gap-4">
@@ -293,6 +299,7 @@ export const EquipmentCategoryDetail = ({
           )}
         </div>
         <div className="flex items-center gap-2">
+          {/* ... Buttons เดิม ... */}
           {isEditMode && (
             <>
               <Button variant="outline" size="sm">
@@ -336,6 +343,12 @@ export const EquipmentCategoryDetail = ({
               <th className="p-3 text-left text-sm font-medium text-foreground">
                 ชื่ออุปกรณ์
               </th>
+              {/* [4] แสดงคอลัมน์ Phase ถ้าเป็น Inverter */}
+              {isInverter && (
+                <th className="p-3 text-left text-sm font-medium text-foreground">
+                  ระบบไฟ (Phase)
+                </th>
+              )}
               <th className="p-3 text-left text-sm font-medium text-foreground">
                 brand
               </th>
@@ -354,7 +367,7 @@ export const EquipmentCategoryDetail = ({
             </tr>
           </thead>
           <tbody>
-            {products.map((product, index) => (
+            {products.map((product) => (
               <tr
                 key={product.id}
                 className="border-t border-border hover:bg-accent/50"
@@ -369,6 +382,7 @@ export const EquipmentCategoryDetail = ({
                     </button>
                   </td>
                 )}
+                {/* Product Name */}
                 <td className="p-3">
                   {isEditMode ? (
                     <Input
@@ -384,6 +398,42 @@ export const EquipmentCategoryDetail = ({
                     </span>
                   )}
                 </td>
+
+                {/* [5] Column Phase (เฉพาะ Inverter) */}
+                {isInverter && (
+                  <td className="p-3">
+                    {isEditMode ? (
+                      <Select
+                        value={product.electrical_phase || ""}
+                        onValueChange={(val) =>
+                          handleUpdateProduct(
+                            product.id,
+                            "electrical_phase",
+                            val
+                          )
+                        }
+                      >
+                        <SelectTrigger className="h-8 w-28">
+                          <SelectValue placeholder="เลือก Phase" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="single_phase">1 Phase</SelectItem>
+                          <SelectItem value="three_phase">3 Phase</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <span className="text-sm text-foreground">
+                        {product.electrical_phase === "single_phase"
+                          ? "1 Phase"
+                          : product.electrical_phase === "three_phase"
+                          ? "3 Phase"
+                          : "-"}
+                      </span>
+                    )}
+                  </td>
+                )}
+
+                {/* Brand */}
                 <td className="p-3">
                   {isEditMode ? (
                     <Input
@@ -399,6 +449,8 @@ export const EquipmentCategoryDetail = ({
                     </span>
                   )}
                 </td>
+
+                {/* Unit */}
                 <td className="p-3">
                   {isEditMode ? (
                     <Input
@@ -414,6 +466,8 @@ export const EquipmentCategoryDetail = ({
                     </span>
                   )}
                 </td>
+
+                {/* Cost (Equipment) */}
                 <td className="p-3">
                   {isEditMode ? (
                     <div className="flex gap-2">
@@ -471,6 +525,8 @@ export const EquipmentCategoryDetail = ({
                     </span>
                   )}
                 </td>
+
+                {/* Cost (Installation) */}
                 <td className="p-3">
                   {isEditMode ? (
                     <div className="flex gap-2">
@@ -534,6 +590,8 @@ export const EquipmentCategoryDetail = ({
                     </span>
                   )}
                 </td>
+
+                {/* Size (kW) */}
                 <td className="p-3">
                   {isEditMode ? (
                     <div className="flex gap-2">
@@ -596,7 +654,8 @@ export const EquipmentCategoryDetail = ({
             ))}
             {isEditMode && (
               <tr className="border-t border-border">
-                <td colSpan={7} className="p-3">
+                {/* [6] ปรับ ColSpan ให้ครอบคลุมเมื่อมี Phase column */}
+                <td colSpan={isInverter ? 8 : 7} className="p-3">
                   <button
                     onClick={handleAddItem}
                     className="flex items-center gap-2 text-sm text-primary hover:text-primary/80"

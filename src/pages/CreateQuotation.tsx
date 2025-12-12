@@ -164,12 +164,13 @@ const CreateQuotation = () => {
   useEffect(() => {
     const loadQuotationData = async () => {
       if (!quotationId || quotationId === "new") return;
-      
+
       setIsLoadingData(true);
       try {
         const { data, error } = await supabase
           .from("quotations")
-          .select(`
+          .select(
+            `
             *,
             customers:customer_id (
               customer_name
@@ -178,7 +179,8 @@ const CreateQuotation = () => {
               id,
               sale_name
             )
-          `)
+          `
+          )
           .eq("id", quotationId)
           .maybeSingle();
 
@@ -294,41 +296,70 @@ const CreateQuotation = () => {
       );
 
       // Step 3: Create Quotation
-      const { data: quotation, error: quotationError } = await supabase
-        .from("quotations")
-        .insert({
-          customer_id: customerId,
-          location: formData.installLocation || null,
-          kw_size: formData.projectSize
-            ? parseFloat(formData.projectSize)
-            : null,
-          kw_panel: formData.solarPanelSize
-            ? parseFloat(formData.solarPanelSize)
-            : null,
-          kw_peak: kwPeak,
-          document_num: formData.documentNumber || null,
-          creater_name: formData.serviceProvider || null,
-          note: formData.additionalInfo || null,
-          sale_package_id: salePackageId,
-          inverter_brand: formData.brand || null,
-          edited_price: 0,
-        })
-        .select()
-        .single();
+      const quotationData = {
+        customer_id: customerId,
+        location: formData.installLocation || null,
+        kw_size: formData.projectSize ? parseFloat(formData.projectSize) : null,
+        kw_panel: formData.solarPanelSize
+          ? parseFloat(formData.solarPanelSize)
+          : null,
+        kw_peak: kwPeak, // ค่าที่คำนวณได้
+        document_num: formData.documentNumber || null,
+        creater_name: formData.serviceProvider || null,
+        note: formData.additionalInfo || null,
+        sale_package_id: salePackageId,
+        inverter_brand: formData.brand || null,
+      };
 
-      if (quotationError) throw quotationError;
+      if (currentQuotationId) {
+        // 👉 กรณี 1: มี ID แล้ว (เป็นการแก้ไข) -> สั่ง UPDATE
+        const { error: updateError } = await supabase
+          .from("quotations")
+          .update({
+            ...quotationData,
+            updated_at: new Date().toISOString(), // อัปเดตเวลาล่าสุด
+          })
+          .eq("id", currentQuotationId); // ระบุว่าให้อัปเดตแถวไหน
 
-      setCurrentQuotationId(quotation.id);
-      toast({
-        title: "สร้างใบเสนอราคาสำเร็จ",
-        description: "บันทึกข้อมูลเรียบร้อยแล้ว",
-      });
+        if (updateError) throw updateError;
+
+        toast({
+          title: "บันทึกการแก้ไขสำเร็จ",
+          description: "ข้อมูลถูกอัปเดตเรียบร้อยแล้ว",
+        });
+      } else {
+        // 👉 กรณี 2: ยังไม่มี ID (สร้างใหม่) -> สั่ง INSERT
+        const { data: quotation, error: insertError } = await supabase
+          .from("quotations")
+          .insert({
+            ...quotationData,
+            edited_price: 0, // กำหนดราคาเริ่มต้นเฉพาะตอนสร้างใหม่
+          })
+          .select()
+          .single();
+
+        if (insertError) throw insertError;
+
+        // [สำคัญ] บันทึก ID เก็บไว้ เพื่อให้กดครั้งต่อไปกลายเป็นการ Update
+        setCurrentQuotationId(quotation.id);
+
+        toast({
+          title: "สร้างใบเสนอราคาสำเร็จ",
+          description: "บันทึกข้อมูลเรียบร้อยแล้ว",
+        });
+      }
+
+      // แสดงส่วน Preview (ถ้ามี)
       setShowQuotation(true);
+
+      // ============================================================
+      // จบส่วนที่แก้ไข
+      // ============================================================
     } catch (error) {
-      console.error("Error creating quotation:", error);
+      console.error("Error creating/updating quotation:", error);
       toast({
         title: "เกิดข้อผิดพลาด",
-        description: "ไม่สามารถสร้างใบเสนอราคาได้",
+        description: "ไม่สามารถบันทึกข้อมูลได้",
         variant: "destructive",
       });
     } finally {
@@ -444,11 +475,11 @@ const CreateQuotation = () => {
           {/* Right Column */}
           <div className="space-y-4">
             <div>
-              <Label htmlFor="projectSize">ขนาดโครงการ (kW)*</Label>
+              <Label htmlFor="projectSize">ขนาดโครงการ (Watt)*</Label>
               <Input
                 id="projectSize"
                 type="number"
-                placeholder="เช่น 10"
+                placeholder="เช่น 3000"
                 value={formData.projectSize}
                 onChange={(e) =>
                   handleInputChange("projectSize", e.target.value)

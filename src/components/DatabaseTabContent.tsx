@@ -188,7 +188,6 @@ export const DatabaseTabContent = () => {
           {
             // ใช้ as any เพื่อข้ามการตรวจสอบ Type ของ TypeScript ชั่วคราว
             sale_name: name as any,
-            edited_discount: 0,
           },
         ])
         .select()
