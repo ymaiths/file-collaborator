@@ -1,4 +1,5 @@
 import { MoreVertical } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import {
   DropdownMenu,
@@ -9,6 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 
 interface ProjectCardProps {
+  id: string;
   customerName: string;
   location: string;
   projectSize: string;
@@ -19,6 +21,7 @@ interface ProjectCardProps {
 }
 
 export const ProjectCard = ({
+  id,
   customerName,
   location,
   projectSize,
@@ -27,8 +30,17 @@ export const ProjectCard = ({
   editedDate,
   createdDate,
 }: ProjectCardProps) => {
+  const navigate = useNavigate();
+
+  const handleCardClick = () => {
+    navigate(`/quotation/${id}`);
+  };
+
   return (
-    <Card className="p-6 min-h-[280px] flex flex-col cursor-pointer hover:shadow-lg transition-shadow relative bg-card">
+    <Card 
+      className="p-6 min-h-[280px] flex flex-col cursor-pointer hover:shadow-lg transition-shadow relative bg-card"
+      onClick={handleCardClick}
+    >
       <div className="flex-1">
         <h3 className="text-lg font-bold text-foreground mb-1">
           {customerName}

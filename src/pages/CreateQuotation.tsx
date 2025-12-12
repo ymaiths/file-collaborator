@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,8 +28,10 @@ const formatBrandName = (brand: string) => {
 
 const CreateQuotation = () => {
   const navigate = useNavigate();
+  const { id: quotationId } = useParams<{ id: string }>();
   const [showQuotation, setShowQuotation] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingData, setIsLoadingData] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [currentQuotationId, setCurrentQuotationId] = useState<string | null>(
     null
@@ -157,6 +159,60 @@ const CreateQuotation = () => {
 
     fetchPanelSizes();
   }, []);
+
+  // Load existing quotation data when editing
+  useEffect(() => {
+    const loadQuotationData = async () => {
+      if (!quotationId || quotationId === "new") return;
+      
+      setIsLoadingData(true);
+      try {
+        const { data, error } = await supabase
+          .from("quotations")
+          .select(`
+            *,
+            customers:customer_id (
+              customer_name
+            ),
+            sale_packages:sale_package_id (
+              id,
+              sale_name
+            )
+          `)
+          .eq("id", quotationId)
+          .maybeSingle();
+
+        if (error) throw error;
+
+        if (data) {
+          setCurrentQuotationId(data.id);
+          setFormData({
+            customerName: data.customers?.customer_name || "",
+            installLocation: data.location || "",
+            projectSize: data.kw_size?.toString() || "",
+            solarPanelSize: data.kw_panel?.toString() || "",
+            documentNumber: data.document_num || "",
+            serviceProvider: data.creater_name || "",
+            additionalInfo: data.note || "",
+            salesProgram: data.sale_packages?.sale_name || "",
+            brand: data.inverter_brand || "",
+          });
+          setShowQuotation(true);
+        }
+      } catch (error) {
+        console.error("Error loading quotation:", error);
+        toast({
+          title: "ไม่สามารถโหลดข้อมูลได้",
+          description: "กรุณาลองใหม่อีกครั้ง",
+          variant: "destructive",
+        });
+      } finally {
+        setIsLoadingData(false);
+      }
+    };
+
+    loadQuotationData();
+  }, [quotationId, availablePrograms]);
 
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -309,6 +365,14 @@ const CreateQuotation = () => {
     toast({ title: "บันทึก PDF", description: "Coming soon..." });
   const handleExportExcel = () =>
     toast({ title: "บันทึก EXCEL", description: "Coming soon..." });
+
+  if (isLoadingData) {
+    return (
+      <div className="min-h-screen bg-muted/30 p-6 flex items-center justify-center">
+        <p className="text-muted-foreground">กำลังโหลดข้อมูล...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-muted/30 p-6">
