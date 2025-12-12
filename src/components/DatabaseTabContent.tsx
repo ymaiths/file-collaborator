@@ -9,7 +9,6 @@ import { toast } from "@/hooks/use-toast";
 import type { Database } from "@/integrations/supabase/types";
 
 type DatabaseSubTab = "company" | "sales" | "equipment";
-type SaleName = Database["public"]["Enums"]["sale_name"];
 
 // Mapping between enum values and display names
 const enumToDisplayName: Record<string, string> = {
