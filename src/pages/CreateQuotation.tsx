@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { calculateSystemSpecs } from "@/utils/kwpcalculations";
 
 // Helper function: จัดรูปแบบชื่อ Brand ให้สวยงาม (ตัวพิมพ์ใหญ่)
 const formatBrandName = (brand: string) => {
@@ -221,6 +222,20 @@ const CreateQuotation = () => {
           salePackageId = newPkg.id;
         }
       }
+      // คำนวณกำลังไฟสูงสุด (kw_peak)
+      const projectSizeVal = formData.projectSize
+        ? parseFloat(formData.projectSize)
+        : 0;
+      const panelSizeVal = formData.solarPanelSize
+        ? parseFloat(formData.solarPanelSize)
+        : 0;
+
+      // เรียกใช้ Logic ใหม่ (ส่ง Watt เข้าไปตรงๆ)
+      const { kwPeak } = calculateSystemSpecs(projectSizeVal, panelSizeVal);
+
+      console.log(
+        `Calculation: Project=${projectSizeVal}W, Panel=${panelSizeVal}W -> Peak=${kwPeak}W`
+      );
 
       // Step 3: Create Quotation
       const { data: quotation, error: quotationError } = await supabase
@@ -234,6 +249,7 @@ const CreateQuotation = () => {
           kw_panel: formData.solarPanelSize
             ? parseFloat(formData.solarPanelSize)
             : null,
+          kw_peak: kwPeak,
           document_num: formData.documentNumber || null,
           creater_name: formData.serviceProvider || null,
           note: formData.additionalInfo || null,
