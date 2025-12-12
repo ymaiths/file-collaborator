@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,16 @@ import {
 } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import type { Database } from "@/integrations/supabase/types";
+
+// Helper function: จัดรูปแบบชื่อ Brand ให้สวยงาม (ตัวพิมพ์ใหญ่)
+const formatBrandName = (brand: string) => {
+  if (!brand) return "";
+  // แปลง huawei -> Huawei, huawei_optimizer -> Huawei Optimizer
+  return brand
+    .split(/[_\s]+/)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+};
 
 const CreateQuotation = () => {
   const navigate = useNavigate();
@@ -24,6 +33,14 @@ const CreateQuotation = () => {
   const [currentQuotationId, setCurrentQuotationId] = useState<string | null>(
     null
   );
+
+  const [availablePrograms, setAvailablePrograms] = useState<
+    { id: string; name: string }[]
+  >([]);
+
+  const [availableBrands, setAvailableBrands] = useState<string[]>([]);
+  const [availablePanelSizes, setAvailablePanelSizes] = useState<number[]>([]);
+
   const [formData, setFormData] = useState({
     customerName: "",
     installLocation: "",
@@ -36,12 +53,115 @@ const CreateQuotation = () => {
     brand: "",
   });
 
+  // 1. โหลดรายชื่อโปรแกรมการขายตอนเริ่มต้น
+  useEffect(() => {
+    const fetchSalesPrograms = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("sale_packages")
+          .select("id, sale_name")
+          .order("sale_name");
+
+        if (error) throw error;
+
+        if (data) {
+          setAvailablePrograms(
+            data.map((p) => ({
+              id: p.id,
+              name: p.sale_name,
+            }))
+          );
+        }
+      } catch (error) {
+        console.error("Error loading programs:", error);
+      }
+    };
+
+    fetchSalesPrograms();
+  }, []);
+
+  // 2. [ใหม่] โหลดรายชื่อ Brand เมื่อ "โปรแกรมการขาย" เปลี่ยน
+  useEffect(() => {
+    const fetchBrandsForProgram = async () => {
+      // ถ้ายังไม่เลือกโปรแกรม ให้เคลียร์ Brand ทิ้ง
+      if (!formData.salesProgram) {
+        setAvailableBrands([]);
+        return;
+      }
+
+      // หา ID ของโปรแกรมจากชื่อที่เลือก
+      const selectedProgram = availablePrograms.find(
+        (p) => p.name === formData.salesProgram
+      );
+      if (!selectedProgram) return;
+
+      try {
+        // ดึงเฉพาะ Brand ที่มีใน sale_package_prices ของโปรแกรมนี้
+        const { data, error } = await supabase
+          .from("sale_package_prices")
+          .select("inverter_brand")
+          .eq("sale_package_id", selectedProgram.id);
+
+        if (error) throw error;
+
+        if (data) {
+          // กรองชื่อซ้ำออก (Unique)
+          const uniqueBrands = Array.from(
+            new Set(data.map((item) => item.inverter_brand))
+          );
+          setAvailableBrands(uniqueBrands);
+
+          // เช็คว่า Brand ที่เลือกค้างอยู่ ยังมีขายในโปรแกรมนี้ไหม? ถ้าไม่มีให้เคลียร์ทิ้ง
+          if (formData.brand && !uniqueBrands.includes(formData.brand as any)) {
+            setFormData((prev) => ({ ...prev, brand: "" }));
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching brands:", error);
+        toast({
+          title: "โหลดข้อมูลยี่ห้อไม่สำเร็จ",
+          description: "ไม่สามารถดึงข้อมูลยี่ห้อของโปรแกรมนี้ได้",
+          variant: "destructive",
+        });
+      }
+    };
+
+    fetchBrandsForProgram();
+  }, [formData.salesProgram, availablePrograms]);
+
+  // โหลดรายการขนาดแผงโซลาร์ (min_kw) จากตาราง products
+  useEffect(() => {
+    const fetchPanelSizes = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("products")
+          .select("min_kw")
+          .eq("product_category", "solar_panel")
+          .not("min_kw", "is", null); // เอาเฉพาะที่มีค่า
+
+        if (error) throw error;
+
+        if (data) {
+          // ดึงเฉพาะค่า min_kw มาทำเป็น Array และกรองค่าซ้ำ (Unique)
+          const sizes = Array.from(new Set(data.map((p) => p.min_kw)))
+            .filter((size): size is number => size !== null)
+            .sort((a, b) => a - b); // เรียงจากน้อยไปมาก
+
+          setAvailablePanelSizes(sizes);
+        }
+      } catch (error) {
+        console.error("Error fetching panel sizes:", error);
+      }
+    };
+
+    fetchPanelSizes();
+  }, []);
+
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
   const handleCreateQuotation = async () => {
-    // Validate required fields
     if (
       !formData.projectSize ||
       !formData.salesProgram ||
@@ -59,70 +179,50 @@ const CreateQuotation = () => {
     setIsLoading(true);
 
     try {
-      // Step 1: Create or find customer
+      // Step 1: Customer
       let customerId = null;
-
       if (formData.customerName) {
-        const { data: existingCustomer, error: customerFindError } =
-          await supabase
-            .from("customers")
-            .select("id")
-            .eq("customer_name", formData.customerName)
-            .maybeSingle();
-
-        if (customerFindError) throw customerFindError;
+        const { data: existingCustomer } = await supabase
+          .from("customers")
+          .select("id")
+          .eq("customer_name", formData.customerName)
+          .maybeSingle();
 
         if (existingCustomer) {
           customerId = existingCustomer.id;
         } else {
-          const { data: newCustomer, error: customerCreateError } =
-            await supabase
-              .from("customers")
-              .insert({
-                customer_name: formData.customerName,
-              })
-              .select("id")
-              .single();
+          const { data: newCustomer, error: createError } = await supabase
+            .from("customers")
+            .insert({ customer_name: formData.customerName })
+            .select("id")
+            .single();
 
-          if (customerCreateError) throw customerCreateError;
+          if (createError) throw createError;
           customerId = newCustomer.id;
         }
       }
 
-      // Step 2: Find or create sale package
+      // Step 2: Sale Package (หา ID จาก List ที่โหลดมาแล้วได้เลย แม่นยำกว่า)
       let salePackageId = null;
-
       if (formData.salesProgram) {
-        const saleNameValue =
-          formData.salesProgram as Database["public"]["Enums"]["sale_name"];
-
-        const { data: existingSalePackage, error: salePackageFindError } =
-          await supabase
-            .from("sale_packages")
-            .select("id")
-            .eq("sale_name", saleNameValue)
-            .maybeSingle();
-
-        if (salePackageFindError) throw salePackageFindError;
-
-        if (existingSalePackage) {
-          salePackageId = existingSalePackage.id;
+        const selectedProgram = availablePrograms.find(
+          (p) => p.name === formData.salesProgram
+        );
+        if (selectedProgram) {
+          salePackageId = selectedProgram.id;
         } else {
-          const { data: newSalePackage, error: salePackageCreateError } =
-            await supabase
-              .from("sale_packages")
-              .insert({
-                sale_name: saleNameValue,
-              })
-              .select("id")
-              .single();
-
-          if (salePackageCreateError) throw salePackageCreateError;
-          salePackageId = newSalePackage.id;
+          // กรณี Fallback (ไม่น่าเกิดถ้าเลือกจาก Dropdown)
+          const { data: newPkg, error: newPkgError } = await supabase
+            .from("sale_packages")
+            .insert({ sale_name: formData.salesProgram as any })
+            .select("id")
+            .single();
+          if (newPkgError) throw newPkgError;
+          salePackageId = newPkg.id;
         }
       }
 
-      // Step 3: Create quotation
+      // Step 3: Create Quotation
       const { data: quotation, error: quotationError } = await supabase
         .from("quotations")
         .insert({
@@ -139,26 +239,24 @@ const CreateQuotation = () => {
           note: formData.additionalInfo || null,
           sale_package_id: salePackageId,
           inverter_brand: formData.brand || null,
+          edited_price: 0,
         })
         .select()
         .single();
 
       if (quotationError) throw quotationError;
 
-      // Store quotation ID for later updates
       setCurrentQuotationId(quotation.id);
-
       toast({
         title: "สร้างใบเสนอราคาสำเร็จ",
         description: "บันทึกข้อมูลเรียบร้อยแล้ว",
       });
-
       setShowQuotation(true);
     } catch (error) {
       console.error("Error creating quotation:", error);
       toast({
         title: "เกิดข้อผิดพลาด",
-        description: "ไม่สามารถสร้างใบเสนอราคาได้ กรุณาลองใหม่อีกครั้ง",
+        description: "ไม่สามารถสร้างใบเสนอราคาได้",
         variant: "destructive",
       });
     } finally {
@@ -168,14 +266,9 @@ const CreateQuotation = () => {
 
   const handleEditQuotation = async () => {
     if (!isEditMode) {
-      // Entering edit mode
       setIsEditMode(true);
-      toast({
-        title: "โหมดแก้ไข",
-        description: "เข้าสู่โหมดแก้ไขใบเสนอราคา",
-      });
+      toast({ title: "โหมดแก้ไข", description: "เข้าสู่โหมดแก้ไขใบเสนอราคา" });
     } else {
-      // Exiting edit mode - save changes and update updated_at
       if (currentQuotationId) {
         try {
           const { error } = await supabase
@@ -184,48 +277,30 @@ const CreateQuotation = () => {
             .eq("id", currentQuotationId);
 
           if (error) throw error;
-
           toast({
             title: "เสร็จสิ้น",
             description: "บันทึกการแก้ไขเรียบร้อยแล้ว",
           });
         } catch (error) {
-          console.error("Error updating quotation:", error);
-          toast({
-            title: "เกิดข้อผิดพลาด",
-            description: "ไม่สามารถบันทึกการแก้ไขได้",
-            variant: "destructive",
-          });
+          console.error("Error updating:", error);
         }
       }
       setIsEditMode(false);
     }
   };
 
-  const handleExportPDF = () => {
-    toast({
-      title: "บันทึก PDF",
-      description: "กำลังสร้างไฟล์ PDF (ฟังก์ชันจะพัฒนาต่อ)",
-    });
-  };
-
-  const handleExportExcel = () => {
-    toast({
-      title: "บันทึก EXCEL",
-      description: "กำลังสร้างไฟล์ Excel (ฟังก์ชันจะพัฒนาต่อ)",
-    });
-  };
+  const handleExportPDF = () =>
+    toast({ title: "บันทึก PDF", description: "Coming soon..." });
+  const handleExportExcel = () =>
+    toast({ title: "บันทึก EXCEL", description: "Coming soon..." });
 
   return (
     <div className="min-h-screen bg-muted/30 p-6">
-      {/* Back Button */}
       <Button variant="ghost" onClick={() => navigate("/")} className="mb-6">
-        <ArrowLeft className="mr-2 h-4 w-4" />
-        ย้อนกลับ
+        <ArrowLeft className="mr-2 h-4 w-4" /> ย้อนกลับ
       </Button>
 
-      {/* Form Section */}
-      <div className="bg-card rounded-lg shadow-sm p-8 mb-6">
+      <div className="bg-card rounded-lg shadow-sm p-8 mb-6 border border-border">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Left Column */}
           <div className="space-y-4">
@@ -240,7 +315,6 @@ const CreateQuotation = () => {
                 }
               />
             </div>
-
             <div>
               <Label htmlFor="installLocation">สถานที่ติดตั้ง</Label>
               <Input
@@ -252,7 +326,6 @@ const CreateQuotation = () => {
                 }
               />
             </div>
-
             <div>
               <Label htmlFor="documentNumber">เลขที่เอกสาร</Label>
               <Input
@@ -264,7 +337,6 @@ const CreateQuotation = () => {
                 }
               />
             </div>
-
             <div>
               <Label htmlFor="serviceProvider">ชื่อผู้ให้บริการ</Label>
               <Input
@@ -276,7 +348,6 @@ const CreateQuotation = () => {
                 }
               />
             </div>
-
             <div>
               <Label htmlFor="additionalInfo">ข้อมูลเพิ่มเติม</Label>
               <Textarea
@@ -293,11 +364,11 @@ const CreateQuotation = () => {
           {/* Right Column */}
           <div className="space-y-4">
             <div>
-              <Label htmlFor="projectSize">ขนาดโครงการ*</Label>
+              <Label htmlFor="projectSize">ขนาดโครงการ (kW)*</Label>
               <Input
                 id="projectSize"
                 type="number"
-                placeholder="watt"
+                placeholder="เช่น 10"
                 value={formData.projectSize}
                 onChange={(e) =>
                   handleInputChange("projectSize", e.target.value)
@@ -305,24 +376,7 @@ const CreateQuotation = () => {
               />
             </div>
 
-            <div>
-              <Label htmlFor="brand">ยี่ห้อ*</Label>
-              <Select
-                value={formData.brand}
-                onValueChange={(value) => handleInputChange("brand", value)}
-              >
-                <SelectTrigger id="brand">
-                  <SelectValue placeholder="ยี่ห้อ" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="huawei">Huawei</SelectItem>
-                  <SelectItem value="sungrow">Sungrow</SelectItem>
-                  <SelectItem value="growatt">Growatt</SelectItem>
-                  <SelectItem value="other">Other</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
+            {/* Dropdown โปรแกรมการขาย */}
             <div>
               <Label htmlFor="salesProgram">โปรแกรมการขาย*</Label>
               <Select
@@ -332,47 +386,115 @@ const CreateQuotation = () => {
                 }
               >
                 <SelectTrigger id="salesProgram">
-                  <SelectValue placeholder="โปรแกรมการขาย" />
+                  <SelectValue
+                    placeholder={
+                      availablePrograms.length > 0
+                        ? "เลือกโปรแกรม"
+                        : "กำลังโหลด..."
+                    }
+                  />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="direct">Direct</SelectItem>
-                  <SelectItem value="partner_a">Partner A</SelectItem>
-                  <SelectItem value="partner_b">Partner B</SelectItem>
+                  {availablePrograms.length === 0 ? (
+                    <div className="p-2 text-sm text-muted-foreground text-center">
+                      ไม่มีรายการ
+                    </div>
+                  ) : (
+                    availablePrograms.map((program) => (
+                      <SelectItem key={program.id} value={program.name}>
+                        {program.name}
+                      </SelectItem>
+                    ))
+                  )}
                 </SelectContent>
               </Select>
             </div>
 
+            {/* Dropdown ยี่ห้อ Inverter (Dynamic ตามโปรแกรมที่เลือก) */}
             <div>
-              <Label htmlFor="solarPanelSize">ขนาดแผงโซลาร์เซลล์*</Label>
-              <Input
-                id="solarPanelSize"
-                type="number"
-                placeholder="watt"
+              <Label htmlFor="brand">ยี่ห้อ Inverter*</Label>
+              <Select
+                value={formData.brand}
+                onValueChange={(value) => handleInputChange("brand", value)}
+                disabled={!formData.salesProgram} // บังคับเลือกโปรแกรมก่อน
+              >
+                <SelectTrigger id="brand">
+                  <SelectValue
+                    placeholder={
+                      formData.salesProgram
+                        ? "เลือกยี่ห้อ"
+                        : "กรุณาเลือกโปรแกรมการขายก่อน"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableBrands.length === 0 ? (
+                    <div className="p-2 text-sm text-muted-foreground text-center">
+                      {formData.salesProgram
+                        ? "ไม่พบยี่ห้อในโปรแกรมนี้"
+                        : "รอการเลือกโปรแกรม"}
+                    </div>
+                  ) : (
+                    availableBrands.map((brand) => (
+                      <SelectItem key={brand} value={brand}>
+                        {formatBrandName(brand)}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* แก้ไขตรงนี้: เปลี่ยน Input เป็น Select */}
+            <div>
+              <Label htmlFor="solarPanelSize">ขนาดแผงโซลาร์เซลล์ (Watt)*</Label>
+              <Select
                 value={formData.solarPanelSize}
-                onChange={(e) =>
-                  handleInputChange("solarPanelSize", e.target.value)
+                onValueChange={(value) =>
+                  handleInputChange("solarPanelSize", value)
                 }
-              />
+              >
+                <SelectTrigger id="solarPanelSize">
+                  <SelectValue
+                    placeholder={
+                      availablePanelSizes.length > 0
+                        ? "เลือกขนาดแผง"
+                        : "ไม่พบข้อมูลแผง"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {availablePanelSizes.length === 0 ? (
+                    <div className="p-2 text-sm text-muted-foreground text-center">
+                      กรุณาเพิ่มข้อมูล Solar Panel ในฐานข้อมูลก่อน
+                    </div>
+                  ) : (
+                    availablePanelSizes.map((size) => (
+                      <SelectItem key={size} value={size.toString()}>
+                        {size.toLocaleString()} Watt
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </div>
 
-        {/* Create Button */}
         <div className="flex justify-end mt-6">
           <Button
             onClick={handleCreateQuotation}
             size="lg"
             disabled={isLoading}
+            className="w-full md:w-auto px-8"
           >
             {isLoading ? "กำลังบันทึก..." : "สร้างใบเสนอราคา"}
           </Button>
         </div>
       </div>
 
-      {/* Quotation Display Section */}
       {showQuotation && (
-        <div className="bg-card rounded-lg shadow-sm p-8 relative">
-          {/* Export Buttons */}
+        <div className="bg-card rounded-lg shadow-sm p-8 relative border border-border animate-in fade-in">
           <div className="absolute top-4 right-4 flex gap-2">
             <Button variant="outline" onClick={handleEditQuotation}>
               {isEditMode ? "เสร็จสิ้น" : "แก้ไข"}
@@ -384,12 +506,13 @@ const CreateQuotation = () => {
               บันทึก EXCEL
             </Button>
           </div>
-
-          {/* Quotation Content */}
-          <div className="flex items-center justify-center min-h-[400px]">
-            <h2 className="text-2xl font-semibold text-center">
+          <div className="flex flex-col items-center justify-center min-h-[400px]">
+            <h2 className="text-2xl font-semibold text-center mb-2">
               ส่วนแสดงใบเสนอราคา
             </h2>
+            <p className="text-muted-foreground">
+              (พื้นที่แสดงผล PDF/Quotation ในอนาคต)
+            </p>
           </div>
         </div>
       )}
