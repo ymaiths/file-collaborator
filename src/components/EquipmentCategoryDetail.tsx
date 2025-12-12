@@ -212,39 +212,18 @@ export const EquipmentCategoryDetail = ({
       if (product.is_fixed_cost) {
         return product.cost_fixed?.toLocaleString() || "-";
       } else {
-        // Calculate based on percentage and size
+        // Show percentage since actual price depends on project size
+        // Formula: price = percent * project_size * 1000
         const percentage = product.cost_percentage || 0;
-        if (product.is_exact_kw) {
-          const cost = (product.min_kw || 0) * percentage;
-          return cost.toLocaleString();
-        } else {
-          const minCost = (product.min_kw || 0) * percentage;
-          const maxCost = (product.max_kw || 0) * percentage;
-          return `${minCost.toLocaleString()} - ${maxCost.toLocaleString()}`;
-        }
+        return `${percentage.toLocaleString()}%`;
       }
     } else {
       if (product.is_fixed_installation_cost) {
         return product.fixed_installation_cost?.toLocaleString() || "-";
       } else {
-        // Calculate based on percentage and equipment cost
+        // Show percentage since actual price depends on equipment cost
         const percentage = product.installation_cost_percentage || 0;
-        const equipmentCost = product.is_fixed_cost
-          ? product.cost_fixed || 0
-          : (product.min_kw || 0) * (product.cost_percentage || 0);
-
-        if (product.is_exact_kw || product.is_fixed_cost) {
-          const cost = equipmentCost * percentage;
-          return cost.toLocaleString();
-        } else {
-          const minEquipmentCost =
-            (product.min_kw || 0) * (product.cost_percentage || 0);
-          const maxEquipmentCost =
-            (product.max_kw || 0) * (product.cost_percentage || 0);
-          const minCost = minEquipmentCost * percentage;
-          const maxCost = maxEquipmentCost * percentage;
-          return `${minCost.toLocaleString()} - ${maxCost.toLocaleString()}`;
-        }
+        return `${percentage.toLocaleString()}%`;
       }
     }
   };

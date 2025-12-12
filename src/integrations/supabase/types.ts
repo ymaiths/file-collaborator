@@ -140,6 +140,7 @@ export type Database = {
           cost_fixed: number | null
           cost_percentage: number | null
           created_at: string | null
+          electrical_phase: string | null
           fixed_installation_cost: number | null
           id: string
           installation_cost_percentage: number | null
@@ -160,6 +161,7 @@ export type Database = {
           cost_fixed?: number | null
           cost_percentage?: number | null
           created_at?: string | null
+          electrical_phase?: string | null
           fixed_installation_cost?: number | null
           id?: string
           installation_cost_percentage?: number | null
@@ -180,6 +182,7 @@ export type Database = {
           cost_fixed?: number | null
           cost_percentage?: number | null
           created_at?: string | null
+          electrical_phase?: string | null
           fixed_installation_cost?: number | null
           id?: string
           installation_cost_percentage?: number | null
@@ -406,6 +409,9 @@ export type Database = {
         | "dc_box"
         | "walk_way"
         | "water_service"
+        | "pv_mounting_structure"
+        | "zero_export_smart_logger"
+        | "cable"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -554,6 +560,9 @@ export const Constants = {
         "dc_box",
         "walk_way",
         "water_service",
+        "pv_mounting_structure",
+        "zero_export_smart_logger",
+        "cable",
       ],
     },
   },
