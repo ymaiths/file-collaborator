@@ -15,6 +15,7 @@ import {
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { calculateSystemSpecs } from "@/utils/kwpcalculations";
+import { useAutoGenerateLineItems } from "@/hooks/useAutoGenerateLineItems";
 
 // Helper function: จัดรูปแบบชื่อ Brand ให้สวยงาม (ตัวพิมพ์ใหญ่)
 const formatBrandName = (brand: string) => {
@@ -43,7 +44,7 @@ const CreateQuotation = () => {
 
   const [availableBrands, setAvailableBrands] = useState<string[]>([]);
   const [availablePanelSizes, setAvailablePanelSizes] = useState<number[]>([]);
-
+  const { generateMainEquipment, isGenerating } = useAutoGenerateLineItems();
   const [formData, setFormData] = useState({
     customerName: "",
     installLocation: "",
@@ -311,6 +312,7 @@ const CreateQuotation = () => {
         inverter_brand: formData.brand || null,
       };
 
+      let targetId = currentQuotationId;
       if (currentQuotationId) {
         // 👉 กรณี 1: มี ID แล้ว (เป็นการแก้ไข) -> สั่ง UPDATE
         const { error: updateError } = await supabase
@@ -339,7 +341,7 @@ const CreateQuotation = () => {
           .single();
 
         if (insertError) throw insertError;
-
+        targetId = quotation.id;
         // [สำคัญ] บันทึก ID เก็บไว้ เพื่อให้กดครั้งต่อไปกลายเป็นการ Update
         setCurrentQuotationId(quotation.id);
 
@@ -347,6 +349,13 @@ const CreateQuotation = () => {
           title: "สร้างใบเสนอราคาสำเร็จ",
           description: "บันทึกข้อมูลเรียบร้อยแล้ว",
         });
+      }
+
+      if (targetId) {
+        // ส่ง ID ไปให้ Hook ทำงาน
+        // ระบบจะไปดึง Products มาคำนวณแล้วยัดลงตาราง product_line_items
+        console.log("Generating line items for:", targetId);
+        await generateMainEquipment(targetId);
       }
 
       // แสดงส่วน Preview (ถ้ามี)
