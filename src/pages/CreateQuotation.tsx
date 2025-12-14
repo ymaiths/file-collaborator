@@ -16,6 +16,7 @@ import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { calculateSystemSpecs } from "@/utils/kwpcalculations";
 import { useAutoGenerateLineItems } from "@/hooks/useAutoGenerateLineItems";
+import { useAutoGenerateAdditionalItems } from "@/hooks/useAutoGenerateAdditionalItems";
 
 // Helper function: จัดรูปแบบชื่อ Brand ให้สวยงาม (ตัวพิมพ์ใหญ่)
 const formatBrandName = (brand: string) => {
@@ -45,6 +46,8 @@ const CreateQuotation = () => {
   const [availableBrands, setAvailableBrands] = useState<string[]>([]);
   const [availablePanelSizes, setAvailablePanelSizes] = useState<number[]>([]);
   const { generateMainEquipment, isGenerating } = useAutoGenerateLineItems();
+  const { generateAdditionalEquipment } = useAutoGenerateAdditionalItems();
+
   const [formData, setFormData] = useState({
     customerName: "",
     installLocation: "",
@@ -352,12 +355,12 @@ const CreateQuotation = () => {
       }
 
       if (targetId) {
-        // ส่ง ID ไปให้ Hook ทำงาน
-        // ระบบจะไปดึง Products มาคำนวณแล้วยัดลงตาราง product_line_items
-        console.log("Generating line items for:", targetId);
+        console.log("Generating main items for:", targetId);
         await generateMainEquipment(targetId);
-      }
 
+        console.log("Generating additional items for:", targetId);
+        await generateAdditionalEquipment(targetId);
+      }
       // แสดงส่วน Preview (ถ้ามี)
       setShowQuotation(true);
 
