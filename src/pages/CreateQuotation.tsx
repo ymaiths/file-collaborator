@@ -58,6 +58,7 @@ const CreateQuotation = () => {
     additionalInfo: "",
     salesProgram: "",
     brand: "",
+    electricalPhase: "",
   });
 
   // 1. โหลดรายชื่อโปรแกรมการขายตอนเริ่มต้น
@@ -202,6 +203,7 @@ const CreateQuotation = () => {
             additionalInfo: data.note || "",
             salesProgram: data.sale_packages?.sale_name || "",
             brand: data.inverter_brand || "",
+            electricalPhase: data.electrical_phase || "single_phase",
           });
           setShowQuotation(true);
         }
@@ -308,6 +310,7 @@ const CreateQuotation = () => {
           ? parseFloat(formData.solarPanelSize)
           : null,
         kw_peak: kwPeak, // ค่าที่คำนวณได้
+        electrical_phase: formData.electricalPhase || "single_phase",
         document_num: formData.documentNumber || null,
         creater_name: formData.serviceProvider || null,
         note: formData.additionalInfo || null,
@@ -485,18 +488,38 @@ const CreateQuotation = () => {
           </div>
 
           {/* Right Column */}
-          <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            {/* ซ้าย: ขนาดโครงการ */}
             <div>
               <Label htmlFor="projectSize">ขนาดโครงการ (Watt)*</Label>
               <Input
                 id="projectSize"
                 type="number"
-                placeholder="เช่น 3000"
+                placeholder="เช่น 5000"
                 value={formData.projectSize}
                 onChange={(e) =>
                   handleInputChange("projectSize", e.target.value)
                 }
               />
+            </div>
+
+            {/* ขวา: ระบบไฟฟ้า (Phase) */}
+            <div>
+              <Label htmlFor="electricalPhase">ระบบไฟฟ้า*</Label>
+              <Select
+                value={formData.electricalPhase}
+                onValueChange={(value) =>
+                  handleInputChange("electricalPhase", value)
+                }
+              >
+                <SelectTrigger id="electricalPhase">
+                  <SelectValue placeholder="เลือกระบบไฟ" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="single_phase">1 Phase (220V)</SelectItem>
+                  <SelectItem value="three_phase">3 Phase (380V)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Dropdown โปรแกรมการขาย */}

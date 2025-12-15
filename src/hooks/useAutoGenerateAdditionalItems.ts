@@ -107,7 +107,7 @@ export const useAutoGenerateAdditionalItems = () => {
       // =========================================================
       // 2. Support Inverter (> 30kW)
       // =========================================================
-      if (projectSizeWatt > 30000) {
+      if (projectSizeWatt >= 30000) {
         const supportInv = allProducts.find(
           (p) =>
             (p.product_category as any) === "support_inverter" &&

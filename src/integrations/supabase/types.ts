@@ -390,15 +390,7 @@ export type Database = {
     };
     Enums: {
       electronic_phase: "single_phase" | "three_phase";
-      inverter_brand:
-        | "huawei"
-        | "sungrow"
-        | "growatt"
-        | "other"
-        | "huawei__optimizer"
-        | "huaweioptimizer"
-        | "solaredge"
-        | "hoimine";
+      inverter_brand: "huawei" | "huawei_optimizer" | "solaredge" | "hoimine";
       product_category:
         | "solar_panel"
         | "inverter"

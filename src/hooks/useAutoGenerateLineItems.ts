@@ -67,10 +67,17 @@ export const useAutoGenerateLineItems = () => {
       // ====================================================
       // 2. อินเวอร์เตอร์ (Inverter)
       // ====================================================
+      let targetBrand = brand?.toLowerCase().trim() || "";
+
+      // ถ้ามีคำว่า huawei (เช่น 'huawei optimizer', 'huawei_optimizer') ให้หา 'huawei'
+      if (targetBrand.includes("huawei")) {
+        targetBrand = "huawei";
+      }
+
       const availableInverters = allProducts.filter(
         (p) =>
           p.product_category === "inverter" &&
-          p.brand?.toLowerCase() === brand?.toLowerCase()
+          p.brand?.toLowerCase().trim() === targetBrand
       );
 
       // เรียกใช้ Algorithm เลือก Inverter
