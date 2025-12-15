@@ -354,7 +354,7 @@ export const SalesProgramDetail = ({
 
   const brandNames: Partial<Record<InverterBrand, string>> = {
     huawei: "Huawei",
-    huawei__optimizer: "Huawei Optimizer",
+    huawei_optimizer: "Huawei Optimizer",
     solaredge: "SolarEdge",
   };
 

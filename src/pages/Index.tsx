@@ -10,7 +10,9 @@ import { format } from "date-fns";
 import { th } from "date-fns/locale";
 
 const Index = () => {
-  const [activeTab, setActiveTab] = useState<"quotation" | "database">("quotation");
+  const [activeTab, setActiveTab] = useState<"quotation" | "database">(
+    "quotation"
+  );
   const [projects, setProjects] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -20,40 +22,65 @@ const Index = () => {
 
   const fetchQuotations = async () => {
     try {
+      // ดึง product_line_items เพื่อเอามาบวกเลขเป็นราคารวม
       const { data, error } = await supabase
         .from("quotations")
-        .select(`
+        .select(
+          `
           *,
           customers:customer_id (
             customer_name
           ),
           sale_packages:sale_package_id (
-            sale_name,
-            sale_package_prices:price_id (
-              price
-            )
+            sale_name
+          ),
+          product_line_items (
+            product_price,
+            installation_price
           )
-        `)
+        `
+        )
         .order("created_at", { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        console.error("Supabase Error:", error); // ดู Error ใน Console ถ้ายั่งไม่ขึ้น
+        throw error;
+      }
 
-      const formattedProjects = data?.map((quotation) => ({
-        id: quotation.id,
-        customerName: quotation.customers?.customer_name || "ไม่ระบุชื่อลูกค้า",
-        location: quotation.location || "ไม่ระบุสถานที่",
-        projectSize: quotation.kw_size ? `${quotation.kw_size} kW` : "ไม่ระบุขนาด",
-        price: quotation.sale_packages?.sale_package_prices?.price 
-          ? `${quotation.sale_packages.sale_package_prices.price.toLocaleString()} บาท`
-          : "ไม่ระบุราคา",
-        salesProgramme: quotation.sale_packages?.sale_name || "ไม่ระบุโปรแกรม",
-        editedDate: quotation.updated_at 
-          ? format(new Date(quotation.updated_at), "dd/MM/yy", { locale: th })
-          : "-",
-        createdDate: quotation.created_at
-          ? format(new Date(quotation.created_at), "dd/MM/yy", { locale: th })
-          : "-",
-      })) || [];
+      const formattedProjects =
+        data?.map((quotation) => {
+          // คำนวณราคารวมจากรายการสินค้า
+          const totalPrice =
+            quotation.product_line_items?.reduce((sum: number, item: any) => {
+              return (
+                sum + (item.product_price || 0) + (item.installation_price || 0)
+              );
+            }, 0) || 0;
+
+          return {
+            id: quotation.id,
+            customerName:
+              quotation.customers?.customer_name || "ไม่ระบุชื่อลูกค้า",
+            location: quotation.location || "ไม่ระบุสถานที่",
+            projectSize: quotation.kw_size
+              ? `${quotation.kw_size.toLocaleString()} kW`
+              : "ไม่ระบุขนาด",
+            // แสดงราคาที่คำนวณได้
+            price: totalPrice > 0 ? `${totalPrice.toLocaleString()} บาท` : null,
+            salesProgramme:
+              quotation.sale_packages?.sale_name || "ไม่ระบุโปรแกรม",
+            editedDate: quotation.updated_at
+              ? format(new Date(quotation.updated_at), "dd/MM/yy", {
+                  locale: th,
+                })
+              : "-",
+            createdDate: quotation.created_at
+              ? format(new Date(quotation.created_at), "dd/MM/yy", {
+                  locale: th,
+                })
+              : "-",
+          };
+        }) || [];
 
       setProjects(formattedProjects);
     } catch (error) {
@@ -80,9 +107,18 @@ const Index = () => {
               <>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                   <CreateProjectCard />
-                  {projects.map((project) => (
-                    <ProjectCard key={project.id} {...project} />
-                  ))}
+
+                  {/* แสดงการ์ดโครงการ */}
+                  {projects.length > 0 ? (
+                    projects.map((project) => (
+                      <ProjectCard key={project.id} {...project} />
+                    ))
+                  ) : (
+                    // กรณีไม่มีข้อมูล (แต่โหลดเสร็จแล้ว)
+                    <div className="col-span-full text-center text-muted-foreground py-10">
+                      ไม่พบใบเสนอราคาในระบบ
+                    </div>
+                  )}
                 </div>
 
                 <ProjectPagination />

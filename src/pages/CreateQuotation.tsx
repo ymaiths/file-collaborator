@@ -14,9 +14,11 @@ import {
 } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+
 import { calculateSystemSpecs } from "@/utils/kwpcalculations";
 import { useAutoGenerateLineItems } from "@/hooks/useAutoGenerateLineItems";
 import { useAutoGenerateAdditionalItems } from "@/hooks/useAutoGenerateAdditionalItems";
+import { useCalculatePricing } from "@/hooks/useCalculatePricing";
 
 // Helper function: จัดรูปแบบชื่อ Brand ให้สวยงาม (ตัวพิมพ์ใหญ่)
 const formatBrandName = (brand: string) => {
@@ -47,6 +49,8 @@ const CreateQuotation = () => {
   const [availablePanelSizes, setAvailablePanelSizes] = useState<number[]>([]);
   const { generateMainEquipment, isGenerating } = useAutoGenerateLineItems();
   const { generateAdditionalEquipment } = useAutoGenerateAdditionalItems();
+  const { calculateAndSavePricing, isCalculating: isPricing } =
+    useCalculatePricing();
 
   const [formData, setFormData] = useState({
     customerName: "",
@@ -363,6 +367,9 @@ const CreateQuotation = () => {
 
         console.log("Generating additional items for:", targetId);
         await generateAdditionalEquipment(targetId);
+
+        console.log("Calculating Prices...");
+        await calculateAndSavePricing(targetId);
       }
       // แสดงส่วน Preview (ถ้ามี)
       setShowQuotation(true);
