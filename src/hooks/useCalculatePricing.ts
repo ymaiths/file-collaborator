@@ -25,16 +25,16 @@ export const useCalculatePricing = () => {
 
   const calculateAndSavePricing = async (quotationId: string) => {
     setIsCalculating(true);
-    // console.log("💰 Starting Price Calculation for:", quotationId);
+    console.clear();
+    console.log("🚀 Starting Calculation...");
 
     try {
-      // 1. ดึงข้อมูล Quotation
+      // 1. ดึงข้อมูล
       const { data: quote, error: quoteError } = await supabase
         .from("quotations")
         .select(`*, sale_packages(*)`)
         .eq("id", quotationId)
         .single();
-
       if (quoteError || !quote) throw new Error("Quotation not found");
 
       const projectSizeWatt = quote.kw_size || 0;
@@ -42,58 +42,43 @@ export const useCalculatePricing = () => {
       const phase = quote.electrical_phase || "single_phase";
       const salePackageId = quote.sale_package_id;
 
-      // 2. ดึงราคาขายรวม (Total Target Price)
-      const { data: priceList, error: priceError } = await supabase
+      // 2. ราคาเป้าหมาย (Target Price)
+      const { data: priceList } = await supabase
         .from("sale_package_prices")
         .select("*")
         .eq("sale_package_id", salePackageId)
         .eq("inverter_brand", brand as any)
         .eq("electronic_phase", phase as any);
 
-      if (priceError) throw priceError;
-
-      const matchedPrice = priceList?.find((p) => {
-        if (p.is_exact_kw) {
-          return p.kw_min === projectSizeWatt;
-        } else {
-          return (
-            (p.kw_min || 0) <= projectSizeWatt &&
+      const matchedPrice = priceList?.find((p) =>
+        p.is_exact_kw
+          ? p.kw_min === projectSizeWatt
+          : (p.kw_min || 0) <= projectSizeWatt &&
             (p.kw_max || 0) >= projectSizeWatt
-          );
-        }
-      });
+      );
 
-      if (!matchedPrice) {
-        throw new Error(
-          `ไม่พบราคาขายสำหรับเงื่อนไข: ${brand}, ${phase}, ${projectSizeWatt}W`
-        );
-      }
+      if (!matchedPrice) throw new Error("Price not found");
 
-      // =========================================================
-      // คำนวณราคาขายรวม (Total Project Price)
-      // =========================================================
       let TOTAL_PROJECT_PRICE = 0;
       const priceData = matchedPrice as any;
-
       if (priceData.is_exact_price) {
         TOTAL_PROJECT_PRICE = priceData.price_exact || 0;
       } else {
-        const pricePerUnit = priceData.price_percentage || 0;
-        TOTAL_PROJECT_PRICE = pricePerUnit * projectSizeWatt;
+        TOTAL_PROJECT_PRICE =
+          (priceData.price_percentage || 0) * projectSizeWatt;
       }
+      console.log(`💰 Target Price: ${TOTAL_PROJECT_PRICE.toLocaleString()}`);
 
-      // console.log(`💰 Final Target Price: ${TOTAL_PROJECT_PRICE.toLocaleString()}`);
-
-      // 3. ดึงรายการสินค้า
-      const { data: lineItems, error: itemsError } = await supabase
+      // 3. ดึงสินค้า
+      const { data: lineItems } = await supabase
         .from("product_line_items")
         .select(`*, products(*)`)
         .eq("quotation_id", quotationId);
 
-      if (itemsError || !lineItems) throw itemsError;
+      if (!lineItems) throw new Error("No items found");
 
       // =========================================================
-      // Step 1: คำนวณต้นทุน
+      // Step 1: คำนวณต้นทุน (Cost)
       // =========================================================
       let items: CalculatedLineItem[] = lineItems.map((item) => {
         const baseItem = {
@@ -105,10 +90,9 @@ export const useCalculatePricing = () => {
           finalPriceEq: 0,
           finalPriceInst: 0,
         };
-
         if (!item.products) return baseItem;
 
-        // ส่ง Watt เข้าไปคำนวณต้นทุน
+        // คำนวณต้นทุน
         const { costEq, costInst } = calculateItemCost(
           baseItem,
           projectSizeWatt
@@ -119,21 +103,22 @@ export const useCalculatePricing = () => {
       });
 
       // =========================================================
-      // Step 2: Excluded Items (ขายเท่าทุน)
+      // Step 2: Excluded Items
       // =========================================================
       items = items.map((item) => {
         if (!item.isIncluded) {
+          // ถ้าไม่รวมใน Markup -> ขายเท่าทุน
           return {
             ...item,
             finalPriceEq: item.costEq,
             finalPriceInst: item.costInst,
           };
         }
-        return item;
+        return item; // ถ้า Included ให้ข้ามไปก่อน (finalPrice ยังเป็น 0)
       });
 
       // =========================================================
-      // Step 3: Included Items (Markup Calculation)
+      // Step 3: Markup Calculation
       // =========================================================
       const includedItems = items.filter((i) => i.isIncluded);
 
@@ -151,11 +136,21 @@ export const useCalculatePricing = () => {
       const costBaseForMarkup = totalIncludedCost - solarInstallCost;
       const priceTargetForMarkup = TOTAL_PROJECT_PRICE - solarInstallCost;
 
-      const markupRatio =
-        costBaseForMarkup > 0 ? priceTargetForMarkup / costBaseForMarkup : 1;
-      // console.log(`📊 Markup Ratio: ${markupRatio.toFixed(6)}`);
+      // ป้องกันการหารด้วย 0 หรือค่าติดลบ
+      let markupRatio = 1;
+      if (costBaseForMarkup > 0) {
+        markupRatio = priceTargetForMarkup / costBaseForMarkup;
+      }
 
-      // 3.1 Raw Price Calculation
+      console.log("📊 Debug Markup:");
+      console.log(
+        `   - Total Included Cost: ${totalIncludedCost.toLocaleString()}`
+      );
+      console.log(`   - Cost Base: ${costBaseForMarkup.toLocaleString()}`);
+      console.log(`   - Target Base: ${priceTargetForMarkup.toLocaleString()}`);
+      console.log(`   - Ratio: ${markupRatio}`);
+
+      // 3.1 Apply Markup
       items = items.map((item) => {
         if (item.isIncluded) {
           let priceEq = item.costEq * markupRatio;
@@ -169,15 +164,15 @@ export const useCalculatePricing = () => {
         return item;
       });
 
-      // 3.2 Rounding (ยกเว้น EQ สายไฟ)
+      // 3.2 Rounding & Diff
       let currentSum = 0;
       let cableIndex = -1;
 
       items = items.map((item, index) => {
         if (item.isIncluded) {
-          const isCable =
-            item.products?.name.trim() === "สายไฟ VCT/THW" ||
-            item.products?.name.includes("สายไฟ VCT/THW");
+          // เช็คชื่อสายไฟ
+          const name = item.products?.name || "";
+          const isCable = name.includes("สายไฟ VCT") || name.includes("THW");
 
           if (isCable) {
             cableIndex = index;
@@ -203,30 +198,49 @@ export const useCalculatePricing = () => {
         return item;
       });
 
-      // 3.3 Residual Adjustment
-      const diff = TOTAL_PROJECT_PRICE - currentSum;
-
+      // Adjust Diff
       if (cableIndex !== -1) {
+        const diff = TOTAL_PROJECT_PRICE - currentSum;
         items[cableIndex].finalPriceEq += diff;
-        // console.log(`✅ Adjusted Cable Price by ${diff}`);
+      }
+
+      // =========================================================
+      // 🔍 FINAL CHECK ก่อนบันทึก (สำคัญมาก)
+      // =========================================================
+      const updates = items.map((item) => ({
+        id: item.id,
+        name: item.products?.name, // ใส่ชื่อมาดูใน log เฉยๆ
+        cost: item.costEq, // ต้นทุน
+        price: item.finalPriceEq, // ราคาขายที่จะบันทึก
+        isIncluded: item.isIncluded,
+      }));
+
+      // กรองดูเฉพาะตัวที่เป็น Percent (พวกที่เคยเป็น 0)
+      const problemItems = updates.filter(
+        (u) => u.price === 0 || isNaN(u.price)
+      );
+
+      console.log("📋 PAYLOAD PREVIEW (Items that are 0 or NaN):");
+      if (problemItems.length > 0) {
+        console.table(problemItems); // ถ้ามีรายการไหนเป็น 0 จะโชว์ตรงนี้
+        console.error("❌ พบสินค้าที่ราคายังเป็น 0 อยู่! เช็คตารางด้านบน");
       } else {
-        if (Math.abs(diff) > 1) {
-          // เตือนเฉพาะถ้ายอดไม่ตรง
-          console.warn("⚠️ Warning: ไม่พบ 'สายไฟ VCT/THW' (Diff อาจตกหล่น)");
-        }
+        console.log("✅ All items have price > 0. Ready to save.");
       }
 
       // =========================================================
       // Step 4: Update DB
       // =========================================================
-      const updates = items.map((item) => ({
+      const finalUpdates = items.map((item) => ({
         id: item.id,
-        product_price: item.finalPriceEq,
-        installation_price: item.finalPriceInst,
+        product_price: isNaN(item.finalPriceEq) ? 0 : item.finalPriceEq, // กันเหนียว NaN
+        installation_price: isNaN(item.finalPriceInst)
+          ? 0
+          : item.finalPriceInst,
       }));
 
       await Promise.all(
-        updates.map((update) =>
+        finalUpdates.map((update) =>
           supabase
             .from("product_line_items")
             .update({
@@ -241,17 +255,15 @@ export const useCalculatePricing = () => {
         .from("quotations")
         .update({ updated_at: new Date().toISOString() })
         .eq("id", quotationId);
-
       toast({
         title: "คำนวณราคาสำเร็จ",
         description: `ยอดรวม: ${TOTAL_PROJECT_PRICE.toLocaleString()} บาท`,
       });
     } catch (error) {
-      console.error("Pricing Calculation Error:", error);
+      console.error("Error:", error);
       toast({
-        title: "เกิดข้อผิดพลาด",
-        description:
-          error instanceof Error ? error.message : "ไม่สามารถคำนวณราคาได้",
+        title: "Error",
+        description: "ดู Console",
         variant: "destructive",
       });
     } finally {

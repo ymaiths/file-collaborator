@@ -17,15 +17,25 @@ export const selectInverters = (
 ): LineItemResult[] => {
   const results: LineItemResult[] = [];
 
-  // กรอง Inverter ที่ไม่ใช่ Accessories (min_kw > 0)
-  // และเรียงจากใหญ่ไปเล็ก เพื่อประโยชน์ของ Greedy
+  // ✅✅✅ แก้ไขจุดที่ผิดพลาดตรงนี้ ✅✅✅
+  // กรอง Inverter จริงๆ เท่านั้น:
+  // 1. ต้องไม่ใช่ Accessories (เราสมมติว่า Inverter จริงๆ ต้องมีขนาด > 100 Watt ขึ้นไป)
+  // 2. ชื่อต้องไม่มีคำว่า Smart Logger หรือ Zero Export
   const mainInverters = availableInverters
-    .filter((p) => p.min_kw !== null && p.min_kw > 0)
+    .filter((p) => p.min_kw !== null && p.min_kw > 100) // แก้จาก > 0 เป็น > 100 (กัน Smart Logger ที่ค่าเป็น 2 หลุดเข้ามา)
+    .filter((p) => {
+      const name = p.name.toLowerCase();
+      return !name.includes("smart logger") && !name.includes("zero export");
+    })
     .sort((a, b) => (b.min_kw || 0) - (a.min_kw || 0));
+
+  console.log(
+    "Main Inverters Found:",
+    mainInverters.map((p) => `${p.name} (${p.min_kw}W)`)
+  );
 
   // --- กรณีที่ 1: โครงการ < 20kW (20,000 Watt) ---
   if (projectSizeWatt < 20000) {
-    // เลือกตัวที่มีขนาดเท่ากัน และ Phase ตรงกัน
     const match = mainInverters.find(
       (p) => p.min_kw === projectSizeWatt && p.electrical_phase === projectPhase
     );
@@ -33,7 +43,6 @@ export const selectInverters = (
     if (match) {
       results.push({ product: match, quantity: 1 });
     }
-    // ถ้าหาไม่เจอ ให้คืนค่าว่าง (หรือจะ Handle fallback ก็ได้)
     return results;
   }
 
@@ -46,7 +55,6 @@ export const selectInverters = (
   }
 
   // 2.2 เลือกหลาย Inverter ที่ขนาดเท่ากัน (หารลงตัว)
-  // เนื่องจากเรียงจากมากไปน้อยแล้ว ตัวแรกที่เจอคือตัวใหญ่ที่สุดที่หารลงตัว
   const divisorMatch = mainInverters.find(
     (p) => projectSizeWatt % (p.min_kw || 1) === 0
   );
@@ -55,16 +63,13 @@ export const selectInverters = (
     return [{ product: divisorMatch, quantity: qty }];
   }
 
-  // 2.3 Greedy Algorithm (เลือกขนาดต่างกัน)
-  // เลือกตัวใหญ่ที่สุดที่ใส่น้อยกว่าที่เหลือ ใส่ไปเรื่อยๆ จนครบ
+  // 2.3 Greedy Algorithm
   let remainingWatt = projectSizeWatt;
   const greedySelection: Map<string, { product: Product; qty: number }> =
     new Map();
 
-  // วนลูปเลือกของ
   while (remainingWatt > 0) {
-    // หา Inverter ตัวที่ใหญ่ที่สุด ที่ยังเล็กกว่าหรือเท่ากับ remainingWatt
-    // (mainInverters เรียงจากมากไปน้อยอยู่แล้ว find จะเจอตัวใหญ่สุดที่เข้าเงื่อนไข)
+    // หาตัวใหญ่สุดที่ใส่ได้
     const bestFit = mainInverters.find((p) => (p.min_kw || 0) <= remainingWatt);
 
     if (bestFit) {
@@ -78,13 +83,13 @@ export const selectInverters = (
       });
       remainingWatt -= bestFit.min_kw || 0;
     } else {
-      // กรณีเหลือเศษยิบย่อยที่ไม่มี Inverter ตัวไหนลง (เช่นเหลือ 100W แต่ Inverter เล็กสุด 3kW)
-      // ต้อง Break เพื่อกัน Infinite Loop (ในทางปฏิบัติ อาจจะต้องปัดขึ้นหรือแจ้งเตือน)
+      // ถ้าไม่ลงตัว (เศษเหลือ) ให้แจ้งเตือน หรือหยุด loop
+      // ในเคส 199kW ถ้าไม่มี Inverter ที่รวมกันได้ 199kW เป๊ะๆ อาจจะเหลือเศษ
+      // แนะนำ: ถ้าเหลือเศษเล็กน้อย ให้หยุด (Break)
       break;
     }
   }
 
-  // แปลง Map กลับเป็น Array
   greedySelection.forEach((value) => {
     results.push({ product: value.product, quantity: value.qty });
   });
@@ -96,21 +101,22 @@ export const selectInverters = (
 // 2. Logic เลือก Accessories (Zero Export / Smart Logger)
 // ==========================================
 export const selectInverterAccessories = (
-  accessoryProducts: Product[], // สินค้าในหมวด inverter หรือ zero_export_smart_logger
+  accessoryProducts: Product[],
   inverterCount: number,
   projectPhase: string
 ): LineItemResult | null => {
-  // Case A: Inverter มากกว่า 1 ตัว -> Smart Logger
+  // Case A: Inverter มากกว่า 1 ตัว -> Smart Logger 1 ตัว
   if (inverterCount > 1) {
-    // เงื่อนไข: min_kw เท่ากับ 2
+    // เงื่อนไข: min_kw เท่ากับ 2 (ซึ่งคือ Smart Logger ตาม Database คุณ)
     const logger = accessoryProducts.find((p) => p.min_kw === 2);
-    if (logger) return { product: logger, quantity: 1 };
+    if (logger) {
+      return { product: logger, quantity: 1 }; // ✅ บังคับเป็น 1 ตัวเสมอ
+    }
   }
 
-  // Case B: Inverter 1 ตัว -> Zero Export
+  // Case B: Inverter 1 ตัว -> Zero Export 1 ตัว
   else {
     if (projectPhase === "single_phase") {
-      // เงื่อนไข: 1 Phase, min_kw เป็น 0 หรือ null
       const zero1P = accessoryProducts.find(
         (p) =>
           (p.min_kw === 0 || p.min_kw === null) &&
@@ -118,7 +124,6 @@ export const selectInverterAccessories = (
       );
       if (zero1P) return { product: zero1P, quantity: 1 };
     } else {
-      // เงื่อนไข: 3 Phase, min_kw เป็น 0 หรือ null
       const zero3P = accessoryProducts.find(
         (p) =>
           (p.min_kw === 0 || p.min_kw === null) &&
