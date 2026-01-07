@@ -19,6 +19,8 @@ import { calculateSystemSpecs } from "@/utils/kwpcalculations";
 import { useAutoGenerateLineItems } from "@/hooks/useAutoGenerateLineItems";
 import { useAutoGenerateAdditionalItems } from "@/hooks/useAutoGenerateAdditionalItems";
 import { useCalculatePricing } from "@/hooks/useCalculatePricing";
+import { generateQuotationExcel } from "@/utils/ExportExcel";
+import { bahttext } from "bahttext";
 
 // Helper function: จัดรูปแบบชื่อ Brand ให้สวยงาม (ตัวพิมพ์ใหญ่)
 const formatBrandName = (brand: string) => {
@@ -416,9 +418,137 @@ const CreateQuotation = () => {
 
   const handleExportPDF = () =>
     toast({ title: "บันทึก PDF", description: "Coming soon..." });
-  const handleExportExcel = () =>
-    toast({ title: "บันทึก EXCEL", description: "Coming soon..." });
 
+  const handleExportExcel = async () => {
+    // 1. ตรวจสอบว่ามี ID ใบเสนอราคาหรือยัง
+    if (!currentQuotationId) {
+      toast({
+        title: "ไม่พบข้อมูล",
+        description: "กรุณาบันทึกใบเสนอราคาก่อนดาวน์โหลด",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      // 2. ดึงข้อมูลสินค้า (Line Items) ล่าสุดจาก Database
+      const { data: lineItems, error } = await supabase
+        .from("product_line_items")
+        .select(`*, products(*)`)
+        .eq("quotation_id", currentQuotationId)
+        .order("id", { ascending: true }); // เรียงตาม ID หรือจะเรียงตาม created_at ก็ได้
+
+      if (error) throw error;
+
+      if (!lineItems || lineItems.length === 0) {
+        toast({
+          title: "ไม่พบรายการสินค้า",
+          description: "กรุณากด 'คำนวณราคา' หรือสร้างรายการสินค้าก่อน",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // 3. จัดรูปแบบข้อมูลให้ตรงกับที่ ExportExcel ต้องการ
+      const formattedItems = lineItems.map((item, index) => {
+        const product = item.products;
+        const category = product?.product_category || ("" as string);
+
+        // --- LOGIC การแบ่งหมวด A / B ---
+        // หมวด B (Project Management/Labor) ได้แก่: operation, service, electrical_management
+        // หมวด A (Main Equipment) ได้แก่: solar_panel, inverter, structure, cable, accessories อื่นๆ
+        const isSectionB =
+          category === "operation" ||
+          category === "service" ||
+          category === "electrical_management";
+
+        const qty = item.quantity || 0;
+        const matPrice = item.product_price || 0; // ราคาต่อหน่วย (ของ)
+        const labPrice = item.installation_price || 0; // ราคาต่อหน่วย (แรง)
+
+        return {
+          id: item.id,
+          no: index + 1, // เลขลำดับเดี๋ยวจะถูกรันใหม่ใน Excel
+          name: product?.name || "Unknown Item",
+          brand: product?.brand || "-",
+          qty: qty,
+          unit: product?.unit || "Unit",
+
+          // Material (ค่าของ)
+          matUnitPrice: matPrice,
+          matTotal: matPrice * qty,
+
+          // Labor (ค่าแรง)
+          labUnitPrice: labPrice,
+          labTotal: labPrice * qty,
+
+          // Grand Total ของแถวนี้
+          totalPrice: (matPrice + labPrice) * qty,
+
+          // ระบุหมวด A หรือ B
+          category: isSectionB ? "B" : "A",
+        };
+      });
+
+      // 4. เตรียมข้อมูลส่วนหัวและท้าย (Header/Footer)
+      // คุณสามารถดึง Terms มาจาก Database จริงๆ ได้ ถ้ามีการบันทึกไว้
+      const exportData = {
+        customerName: formData.customerName || "-",
+        customerAddress: formData.installLocation || "-",
+        // customerTaxId: "...", // ถ้ามี input รับเลขภาษี เพิ่มตรงนี้ได้
+
+        projectName: `ระบบโซลาร์เซลล์ ${formData.projectSize || 0} kWp (${
+          formData.electricalPhase === "three_phase" ? "3 Phase" : "1 Phase"
+        })`,
+        maxPower: `${formData.projectSize || 0} kWp`,
+        inverterBrand: formData.brand || "-",
+
+        date: new Date().toLocaleDateString("th-TH", {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        }),
+        docNumber: formData.documentNumber || "DRAFT",
+
+        items: formattedItems as any, // Cast any เพื่อเลี่ยง Type error เล็กน้อยหาก Interface ไม่ตรงเป๊ะ
+
+        // ข้อมูลส่วนท้าย (Hardcode ไว้ก่อน หรือดึงจาก Sale Package ถ้ามีเก็บไว้)
+        paymentTerms: [
+          "มัดจำ 30% ณ วันอนุมัติสั่งซื้อ",
+          "ชำระ 50% เมื่ออุปกรณ์หลัก (แผง/อินเวอร์เตอร์) ถึงหน้างาน",
+          "ชำระ 20% เมื่อติดตั้งแล้วเสร็จพร้อมส่งมอบงาน",
+        ],
+        warrantyTerms: [
+          "รับประกันผลงานการติดตั้ง 2 ปี",
+          "รับประกันอินเวอร์เตอร์ตามเงื่อนไขผู้ผลิต (5-10 ปี)",
+          "รับประกันแผงโซลาร์เซลล์ตามเงื่อนไขผู้ผลิต (Product 12 ปี / Power 25-30 ปี)",
+        ],
+        remarks: "กำหนดยืนราคา 30 วัน นับจากวันที่เสนอราคา",
+
+        discount: 0, // ยังไม่มีระบบส่วนลด ใส่ 0 ไปก่อน
+        vatRate: 0.07, // VAT 7%
+      };
+
+      // 5. เรียกฟังก์ชันสร้าง Excel
+      await generateQuotationExcel(exportData);
+
+      toast({
+        title: "ดาวน์โหลดสำเร็จ",
+        description: "สร้างไฟล์ Excel เรียบร้อยแล้ว",
+      });
+    } catch (error) {
+      console.error("Export Excel Error:", error);
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: "ไม่สามารถสร้างไฟล์ Excel ได้",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
   if (isLoadingData) {
     return (
       <div className="min-h-screen bg-muted/30 p-6 flex items-center justify-center">
