@@ -3,6 +3,73 @@ import path from "path";
 import fs from "fs";
 
 // ==========================================
+// 0. HELPER FUNCTION: BAHTTEXT
+// ==========================================
+const getBahtText = (num: number): string => {
+  if (!num) return "ศูนย์บาทถ้วน";
+  num = Number(num);
+  const suffix = "บาท";
+  const satangSuffix = "สตางค์";
+  const fullSuffix = "ถ้วน";
+  const textNum = [
+    "ศูนย์",
+    "หนึ่ง",
+    "สอง",
+    "สาม",
+    "สี่",
+    "ห้า",
+    "หก",
+    "เจ็ด",
+    "แปด",
+    "เก้า",
+  ];
+  const textScale = ["", "สิบ", "ร้อย", "พัน", "หมื่น", "แสน", "ล้าน"];
+
+  const splitNum = String(num.toFixed(2)).split(".");
+  let baht = splitNum[0];
+  let satang = splitNum[1];
+
+  const convert = (numberStr: string) => {
+    let res = "";
+    const len = numberStr.length;
+    for (let i = 0; i < len; i++) {
+      const digit = Number(numberStr[i]);
+      if (digit !== 0) {
+        const scaleIdx = len - i - 1;
+        if (digit === 1 && scaleIdx === 0 && len > 1) {
+          res += "เอ็ด";
+        } else if (digit === 1 && scaleIdx === 1) {
+          res += "";
+        } else if (digit === 2 && scaleIdx === 1) {
+          res += "ยี่";
+        } else {
+          res += textNum[digit];
+        }
+        if (scaleIdx === 1 && digit === 1) res += "สิบ";
+        else res += textScale[scaleIdx];
+      }
+    }
+    return res;
+  };
+
+  let bahtText = "";
+  if (baht.length > 6) {
+    const overMillion = baht.substring(0, baht.length - 6);
+    const underMillion = baht.substring(baht.length - 6);
+    bahtText = convert(overMillion) + "ล้าน" + convert(underMillion);
+  } else {
+    bahtText = convert(baht);
+  }
+  bahtText += suffix;
+  if (Number(satang) === 0) {
+    bahtText += fullSuffix;
+  } else {
+    bahtText += convert(satang) + satangSuffix;
+  }
+  return bahtText;
+};
+
+// ==========================================
 // 1. MOCK DATA
 // ==========================================
 const mockData = {
@@ -231,18 +298,15 @@ async function run() {
   console.log("⏳ กำลังสร้างไฟล์ Excel...");
 
   const workbook = new ExcelJS.Workbook();
-  // ✅ 1. ตั้งค่าความสูงแถวเริ่มต้น และ Font พื้นฐาน
   const worksheet = workbook.addWorksheet("Quotation", {
     properties: { defaultRowHeight: 24.5 },
   });
 
-  // กำหนด Font มาตรฐาน Kanit Light
-  const defaultFont = { name: "Kanit Light", size: 10 };
+  const defaultFont = { name: "Kanit Light", size: 9 };
 
   // ==========================================
   // 2. SETUP COLUMNS
   // ==========================================
-  // เพิ่ม style: { font: defaultFont } ในทุก column
   worksheet.columns = [
     { key: "no", width: 5, style: { font: defaultFont } },
     { key: "name", width: 50, style: { font: defaultFont } },
@@ -260,35 +324,31 @@ async function run() {
   // ==========================================
   // 3. HEADER SECTION
   // ==========================================
-
-  // Company Name
-  worksheet.mergeCells("C1:H2");
+  worksheet.mergeCells("C1:H3");
   const companynameCell = worksheet.getCell("C1");
   companynameCell.value = `บริษัท โพนิซ จำกัด (สำนักงานใหญ่)`;
   companynameCell.alignment = {
-    vertical: "middle",
+    vertical: "bottom",
     horizontal: "center",
     wrapText: true,
   };
   companynameCell.font = { name: "Kanit Light", size: 16, bold: true };
 
-  // Company Info
-  worksheet.mergeCells("C3:H7");
-  const companyinfoCell = worksheet.getCell("C3");
+  worksheet.mergeCells("C4:H10");
+  const companyinfoCell = worksheet.getCell("C4");
   companyinfoCell.value = `ที่อยู่ 612 ถนนช้างเผือก ตำบลในเมือง อำเภอเมือง\nจังหวัดนครราชสีมา 30000\nTel : 082-4360444, 063-1411454\nเลขประจำตัวผู้เสียภาษี: 0-3055-60003-13-9`;
   companyinfoCell.alignment = {
-    vertical: "top",
+    vertical: "middle",
     horizontal: "center",
     wrapText: true,
   };
   companyinfoCell.font = { name: "Kanit Light", size: 12 };
 
-  // Right Header Box
-  worksheet.mergeCells("I1:K7");
+  worksheet.mergeCells("I1:K10");
   const titleCell = worksheet.getCell("I1");
   titleCell.value = "ใบเสนอราคา\nQUOTATION";
   titleCell.alignment = {
-    vertical: "top",
+    vertical: "middle",
     horizontal: "center",
     wrapText: true,
   };
@@ -305,9 +365,8 @@ async function run() {
     right: { style: "thin" },
   };
 
-  // Customer Info (Left)
-  worksheet.mergeCells("A8:H15");
-  const customerCell = worksheet.getCell("A8");
+  worksheet.mergeCells("A11:H20");
+  const customerCell = worksheet.getCell("A11");
   customerCell.value = `\n ชื่อลูกค้า/เบอร์โทร : ${mockData.customerName}\n\n ที่อยู่ : ${mockData.customerAddress}\n\n เลขประจำตัวผู้เสียภาษี : ${mockData.customerID}`;
   customerCell.alignment = {
     vertical: "top",
@@ -322,16 +381,15 @@ async function run() {
     right: { style: "thin" },
   };
 
-  // Project Info (Right)
-  worksheet.mergeCells("I8:K15");
-  const projectinfoCell = worksheet.getCell("I8");
-  projectinfoCell.value = `โปรเจค : ${mockData.projectName} \n      ${mockData.maxPower} \n      INVERTER : ${mockData.inverterBrand} \n\n วันที่ : ${mockData.date} \n \n เลขที่เอกสาร : ${mockData.docNumber}`;
+  worksheet.mergeCells("I11:K20");
+  const projectinfoCell = worksheet.getCell("I11");
+  projectinfoCell.value = `โปรเจค : ${mockData.projectName} \n          ${mockData.maxPower} \n          INVERTER : ${mockData.inverterBrand} \n\n วันที่ : ${mockData.date} \n \n เลขที่เอกสาร : ${mockData.docNumber}`;
   projectinfoCell.alignment = {
-    vertical: "top",
+    vertical: "middle",
     horizontal: "left",
     wrapText: true,
   };
-  projectinfoCell.font = { name: "Kanit Light", size: 8 };
+  projectinfoCell.font = { name: "Kanit Light", size: 9.5 };
   projectinfoCell.border = {
     top: { style: "thin" },
     left: { style: "thin" },
@@ -340,19 +398,11 @@ async function run() {
   };
 
   // ==========================================
-  // 4. TABLE HEADER (Green Area)
+  // 4. TABLE HEADER
   // ==========================================
-
-  // ✅ ประกาศตัวแปรบรรทัดตรงนี้ให้ชัดเจน
-  const greenBarRow = 16;
-  const hRow1 = 17; // Material / Labor
-  const hRow2 = 18; // Main Headers
-  const hRow3 = 19; // Sub Headers
-
-  // 4.1 Green Bar
-  worksheet.mergeCells(`A${greenBarRow}:K${greenBarRow}`);
-  const greenBar = worksheet.getCell(`A${greenBarRow}`);
-  greenBar.value = ""; // ต้องมีค่าว่างไม่งั้นบางที merge ไม่ติด
+  worksheet.mergeCells(`A21:K22`);
+  const greenBar = worksheet.getCell(`A21`);
+  greenBar.value = "";
   greenBar.fill = {
     type: "pattern",
     pattern: "solid",
@@ -365,161 +415,106 @@ async function run() {
     right: { style: "thin" },
   };
 
-  // 4.2 Top Headers (Row 17)
-  worksheet.getCell(`G${hRow1}`).value = "Material";
-  worksheet.mergeCells(`G${hRow1}:H${hRow1}`);
-  worksheet.getCell(`I${hRow1}`).value = "Labor";
-  worksheet.mergeCells(`I${hRow1}:J${hRow1}`);
-  worksheet.getCell(`K${hRow1}`).value = "Total";
-  worksheet.mergeCells(`K${hRow1}:K${hRow3}`);
+  const hTopStart = 23;
+  const hTopEnd = 24;
+  const hMiddle = 25;
+  const hSubStart = 26;
+  const hSubEnd = 27;
+  const hMain = hTopStart;
 
-  // 4.3 Main Headers (Row 18)
-  worksheet.getCell(`A${hRow1}`).value = "Main Equipment";
-  worksheet.mergeCells(`A${hRow1}:C${hRow3}`);
-  worksheet.getCell(`D${hRow1}`).value = "Brand";
-  worksheet.mergeCells(`D${hRow1}:D${hRow3}`);
-  worksheet.getCell(`E${hRow1}`).value = "Q'ty";
-  worksheet.mergeCells(`E${hRow1}:E${hRow3}`);
-  worksheet.getCell(`F${hRow1}`).value = "Unit";
-  worksheet.mergeCells(`F${hRow1}:F${hRow3}`);
-  worksheet.getCell(`G${hRow2}`).value = "Scope of Work";
-  worksheet.mergeCells(`G${hRow2}:H${hRow2}`);
-  worksheet.getCell(`I${hRow2}`).value = "Scope of Supply";
-  worksheet.mergeCells(`I${hRow2}:J${hRow2}`);
+  worksheet.getCell(`A${hMain}`).value = "Main Equipment";
+  worksheet.mergeCells(`A${hMain}:C${hSubEnd}`);
+  worksheet.getCell(`D${hMain}`).value = "Brand";
+  worksheet.mergeCells(`D${hMain}:D${hSubEnd}`);
+  worksheet.getCell(`E${hMain}`).value = "Q'ty";
+  worksheet.mergeCells(`E${hMain}:E${hSubEnd}`);
+  worksheet.getCell(`F${hMain}`).value = "Unit";
+  worksheet.mergeCells(`F${hMain}:F${hSubEnd}`);
+  worksheet.getCell(`K${hTopStart}`).value = "Total";
+  worksheet.mergeCells(`K${hTopStart}:K${hSubEnd}`);
 
-  const headerCells2 = [
-    // Row 17
-    `G${hRow1}`,
-    `I${hRow1}`,
-    `K${hRow1}`,
-    // Row 18
-    `B${hRow2}`,
-    `D${hRow2}`,
-    `E${hRow2}`,
-    `F${hRow2}`,
-    `G${hRow2}`,
-    `I${hRow2}`,
-    // Row 19
-    `G${hRow3}`,
-    `H${hRow3}`,
-    `I${hRow3}`,
-    `J${hRow3}`,
-  ];
+  worksheet.getCell(`G${hTopStart}`).value = "Material";
+  worksheet.mergeCells(`G${hTopStart}:H${hTopEnd}`);
+  worksheet.getCell(`I${hTopStart}`).value = "Labor";
+  worksheet.mergeCells(`I${hTopStart}:J${hTopEnd}`);
 
-  // Style กลาง (Font + Alignment) แต่ไม่รวม Border/Fill
-  const baseHeaderStyle = {
+  worksheet.getCell(`G${hMiddle}`).value = "Scope of Work";
+  worksheet.mergeCells(`G${hMiddle}:H${hMiddle}`);
+  worksheet.getCell(`I${hMiddle}`).value = "Scope of Supply";
+  worksheet.mergeCells(`I${hMiddle}:J${hMiddle}`);
+
+  worksheet.getCell(`G${hSubStart}`).value = "PONIX";
+  worksheet.mergeCells(`G${hSubStart}:G${hSubEnd}`);
+  worksheet.getCell(`H${hSubStart}`).value = "Cost";
+  worksheet.mergeCells(`H${hSubStart}:H${hSubEnd}`);
+  worksheet.getCell(`I${hSubStart}`).value = "PONIX";
+  worksheet.mergeCells(`I${hSubStart}:I${hSubEnd}`);
+  worksheet.getCell(`J${hSubStart}`).value = "Cost";
+  worksheet.mergeCells(`J${hSubStart}:J${hSubEnd}`);
+
+  const headerCenterStyle = {
     alignment: { vertical: "middle", horizontal: "center", wrapText: true },
-    font: { bold: true, name: "Kanit Light", size: 9 },
+    font: { name: "Kanit Light", size: 10 },
   };
-  headerCells2.forEach((ref) => {
-    const cell = worksheet.getCell(ref);
-
-    // 1. ใส่ Font และ Alignment
-    // @ts-ignore
-    cell.alignment = baseHeaderStyle.alignment;
-    // @ts-ignore
-    cell.font = baseHeaderStyle.font;
-
-    // 3. ใส่ Border (มีเงื่อนไข)
-    // ถ้าไม่ใช่ Column C ให้ตีเส้นขอบ
-    if (!ref.startsWith("C")) {
-      cell.border = {
-        top: { style: "thin" },
-        left: { style: "thin" },
-        bottom: { style: "thin" },
-        right: { style: "thin" },
-      };
-    } else {
-      // ✅ Column C ไม่ต้องมี Border
-      cell.border = undefined as any;
-    }
-  });
-
-  // เพิ่มเติม: ตีเส้นขอบให้ Column A ที่ว่างอยู่ด้วย (Row 17-19) เพื่อให้ตารางดูไม่แหว่งด้านซ้าย
-  // (แต่ถ้าต้องการให้โล่งตาม Column C ก็ลบส่วนนี้ทิ้งได้ครับ)
-  [`A${hRow1}`, `A${hRow2}`, `A${hRow3}`].forEach((ref) => {
-    const cell = worksheet.getCell(ref);
-    cell.border = {
-      top: { style: "thin" },
-      left: { style: "thin" },
-      bottom: { style: "thin" },
-      right: { style: "thin" },
-    };
-  });
-
-  // 4.4 Sub Headers (Row 19)
-  worksheet.getCell(`G${hRow3}`).value = "cost per unit";
-  worksheet.getCell(`H${hRow3}`).value = "total cost";
-  worksheet.getCell(`I${hRow3}`).value = "cost per unit";
-  worksheet.getCell(`J${hRow3}`).value = "total cost";
-
-  const centerStyle = {
-    alignment: { vertical: "middle", horizontal: "center", wrapText: true },
-    font: { bold: true, name: "Kanit Light", size: 11 },
-    border: {
-      top: { style: "thin" },
-      left: { style: "thin" },
-      bottom: { style: "thin" },
-      right: { style: "thin" },
-    },
-  };
-
   const headerCells = [
-    `G${hRow1}`,
-    `I${hRow1}`,
-    `K${hRow1}`,
-    `B${hRow2}`,
-    `C${hRow2}`,
-    `D${hRow2}`,
-    `E${hRow2}`,
-    `F${hRow2}`,
-    `G${hRow2}`,
-    `I${hRow2}`,
-    `G${hRow3}`,
-    `H${hRow3}`,
-    `I${hRow3}`,
-    `J${hRow3}`,
+    `A${hMain}`,
+    `D${hMain}`,
+    `E${hMain}`,
+    `F${hMain}`,
+    `G${hTopStart}`,
+    `I${hTopStart}`,
+    `K${hTopStart}`,
+    `G${hMiddle}`,
+    `I${hMiddle}`,
+    `G${hSubStart}`,
+    `H${hSubStart}`,
+    `I${hSubStart}`,
+    `J${hSubStart}`,
   ];
-
   headerCells.forEach((ref) => {
     const cell = worksheet.getCell(ref);
     // @ts-ignore
-    cell.alignment = centerStyle.alignment;
+    cell.alignment = headerCenterStyle.alignment;
     // @ts-ignore
-    cell.font = centerStyle.font;
-    // @ts-ignore
-    cell.border = centerStyle.border;
+    cell.font = headerCenterStyle.font;
   });
 
-  // Style Empty A column
-  [`A${hRow1}`, `A${hRow2}`, `A${hRow3}`].forEach((ref) => {
-    const cell = worksheet.getCell(ref);
-    // @ts-ignore
-    cell.border = centerStyle.border;
-  });
+  for (let r = hTopStart; r <= hSubEnd; r++) {
+    for (let c = 1; c <= 11; c++) {
+      const cell = worksheet.getCell(r, c);
+      if (!cell.address.startsWith("C")) {
+        cell.border = {
+          top: { style: "thin" },
+          left: { style: "thin" },
+          bottom: { style: "thin" },
+          right: { style: "thin" },
+        };
+      }
+    }
+  }
+
   // ==========================================
   // 5. DATA ROWS
   // ==========================================
-  let currentRow = 20; // เริ่มที่ 20 ต่อจาก Header
+  let currentRow = 28;
 
-  // --- Helper Function: สร้างแถบหัวข้อ Section (Header) ---
-  // เพิ่ม mergeEndCol เพื่อระบุจุดสิ้นสุดการ Merge (C หรือ D)
   const createSectionHeader = (
     rowNum: number,
     sectionLetter: string,
     title: string,
     mergeEndCol: string
   ) => {
-    // 1. ช่อง A (Letter) -> ถมสีเทา
+    const nextRow = rowNum + 1;
     const cellA = worksheet.getCell(`A${rowNum}`);
+    worksheet.mergeCells(`A${rowNum}:A${nextRow}`);
     cellA.value = sectionLetter;
     cellA.font = { bold: true, name: "Kanit Light", size: 10 };
-    cellA.alignment = { horizontal: "center" };
+    cellA.alignment = { horizontal: "center", vertical: "middle" };
     cellA.fill = {
       type: "pattern",
       pattern: "solid",
       fgColor: { argb: "FFBFBFBF" },
-    }; // ✅ สีเทา
+    };
     cellA.border = {
       top: { style: "thin" },
       bottom: { style: "thin" },
@@ -527,13 +522,11 @@ async function run() {
       right: { style: "thin" },
     };
 
-    // 2. ช่อง B (Title) -> Merge ถึง col ที่กำหนด และ **ไม่ถมสี (ขาว)**
-    worksheet.mergeCells(`B${rowNum}:${mergeEndCol}${rowNum}`);
+    worksheet.mergeCells(`B${rowNum}:${mergeEndCol}${nextRow}`);
     const cellB = worksheet.getCell(`B${rowNum}`);
     cellB.value = title;
     cellB.font = { bold: true, name: "Kanit Light", size: 10 };
-    cellB.alignment = { horizontal: "left" };
-    // ❌ ไม่ใส่ fill (ปล่อยขาว)
+    cellB.alignment = { horizontal: "left", vertical: "middle" };
     cellB.border = {
       top: { style: "thin" },
       bottom: { style: "thin" },
@@ -541,12 +534,9 @@ async function run() {
       right: { style: "thin" },
     };
 
-    // 3. ช่องอื่นๆ ตีเส้นกรอบให้ครบ (แต่ไม่ถมสี)
-    // วนลูปตั้งแต่ D ถึง K
     ["D", "E", "F", "G", "H", "I", "J", "K"].forEach((col) => {
-      // ถ้า column นั้นถูก merge ไปแล้ว ให้ข้าม (เช่น ถ้า merge ถึง D, ช่อง D จะถูกจัดการโดยข้อ 2 ไปแล้ว)
       if (col <= mergeEndCol) return;
-
+      worksheet.mergeCells(`${col}${rowNum}:${col}${nextRow}`);
       const cell = worksheet.getCell(`${col}${rowNum}`);
       cell.border = {
         top: { style: "thin" },
@@ -557,68 +547,78 @@ async function run() {
     });
   };
 
-  // ---------------------------------------------------------
-  // สร้าง Header Section A (Merge B:C)
-  // ---------------------------------------------------------
+  // ✅ Helper Check Zero (ถ้า 0 ให้เป็นค่าว่าง)
+  const formatZero = (num: number) => (num === 0 ? "" : num);
+
   const sectionATitle = `ระบบโซลาร์ ${mockData.maxPower
     .replace("กำลังไฟสูงสุด ( ", "")
     .replace(" )", "")}`;
-  // ส่ง "C" ไปเพื่อบอกว่าให้ Merge B ถึง C
   createSectionHeader(currentRow, "A", sectionATitle, "C");
-  currentRow++;
+  currentRow += 2;
 
-  // --- Data Loop (Section A) ---
-  // เงื่อนไข: Merge Column B:C
   let sumA = 0;
   mockData.items
     .filter((i) => i.category === "A")
     .forEach((item) => {
+      const nextRow = currentRow + 1;
       const row = worksheet.getRow(currentRow);
 
+      // ✅ Apply formatZero to Qty and Amounts
       row.values = [
         item.no,
         item.name,
-        "", // C (ถูก Merge)
-        item.brand, // D (มีข้อมูล)
-        item.qty,
+        "",
+        item.brand,
+        formatZero(item.qty),
         item.unit,
-        item.matUnit,
-        item.matTotal,
-        item.labUnit,
-        item.labTotal,
-        item.total,
+        formatZero(item.matUnit),
+        formatZero(item.matTotal),
+        formatZero(item.labUnit),
+        formatZero(item.labTotal),
+        formatZero(item.total),
       ];
 
-      // ✅ Merge B:C
-      worksheet.mergeCells(`B${currentRow}:C${currentRow}`);
+      worksheet.mergeCells(`A${currentRow}:A${nextRow}`);
+      worksheet.mergeCells(`B${currentRow}:C${nextRow}`);
+      worksheet.mergeCells(`D${currentRow}:D${nextRow}`);
+      ["E", "F", "G", "H", "I", "J", "K"].forEach((col) => {
+        worksheet.mergeCells(`${col}${currentRow}:${col}${nextRow}`);
+      });
 
-      // Format Numbers
-      [7, 8, 9, 10, 11].forEach((c) => (row.getCell(c).numFmt = "#,##0.00"));
+      // ✅ เพิ่ม column 5 (Qty) เข้าไปใน List การ Format
+      [5, 7, 8, 9, 10, 11].forEach((c) => (row.getCell(c).numFmt = "#,##0.00"));
 
-      // ตีเส้นขอบ (Loop ทุกช่อง)
-      for (let c = 1; c <= 11; c++) {
-        if (c === 3) continue; // ข้าม C เพราะถูก Merge
-        row.getCell(c).border = {
-          left: { style: "thin" },
-          right: { style: "thin" },
-          bottom: { style: "thin" },
-        };
+      for (let r = currentRow; r <= nextRow; r++) {
+        const rRow = worksheet.getRow(r);
+        for (let c = 1; c <= 11; c++) {
+          if (c === 3) continue;
+          rRow.getCell(c).border = {
+            left: { style: "thin" },
+            right: { style: "thin" },
+            bottom: { style: "thin" },
+          };
+        }
       }
-
-      // จัดกึ่งกลาง
-      [1, 4, 5, 6].forEach(
-        (c) => (row.getCell(c).alignment = { horizontal: "center" })
-      );
-
+      [1, 4, 5, 6].forEach((c) => {
+        worksheet.getCell(currentRow, c).alignment = {
+          horizontal: "center",
+          vertical: "middle",
+        };
+      });
+      worksheet.getCell(`B${currentRow}`).alignment = {
+        horizontal: "left",
+        vertical: "middle",
+        wrapText: true,
+      };
       sumA += item.total;
-      currentRow++;
+      currentRow += 2;
     });
 
-  // SUM A Row
-  worksheet.mergeCells(`A${currentRow}:J${currentRow}`);
+  const sumANextRow = currentRow + 1;
+  worksheet.mergeCells(`A${currentRow}:J${sumANextRow}`);
   const sumACell = worksheet.getCell(`A${currentRow}`);
   sumACell.value = "SUM A";
-  sumACell.alignment = { horizontal: "center" };
+  sumACell.alignment = { horizontal: "center", vertical: "middle" };
   sumACell.font = { bold: true, name: "Kanit Light", size: 10 };
   sumACell.fill = {
     type: "pattern",
@@ -631,10 +631,11 @@ async function run() {
     left: { style: "thin" },
     right: { style: "thin" },
   };
-
+  worksheet.mergeCells(`K${currentRow}:K${sumANextRow}`);
   const sumATotalCell = worksheet.getCell(`K${currentRow}`);
   sumATotalCell.value = sumA;
   sumATotalCell.numFmt = "#,##0.00";
+  sumATotalCell.alignment = { horizontal: "right", vertical: "middle" };
   sumATotalCell.fill = {
     type: "pattern",
     pattern: "solid",
@@ -646,67 +647,73 @@ async function run() {
     left: { style: "thin" },
     right: { style: "thin" },
   };
-  currentRow++;
+  currentRow += 2;
 
-  // ---------------------------------------------------------
-  // สร้าง Header Section B (Merge B:D)
-  // ---------------------------------------------------------
-  // ส่ง "D" ไปเพื่อบอกว่าให้ Merge B ถึง D ✅
   createSectionHeader(currentRow, "B", "Project Management", "D");
-  currentRow++;
+  currentRow += 2;
 
-  // --- Data Loop (Section B) ---
-  // เงื่อนไข: Merge Column B:D
   let sumB = 0;
   mockData.items
     .filter((i) => i.category === "B")
     .forEach((item) => {
+      const nextRow = currentRow + 1;
       const row = worksheet.getRow(currentRow);
 
+      // ✅ Apply formatZero here as well
       row.values = [
         item.no,
         item.name,
-        "", // C (ถูก Merge)
-        "", // D (ถูก Merge)
-        item.qty,
+        "",
+        "",
+        formatZero(item.qty),
         item.unit,
-        item.matUnit,
-        item.matTotal,
-        item.labUnit,
-        item.labTotal,
-        item.total,
+        formatZero(item.matUnit),
+        formatZero(item.matTotal),
+        formatZero(item.labUnit),
+        formatZero(item.labTotal),
+        formatZero(item.total),
       ];
 
-      // ✅ Merge B:D
-      worksheet.mergeCells(`B${currentRow}:D${currentRow}`);
+      worksheet.mergeCells(`A${currentRow}:A${nextRow}`);
+      worksheet.mergeCells(`B${currentRow}:D${nextRow}`);
+      ["E", "F", "G", "H", "I", "J", "K"].forEach((col) => {
+        worksheet.mergeCells(`${col}${currentRow}:${col}${nextRow}`);
+      });
 
-      // Format Numbers
-      [7, 8, 9, 10, 11].forEach((c) => (row.getCell(c).numFmt = "#,##0.00"));
+      // ✅ เพิ่ม column 5 (Qty)
+      [5, 7, 8, 9, 10, 11].forEach((c) => (row.getCell(c).numFmt = "#,##0.00"));
 
-      // ตีเส้นขอบ
-      for (let c = 1; c <= 11; c++) {
-        if (c === 3 || c === 4) continue; // ข้าม C และ D เพราะถูก Merge
-        row.getCell(c).border = {
-          left: { style: "thin" },
-          right: { style: "thin" },
-          bottom: { style: "thin" },
-        };
+      for (let r = currentRow; r <= nextRow; r++) {
+        const rRow = worksheet.getRow(r);
+        for (let c = 1; c <= 11; c++) {
+          if (c === 3 || c === 4) continue;
+          rRow.getCell(c).border = {
+            left: { style: "thin" },
+            right: { style: "thin" },
+            bottom: { style: "thin" },
+          };
+        }
       }
-
-      // จัดกึ่งกลาง
-      [1, 5, 6].forEach(
-        (c) => (row.getCell(c).alignment = { horizontal: "center" })
-      );
-
+      [1, 5, 6].forEach((c) => {
+        worksheet.getCell(currentRow, c).alignment = {
+          horizontal: "center",
+          vertical: "middle",
+        };
+      });
+      worksheet.getCell(`B${currentRow}`).alignment = {
+        horizontal: "left",
+        vertical: "middle",
+        wrapText: true,
+      };
       sumB += item.total;
-      currentRow++;
+      currentRow += 2;
     });
 
-  // SUM B Row
-  worksheet.mergeCells(`A${currentRow}:J${currentRow}`);
+  const sumBNextRow = currentRow + 1;
+  worksheet.mergeCells(`A${currentRow}:J${sumBNextRow}`);
   const sumBCell = worksheet.getCell(`A${currentRow}`);
   sumBCell.value = "SUM B";
-  sumBCell.alignment = { horizontal: "center" };
+  sumBCell.alignment = { horizontal: "center", vertical: "middle" };
   sumBCell.font = { bold: true, name: "Kanit Light", size: 10 };
   sumBCell.fill = {
     type: "pattern",
@@ -719,10 +726,11 @@ async function run() {
     left: { style: "thin" },
     right: { style: "thin" },
   };
-
+  worksheet.mergeCells(`K${currentRow}:K${sumBNextRow}`);
   const sumBTotalCell = worksheet.getCell(`K${currentRow}`);
   sumBTotalCell.value = sumB;
   sumBTotalCell.numFmt = "#,##0.00";
+  sumBTotalCell.alignment = { horizontal: "right", vertical: "middle" };
   sumBTotalCell.fill = {
     type: "pattern",
     pattern: "solid",
@@ -734,148 +742,205 @@ async function run() {
     left: { style: "thin" },
     right: { style: "thin" },
   };
-  currentRow++;
+  currentRow += 2;
+
   // ==========================================
   // 6. FOOTER
   // ==========================================
   const footerStart = currentRow;
+  const footerEndRow = footerStart + 9;
+
+  worksheet.mergeCells(`A${footerStart}:B${footerEndRow}`);
+  const leftTermCell = worksheet.getCell(`A${footerStart}`);
+  const leftRichText: { text: string; font: Partial<ExcelJS.Font> }[] = [
+    {
+      text: "เงื่อนไขการชำระเงิน\n",
+      font: { bold: true, name: "Kanit Light", size: 11 },
+    },
+  ];
+  mockData.paymentTerms.forEach((term, i) => {
+    leftRichText.push({
+      text: `${i + 1}. ${term}\n`,
+      font: { name: "Kanit Light", size: 11 },
+    });
+  });
+  leftRichText.push({
+    text: "หมายเหตุ\n",
+    font: { bold: true, name: "Kanit Light", size: 11 },
+  });
+  leftRichText.push({
+    text: mockData.remarks,
+    font: { name: "Kanit Light", size: 11 },
+  });
+  leftTermCell.value = { richText: leftRichText };
+  leftTermCell.alignment = {
+    vertical: "middle",
+    horizontal: "left",
+    wrapText: true,
+  };
+  leftTermCell.border = {
+    top: { style: "thin" },
+    bottom: { style: "thin" },
+    left: { style: "thin" },
+    right: { style: "thin" },
+  };
+
+  worksheet.mergeCells(`C${footerStart}:H${footerEndRow}`);
+  const midTermCell = worksheet.getCell(`C${footerStart}`);
+  const midRichText: { text: string; font: Partial<ExcelJS.Font> }[] = [
+    {
+      text: "\nเงื่อนไขการรับประกัน\n",
+      font: { bold: true, name: "Kanit Light", size: 11 },
+    },
+  ];
+  mockData.warrantyTerms.forEach((term, i) => {
+    midRichText.push({
+      text: `${i + 1}. ${term}\n`,
+      font: { name: "Kanit Light", size: 10 },
+    });
+  });
+  midTermCell.value = { richText: midRichText };
+  midTermCell.alignment = {
+    vertical: "middle",
+    horizontal: "left",
+    wrapText: true,
+  };
+  midTermCell.border = {
+    top: { style: "thin" },
+    bottom: { style: "thin" },
+    left: { style: "thin" },
+    right: { style: "thin" },
+  };
+
   const totalAmount = sumA + sumB;
   const vatAmount = totalAmount * mockData.vatRate;
   const grandTotal = totalAmount + vatAmount;
 
-  // Right Totals
-  worksheet.getCell(`I${currentRow}`).value = "รวม(Total)";
-  worksheet.getCell(`K${currentRow}`).value = totalAmount;
-  currentRow++;
-  worksheet.getCell(`I${currentRow}`).value = "ส่วนลด(Discount)";
-  worksheet.getCell(`K${currentRow}`).value = mockData.discount || "-";
-  currentRow++;
-  worksheet.getCell(`I${currentRow}`).value = "รวม(Total)";
-  worksheet.getCell(`K${currentRow}`).value = totalAmount - mockData.discount;
-  currentRow++;
-  worksheet.getCell(`I${currentRow}`).value = "ภาษีมูลค่าเพิ่ม Vat7%";
-  worksheet.getCell(`K${currentRow}`).value = vatAmount;
-  currentRow++;
-  worksheet.getCell(`I${currentRow}`).value = "รวมเงินทั้งสิ้น (Grand Total)";
-  worksheet.getCell(`K${currentRow}`).value = grandTotal;
+  let r = footerStart;
+  const totals = [
+    { t: "รวม(Total)", v: totalAmount },
+    { t: "ส่วนลด(Discount)", v: mockData.discount || "-" },
+    { t: "รวม(Total)", v: totalAmount - mockData.discount },
+    { t: "ภาษีมูลค่าเพิ่ม Vat7%", v: vatAmount },
+    { t: "รวมเงินทั้งสิ้น (Grand Total)", v: grandTotal },
+  ];
 
-  // Styling Right Totals
-  for (let r = footerStart; r < currentRow; r++) {
-    worksheet.mergeCells(`I${r}:J${r}`);
-    worksheet.getCell(`I${r}`).border = {
-      left: { style: "thin" },
-      bottom: { style: "thin" },
-      top: { style: "thin" },
-      right: { style: "thin" },
-    };
-    worksheet.getCell(`I${r}`).fill = {
+  totals.forEach((item) => {
+    const nextR = r + 1;
+    worksheet.mergeCells(`I${r}:J${nextR}`);
+    const label = worksheet.getCell(`I${r}`);
+    label.value = item.t;
+    label.fill = {
       type: "pattern",
       pattern: "solid",
       fgColor: { argb: "FFBFBFBF" },
     };
-    worksheet.getCell(`I${r}`).font = {
-      name: "Kanit Light",
-      size: 10,
-      bold: true,
+    label.font = { name: "Kanit Light", size: 9, bold: false };
+    label.alignment = { vertical: "middle", horizontal: "left" };
+    label.border = {
+      left: { style: "thin" },
+      bottom: { style: "thin" },
+      top: { style: "thin" },
+      right: { style: "thin" },
     };
 
-    worksheet.getCell(`K${r}`).border = {
+    worksheet.mergeCells(`K${r}:K${nextR}`);
+    const val = worksheet.getCell(`K${r}`);
+    val.value = item.v;
+    val.numFmt = "#,##0.00";
+    val.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFBFBFBF" },
+    };
+    val.font = { name: "Kanit Light", size: 9, bold: false };
+    val.alignment = { vertical: "middle", horizontal: "right" };
+    val.border = {
       right: { style: "thin" },
       bottom: { style: "thin" },
       left: { style: "thin" },
       top: { style: "thin" },
     };
-    worksheet.getCell(`K${r}`).numFmt = "#,##0.00";
-    worksheet.getCell(`K${r}`).fill = {
-      type: "pattern",
-      pattern: "solid",
-      fgColor: { argb: "FFE2E2E2" },
-    };
-    worksheet.getCell(`K${r}`).font = { name: "Kanit Light", size: 10 };
-  }
-
-  // Left Terms
-  worksheet.getCell(`A${footerStart}`).value = "เงื่อนไขการชำระเงิน";
-  worksheet.getCell(`A${footerStart}`).font = {
-    bold: true,
-    name: "Kanit Light",
-    size: 10,
-  };
-  mockData.paymentTerms.forEach((term, i) => {
-    worksheet.getCell(`A${footerStart + 1 + i}`).value = `${i + 1}. ${term}`;
+    r += 2;
   });
 
-  worksheet.getCell(`E${footerStart}`).value = "เงื่อนไขการรับประกัน";
-  worksheet.getCell(`E${footerStart}`).font = {
-    bold: true,
-    name: "Kanit Light",
-    size: 10,
-  };
-  mockData.warrantyTerms.forEach((term, i) => {
-    worksheet.getCell(`E${footerStart + 1 + i}`).value = `${i + 1}. ${term}`;
-  });
+  currentRow = footerEndRow + 1;
 
-  const remarkRow = footerStart + 5;
-  worksheet.getCell(`A${remarkRow}`).value = "หมายเหตุ";
-  worksheet.getCell(`A${remarkRow}`).font = {
-    bold: true,
-    name: "Kanit Light",
-    size: 10,
-  };
-  worksheet.getCell(`A${remarkRow + 1}`).value = mockData.remarks;
+  // ==========================================
+  // ✅ 7. BAHT TEXT ROW
+  // ==========================================
+  const bahtTextNextRow = currentRow + 1;
+  worksheet.mergeCells(`A${currentRow}:K${bahtTextNextRow}`);
 
-  // Signatures
-  currentRow += 2;
-  // Box 1
-  worksheet.mergeCells(`B${currentRow}:D${currentRow + 4}`);
-  worksheet.getCell(`B${currentRow}`).value =
-    "ลงชื่อผู้ให้บริการ\n\n\n___________________\n\nวันที่ 13 / 5 / 2568";
-  worksheet.getCell(`B${currentRow}`).alignment = {
-    vertical: "bottom",
-    horizontal: "center",
-    wrapText: true,
-  };
-  worksheet.getCell(`B${currentRow}`).border = {
+  const bahtCell = worksheet.getCell(`A${currentRow}`);
+  const thaiBahtText = getBahtText(grandTotal);
+
+  // ✅ เอาวงเล็บ ( ) ออก ตามที่ขอ
+  bahtCell.value = `${thaiBahtText}`;
+
+  bahtCell.alignment = { vertical: "middle", horizontal: "center" };
+  bahtCell.font = { name: "Kanit Light", size: 11 };
+
+  bahtCell.border = {
     top: { style: "thin" },
     bottom: { style: "thin" },
     left: { style: "thin" },
     right: { style: "thin" },
   };
-  worksheet.getCell(`B${currentRow}`).font = { name: "Kanit Light", size: 10 };
 
-  // Box 2
-  worksheet.mergeCells(`H${currentRow}:J${currentRow + 4}`);
-  worksheet.getCell(`H${currentRow}`).value =
-    "ลงชื่อลูกค้า\n\n\n___________________\n\nวันที่ ___/___/___";
-  worksheet.getCell(`H${currentRow}`).alignment = {
-    vertical: "bottom",
+  currentRow += 2; // เพิ่ม 2 แถวของ BahtText
+
+  // ==========================================
+  // 8. SIGNATURES (No gap added, just move to next line)
+  // ==========================================
+
+  // ✅ แก้ไข: เพิ่ม +3 rows (รวมเป็น 8 แถว: +7)
+  worksheet.mergeCells(`A${currentRow}:E${currentRow + 7}`);
+  const sign1 = worksheet.getCell(`A${currentRow}`);
+  sign1.value =
+    "ลงชื่อผู้ให้บริการ\n\n___________________\nวันที่ 13 / 5 / 2568";
+  sign1.alignment = {
+    vertical: "middle",
     horizontal: "center",
     wrapText: true,
   };
-  worksheet.getCell(`H${currentRow}`).border = {
+  sign1.border = {
     top: { style: "thin" },
     bottom: { style: "thin" },
     left: { style: "thin" },
     right: { style: "thin" },
   };
-  worksheet.getCell(`H${currentRow}`).font = { name: "Kanit Light", size: 10 };
+  sign1.font = { name: "Kanit Light", size: 10 };
+
+  worksheet.mergeCells(`F${currentRow}:K${currentRow + 7}`);
+  const sign2 = worksheet.getCell(`F${currentRow}`);
+  sign2.value = "ลงชื่อลูกค้า\n\n___________________\nวันที่ ___/___/___";
+  sign2.alignment = {
+    vertical: "middle",
+    horizontal: "center",
+    wrapText: true,
+  };
+  sign2.border = {
+    top: { style: "thin" },
+    bottom: { style: "thin" },
+    left: { style: "thin" },
+    right: { style: "thin" },
+  };
+  sign2.font = { name: "Kanit Light", size: 10 };
 
   // ==========================================
-  // ✅ FINAL ROW HEIGHT CHECK (บังคับความสูงทุกแถว)
+  // FORCE ROW HEIGHT
   // ==========================================
-  worksheet.eachRow((row) => {
+  worksheet.eachRow({ includeEmpty: true }, (row) => {
     row.height = 24.5;
+    (row as any).customHeight = true;
   });
 
-  // Save File
   const outputPath = path.join(process.cwd(), "Result_Update_Layout.xlsx");
-
   try {
     await workbook.xlsx.writeFile(outputPath);
-    console.log("---------------------------------------------------");
     console.log("✅ สร้างไฟล์สำเร็จแล้ว!");
     console.log(`📂 ตำแหน่งไฟล์: ${outputPath}`);
-    console.log("---------------------------------------------------");
   } catch (error) {
     console.error("❌ เกิดข้อผิดพลาด:", error);
   }
