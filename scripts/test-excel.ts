@@ -305,6 +305,29 @@ async function run() {
   const defaultFont = { name: "Kanit Light", size: 9 };
 
   // ==========================================
+  // ✅ 1.1 LOAD IMAGES
+  // ==========================================
+  let logoId: number | null = null;
+  let signatureId: number | null = null;
+
+  try {
+    const logoBuffer = fs.readFileSync("logo.png");
+    logoId = workbook.addImage({ buffer: logoBuffer as any, extension: "png" });
+
+    const signBuffer = fs.readFileSync("signature.png");
+    signatureId = workbook.addImage({
+      buffer: signBuffer as any,
+      extension: "png",
+    });
+
+    console.log("✅ โหลดรูปภาพสำเร็จ");
+  } catch (err) {
+    console.warn(
+      "⚠️ Warning: ไม่พบไฟล์รูปภาพที่ Root Folder (logo.png หรือ signature.png)"
+    );
+  }
+
+  // ==========================================
   // 2. SETUP COLUMNS
   // ==========================================
   worksheet.columns = [
@@ -324,6 +347,13 @@ async function run() {
   // ==========================================
   // 3. HEADER SECTION
   // ==========================================
+  if (logoId !== null) {
+    worksheet.addImage(logoId, {
+      tl: { col: 0, row: 0 } as any,
+      br: { col: 2, row: 10 } as any,
+    });
+  }
+
   worksheet.mergeCells("C1:H3");
   const companynameCell = worksheet.getCell("C1");
   companynameCell.value = `บริษัท โพนิซ จำกัด (สำนักงานใหญ่)`;
@@ -383,7 +413,7 @@ async function run() {
 
   worksheet.mergeCells("I11:K20");
   const projectinfoCell = worksheet.getCell("I11");
-  projectinfoCell.value = `โปรเจค : ${mockData.projectName} \n          ${mockData.maxPower} \n          INVERTER : ${mockData.inverterBrand} \n\n วันที่ : ${mockData.date} \n \n เลขที่เอกสาร : ${mockData.docNumber}`;
+  projectinfoCell.value = `โปรเจค : ${mockData.projectName} \n      ${mockData.maxPower} \n      INVERTER : ${mockData.inverterBrand} \n\n วันที่ : ${mockData.date} \n \n เลขที่เอกสาร : ${mockData.docNumber}`;
   projectinfoCell.alignment = {
     vertical: "middle",
     horizontal: "left",
@@ -454,7 +484,7 @@ async function run() {
 
   const headerCenterStyle = {
     alignment: { vertical: "middle", horizontal: "center", wrapText: true },
-    font: { name: "Kanit Light", size: 10 },
+    font: { bold: false, name: "Kanit Light", size: 10 },
   };
   const headerCells = [
     `A${hMain}`,
@@ -547,11 +577,10 @@ async function run() {
     });
   };
 
-  // ✅ Helper Check Zero (ถ้า 0 ให้เป็นค่าว่าง)
   const formatZero = (num: number) => (num === 0 ? "" : num);
 
   const sectionATitle = `ระบบโซลาร์ ${mockData.maxPower
-    .replace("กำลังไฟสูงสุด ( ", "")
+    .replace("กำลังไฟสูงสุด ( ", ""
     .replace(" )", "")}`;
   createSectionHeader(currentRow, "A", sectionATitle, "C");
   currentRow += 2;
@@ -563,7 +592,6 @@ async function run() {
       const nextRow = currentRow + 1;
       const row = worksheet.getRow(currentRow);
 
-      // ✅ Apply formatZero to Qty and Amounts
       row.values = [
         item.no,
         item.name,
@@ -585,13 +613,13 @@ async function run() {
         worksheet.mergeCells(`${col}${currentRow}:${col}${nextRow}`);
       });
 
-      // ✅ เพิ่ม column 5 (Qty) เข้าไปใน List การ Format
       [5, 7, 8, 9, 10, 11].forEach((c) => (row.getCell(c).numFmt = "#,##0.00"));
 
       for (let r = currentRow; r <= nextRow; r++) {
         const rRow = worksheet.getRow(r);
         for (let c = 1; c <= 11; c++) {
           if (c === 3) continue;
+          // ✅ Change dotted to thin
           rRow.getCell(c).border = {
             left: { style: "thin" },
             right: { style: "thin" },
@@ -659,7 +687,6 @@ async function run() {
       const nextRow = currentRow + 1;
       const row = worksheet.getRow(currentRow);
 
-      // ✅ Apply formatZero here as well
       row.values = [
         item.no,
         item.name,
@@ -680,13 +707,13 @@ async function run() {
         worksheet.mergeCells(`${col}${currentRow}:${col}${nextRow}`);
       });
 
-      // ✅ เพิ่ม column 5 (Qty)
       [5, 7, 8, 9, 10, 11].forEach((c) => (row.getCell(c).numFmt = "#,##0.00"));
 
       for (let r = currentRow; r <= nextRow; r++) {
         const rRow = worksheet.getRow(r);
         for (let c = 1; c <= 11; c++) {
           if (c === 3 || c === 4) continue;
+          // ✅ Change dotted to thin
           rRow.getCell(c).border = {
             left: { style: "thin" },
             right: { style: "thin" },
@@ -848,6 +875,7 @@ async function run() {
     const val = worksheet.getCell(`K${r}`);
     val.value = item.v;
     val.numFmt = "#,##0.00";
+    // ✅ Change fill color to match label
     val.fill = {
       type: "pattern",
       pattern: "solid",
@@ -871,34 +899,36 @@ async function run() {
   // ==========================================
   const bahtTextNextRow = currentRow + 1;
   worksheet.mergeCells(`A${currentRow}:K${bahtTextNextRow}`);
-
   const bahtCell = worksheet.getCell(`A${currentRow}`);
   const thaiBahtText = getBahtText(grandTotal);
-
-  // ✅ เอาวงเล็บ ( ) ออก ตามที่ขอ
   bahtCell.value = `${thaiBahtText}`;
-
   bahtCell.alignment = { vertical: "middle", horizontal: "center" };
   bahtCell.font = { name: "Kanit Light", size: 11 };
-
   bahtCell.border = {
     top: { style: "thin" },
     bottom: { style: "thin" },
     left: { style: "thin" },
     right: { style: "thin" },
   };
-
-  currentRow += 2; // เพิ่ม 2 แถวของ BahtText
+  currentRow += 2;
 
   // ==========================================
-  // 8. SIGNATURES (No gap added, just move to next line)
+  // 8. SIGNATURES
   // ==========================================
 
-  // ✅ แก้ไข: เพิ่ม +3 rows (รวมเป็น 8 แถว: +7)
+  // ✅ Update signature image position and size
+  if (signatureId !== null) {
+    worksheet.addImage(signatureId, {
+      tl: { col: 0.2, row: currentRow } as any,
+      ext: { width: 230, height: 95 },
+    });
+  }
+
   worksheet.mergeCells(`A${currentRow}:E${currentRow + 7}`);
   const sign1 = worksheet.getCell(`A${currentRow}`);
-  sign1.value =
-    "ลงชื่อผู้ให้บริการ\n\n___________________\nวันที่ 13 / 5 / 2568";
+  // ✅ Update sign1 text with spaces
+  const spaces = "                                   ";
+  sign1.value = `${spaces}ลงชื่อผู้ให้บริการ\n\n${spaces}___________________\n${spaces}วันที่ 13 / 5 / 2568`;
   sign1.alignment = {
     vertical: "middle",
     horizontal: "center",
