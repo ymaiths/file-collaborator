@@ -305,10 +305,11 @@ async function run() {
   const defaultFont = { name: "Kanit Light", size: 9 };
 
   // ==========================================
-  // ✅ 1.1 LOAD IMAGES
+  // ✅ 1.1 LOAD IMAGES (Logo, Signature, Watermark)
   // ==========================================
   let logoId: number | null = null;
   let signatureId: number | null = null;
+  let watermarkId: number | null = null; // ✅ เพิ่มตัวแปร Watermark
 
   try {
     const logoBuffer = fs.readFileSync("logo.png");
@@ -320,10 +321,17 @@ async function run() {
       extension: "png",
     });
 
+    // ✅ โหลดรูปลายน้ำ (watermark.png)
+    const wmBuffer = fs.readFileSync("watermark.png");
+    watermarkId = workbook.addImage({
+      buffer: wmBuffer as any,
+      extension: "png",
+    });
+
     console.log("✅ โหลดรูปภาพสำเร็จ");
   } catch (err) {
     console.warn(
-      "⚠️ Warning: ไม่พบไฟล์รูปภาพที่ Root Folder (logo.png หรือ signature.png)"
+      "⚠️ Warning: ตรวจสอบว่ามีไฟล์ logo.png, signature.png, watermark.png ครบถ้วน"
     );
   }
 
@@ -351,6 +359,16 @@ async function run() {
     worksheet.addImage(logoId, {
       tl: { col: 0, row: 0 } as any,
       br: { col: 2, row: 10 } as any,
+    });
+  }
+
+  // ✅ ใส่รูปลายน้ำ ที่ I1:K10 (ตำแหน่งขวาล่าง)
+  if (watermarkId !== null) {
+    worksheet.addImage(watermarkId, {
+      // เริ่มต้นที่ J8 (เพื่อให้ชิดมุมขวาล่างของกล่อง I1:K10)
+      tl: { col: 10.5, row: 1 } as any,
+      // สิ้นสุดที่ K10 (มุมขวาล่างสุด)
+      br: { col: 11, row: 10 } as any,
     });
   }
 
@@ -580,7 +598,7 @@ async function run() {
   const formatZero = (num: number) => (num === 0 ? "" : num);
 
   const sectionATitle = `ระบบโซลาร์ ${mockData.maxPower
-    .replace("กำลังไฟสูงสุด ( ", ""
+    .replace("กำลังไฟสูงสุด ( ", "")
     .replace(" )", "")}`;
   createSectionHeader(currentRow, "A", sectionATitle, "C");
   currentRow += 2;
@@ -591,7 +609,6 @@ async function run() {
     .forEach((item) => {
       const nextRow = currentRow + 1;
       const row = worksheet.getRow(currentRow);
-
       row.values = [
         item.no,
         item.name,
@@ -605,21 +622,17 @@ async function run() {
         formatZero(item.labTotal),
         formatZero(item.total),
       ];
-
       worksheet.mergeCells(`A${currentRow}:A${nextRow}`);
       worksheet.mergeCells(`B${currentRow}:C${nextRow}`);
       worksheet.mergeCells(`D${currentRow}:D${nextRow}`);
       ["E", "F", "G", "H", "I", "J", "K"].forEach((col) => {
         worksheet.mergeCells(`${col}${currentRow}:${col}${nextRow}`);
       });
-
       [5, 7, 8, 9, 10, 11].forEach((c) => (row.getCell(c).numFmt = "#,##0.00"));
-
       for (let r = currentRow; r <= nextRow; r++) {
         const rRow = worksheet.getRow(r);
         for (let c = 1; c <= 11; c++) {
           if (c === 3) continue;
-          // ✅ Change dotted to thin
           rRow.getCell(c).border = {
             left: { style: "thin" },
             right: { style: "thin" },
@@ -686,7 +699,6 @@ async function run() {
     .forEach((item) => {
       const nextRow = currentRow + 1;
       const row = worksheet.getRow(currentRow);
-
       row.values = [
         item.no,
         item.name,
@@ -700,20 +712,16 @@ async function run() {
         formatZero(item.labTotal),
         formatZero(item.total),
       ];
-
       worksheet.mergeCells(`A${currentRow}:A${nextRow}`);
       worksheet.mergeCells(`B${currentRow}:D${nextRow}`);
       ["E", "F", "G", "H", "I", "J", "K"].forEach((col) => {
         worksheet.mergeCells(`${col}${currentRow}:${col}${nextRow}`);
       });
-
       [5, 7, 8, 9, 10, 11].forEach((c) => (row.getCell(c).numFmt = "#,##0.00"));
-
       for (let r = currentRow; r <= nextRow; r++) {
         const rRow = worksheet.getRow(r);
         for (let c = 1; c <= 11; c++) {
           if (c === 3 || c === 4) continue;
-          // ✅ Change dotted to thin
           rRow.getCell(c).border = {
             left: { style: "thin" },
             right: { style: "thin" },
@@ -875,7 +883,6 @@ async function run() {
     const val = worksheet.getCell(`K${r}`);
     val.value = item.v;
     val.numFmt = "#,##0.00";
-    // ✅ Change fill color to match label
     val.fill = {
       type: "pattern",
       pattern: "solid",
@@ -915,8 +922,6 @@ async function run() {
   // ==========================================
   // 8. SIGNATURES
   // ==========================================
-
-  // ✅ Update signature image position and size
   if (signatureId !== null) {
     worksheet.addImage(signatureId, {
       tl: { col: 0.2, row: currentRow } as any,
@@ -926,7 +931,6 @@ async function run() {
 
   worksheet.mergeCells(`A${currentRow}:E${currentRow + 7}`);
   const sign1 = worksheet.getCell(`A${currentRow}`);
-  // ✅ Update sign1 text with spaces
   const spaces = "                                   ";
   sign1.value = `${spaces}ลงชื่อผู้ให้บริการ\n\n${spaces}___________________\n${spaces}วันที่ 13 / 5 / 2568`;
   sign1.alignment = {
