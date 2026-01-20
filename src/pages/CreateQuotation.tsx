@@ -32,6 +32,32 @@ const formatBrandName = (brand: string) => {
     .join(" ");
 };
 
+// Helper function: แยกข้อความเงื่อนไขที่มีเลขนำหน้า (1. 2. 3.) ให้เป็น Array
+const parseTerms = (text: string | null) => {
+  if (!text) return ["-"];
+
+  // 1. ถ้ามี Newline (\n) ให้แยกบรรทัดก่อน
+  if (text.includes("\n")) {
+    return text
+      .split("\n")
+      .map((t) => t.trim().replace(/^\d+\.\s*/, "")) // ตัดเลขข้อนำหน้าออก (ถ้ามี)
+      .filter((t) => t !== "");
+  }
+
+  // 2. ถ้าเป็นบรรทัดเดียวแต่มีเลขข้อ (1. ... 2. ...) ให้ใช้ Regex แยก
+  // Regex นี้จะหาจุดที่มีตัวเลขตามด้วยจุดและเว้นวรรค (เช่น "2. ")
+  const parts = text.split(/(?=\d+\.\s)/);
+
+  if (parts.length > 0) {
+    return parts
+      .map((t) => t.trim().replace(/^\d+\.\s*/, "")) // ตัดเลขข้อนำหน้าออก
+      .filter((t) => t !== "");
+  }
+
+  // 3. ถ้าไม่เข้าเงื่อนไขเลย ให้คืนค่าเดิมกลับไป
+  return [text];
+};
+
 const CreateQuotation = () => {
   const navigate = useNavigate();
   const { id: quotationId } = useParams<{ id: string }>();
@@ -419,8 +445,9 @@ const CreateQuotation = () => {
   const handleExportPDF = () =>
     toast({ title: "บันทึก PDF", description: "Coming soon..." });
 
+  // ในไฟล์ src/pages/CreateQuotation.tsx
+
   const handleExportExcel = async () => {
-    // 1. ตรวจสอบว่ามี ID ใบเสนอราคาหรือยัง
     if (!currentQuotationId) {
       toast({
         title: "ไม่พบข้อมูล",
@@ -433,105 +460,196 @@ const CreateQuotation = () => {
     setIsLoading(true);
 
     try {
-      // 2. ดึงข้อมูลสินค้า (Line Items) ล่าสุดจาก Database
-      const { data: lineItems, error } = await supabase
+      // 1. ดึงข้อมูล Quotation
+      const { data: quoteData, error: quoteError } = await supabase
+        .from("quotations")
+        .select(
+          `
+            sale_package_id, 
+            kw_size, 
+            kw_peak, 
+            inverter_brand, 
+            document_num, 
+            electrical_phase
+        `
+        )
+        .eq("id", currentQuotationId)
+        .single();
+
+      if (quoteError) throw quoteError;
+
+      // 2. ดึงข้อมูลสินค้า (Line Items)
+      const { data: lineItems, error: itemsError } = await supabase
         .from("product_line_items")
         .select(`*, products(*)`)
         .eq("quotation_id", currentQuotationId)
-        .order("id", { ascending: true }); // เรียงตาม ID หรือจะเรียงตาม created_at ก็ได้
+        .order("id", { ascending: true });
 
-      if (error) throw error;
+      if (itemsError) throw itemsError;
 
-      if (!lineItems || lineItems.length === 0) {
-        toast({
-          title: "ไม่พบรายการสินค้า",
-          description: "กรุณากด 'คำนวณราคา' หรือสร้างรายการสินค้าก่อน",
-          variant: "destructive",
-        });
-        return;
+      // 3. ดึงข้อมูลบริษัท
+      const { data: companyData } = await supabase
+        .from("company_info")
+        .select("*")
+        .limit(1)
+        .maybeSingle();
+
+      // 4. ดึงเงื่อนไข (Terms)
+      let paymentTermsDB = ["-"];
+      let warrantyTermsDB = ["-"];
+      let noteDB = "-";
+
+      if (quoteData?.sale_package_id) {
+        const { data: termsData } = await supabase
+          .from("sale_package_prices")
+          .select("payment_terms, warranty_terms, note")
+          .eq("sale_package_id", quoteData.sale_package_id)
+          .limit(1)
+          .maybeSingle();
+
+        if (termsData) {
+          // ✅ ใช้ฟังก์ชัน parseTerms แยกข้อความให้อัตโนมัติ
+          paymentTermsDB = parseTerms(termsData.payment_terms);
+          warrantyTermsDB = parseTerms(termsData.warranty_terms);
+          noteDB = termsData.note || "-";
+        }
       }
 
-      // 3. จัดรูปแบบข้อมูลให้ตรงกับที่ ExportExcel ต้องการ
-      const formattedItems = lineItems.map((item, index) => {
-        const product = item.products;
-        const category = product?.product_category || ("" as string);
+      // ---------------------------------------------------------
+      // 5. คำนวณค่าและจัดรูปแบบ Project Info
+      // ---------------------------------------------------------
+      const projectKw = (quoteData.kw_size || 0) / 1000;
+      const projectSizeStr = `${projectKw} kW`;
+      const peakKw = (quoteData.kw_peak || 0) / 1000;
+      const maxPowerDisplay = `กำลังไฟสูงสุด ( ${peakKw.toFixed(2)} kWp )`;
+      const brandStr = (quoteData.inverter_brand || "-").toUpperCase();
 
-        // --- LOGIC การแบ่งหมวด A / B ---
-        // หมวด B (Project Management/Labor) ได้แก่: operation, service, electrical_management
-        // หมวด A (Main Equipment) ได้แก่: solar_panel, inverter, structure, cable, accessories อื่นๆ
-        const isSectionB =
-          category === "operation" ||
-          category === "service" ||
-          category === "electrical_management";
+      // ---------------------------------------------------------
+      // 6. Map Line Items และจัดหมวดหมู่
+      // ---------------------------------------------------------
+      const mappedItems =
+        lineItems?.map((item, index) => {
+          const product = item.products;
+          const categoryRaw = (product?.product_category || "") as string;
 
-        const qty = item.quantity || 0;
-        const matPrice = item.product_price || 0; // ราคาต่อหน่วย (ของ)
-        const labPrice = item.installation_price || 0; // ราคาต่อหน่วย (แรง)
+          // เฉพาะ operation เท่านั้นที่เป็น Section B
+          const isSectionB = categoryRaw === "operation";
 
-        return {
-          id: item.id,
-          no: index + 1, // เลขลำดับเดี๋ยวจะถูกรันใหม่ใน Excel
-          name: product?.name || "Unknown Item",
-          brand: product?.brand || "-",
-          qty: qty,
-          unit: product?.unit || "Unit",
+          const qty = item.quantity || 0;
+          const matPrice = item.product_price || 0;
+          const labPrice = item.installation_price || 0;
 
-          // Material (ค่าของ)
-          matUnitPrice: matPrice,
-          matTotal: matPrice * qty,
+          return {
+            no: index + 1,
+            name: product?.name || "Unknown Item",
+            brand: product?.brand || "-",
+            qty: qty,
+            unit: product?.unit || "Unit",
+            matUnit: isSectionB ? 0 : qty > 0 ? matPrice / qty : 0,
+            matTotal: isSectionB ? 0 : matPrice,
+            labUnit: isSectionB ? 0 : qty > 0 ? labPrice / qty : 0,
+            labTotal: isSectionB ? 0 : labPrice,
+            total: matPrice + labPrice,
+            category: isSectionB ? "B" : "A",
+            _rawCategory: categoryRaw,
+          };
+        }) || [];
 
-          // Labor (ค่าแรง)
-          labUnitPrice: labPrice,
-          labTotal: labPrice * qty,
+      // ---------------------------------------------------------
+      // 7. จัดเรียงลำดับ Section B (Sorting)
+      // ---------------------------------------------------------
 
-          // Grand Total ของแถวนี้
-          totalPrice: (matPrice + labPrice) * qty,
+      // ลำดับที่ต้องการ (ตามตาราง)
+      const sectionBOrder = [
+        "Electrical drawing, Facility system",
+        "Common Temporary Facilities",
+        "Safety Operation",
+        "Comissioning test",
+        "Tempolary Utility Expense",
+        "ดำเนินการยื่นเอกสารขออนุญาต",
+      ];
 
-          // ระบุหมวด A หรือ B
-          category: isSectionB ? "B" : "A",
-        };
+      const sectionAOrder = [
+        "solar_panel",
+        "pv_mounting_structure",
+        "inverter",
+        "optimizer",
+        "zero_export_smart_logger",
+        "ac_box",
+        "dc_box",
+        "cable",
+        "service",
+        "support_inverter",
+        "electrical_management",
+        "other",
+      ];
+
+      // แยกหมวด A และ B เพื่อจัดเรียงเฉพาะ B
+      const itemsA = mappedItems.filter((i) => i.category === "A");
+      const itemsB = mappedItems.filter((i) => i.category === "B");
+      itemsA.sort((a, b) => {
+        const indexA = sectionAOrder.indexOf(a._rawCategory);
+        const indexB = sectionAOrder.indexOf(b._rawCategory);
+
+        // ถ้าหา Category ไม่เจอ ให้ไปอยู่ท้ายๆ
+        const valA = indexA === -1 ? 999 : indexA;
+        const valB = indexB === -1 ? 999 : indexB;
+
+        return valA - valB;
       });
 
-      // 4. เตรียมข้อมูลส่วนหัวและท้าย (Header/Footer)
-      // คุณสามารถดึง Terms มาจาก Database จริงๆ ได้ ถ้ามีการบันทึกไว้
+      itemsB.sort((a, b) => {
+        const indexA = sectionBOrder.findIndex((orderName) =>
+          a.name.toLowerCase().trim().includes(orderName.toLowerCase().trim())
+        );
+        const indexB = sectionBOrder.findIndex((orderName) =>
+          b.name.toLowerCase().trim().includes(orderName.toLowerCase().trim())
+        );
+
+        // ถ้าหาไม่เจอ ให้ไปต่อท้ายสุด (999)
+        const valA = indexA === -1 ? 999 : indexA;
+        const valB = indexB === -1 ? 999 : indexB;
+
+        return valA - valB;
+      });
+
+      // รวมกลับเป็น Array เดียว (ExportExcel จะไปแยก A/B เองอีกที)
+      const sortedItems = [...itemsA, ...itemsB];
+
+      // ---------------------------------------------------------
+      // 8. เตรียม Object ส่งออก Excel
+      // ---------------------------------------------------------
       const exportData = {
+        companyName: companyData?.name || "บริษัท โพนิซ จำกัด",
+        companyAddress: companyData?.address || "-",
+        companyPhone: companyData?.phone_number || "-",
+        companyTaxId: companyData?.id_tax || "-",
+
         customerName: formData.customerName || "-",
         customerAddress: formData.installLocation || "-",
-        // customerTaxId: "...", // ถ้ามี input รับเลขภาษี เพิ่มตรงนี้ได้
+        customerID: "-",
 
-        projectName: `ระบบโซลาร์เซลล์ ${formData.projectSize || 0} kWp (${
-          formData.electricalPhase === "three_phase" ? "3 Phase" : "1 Phase"
-        })`,
-        maxPower: `${formData.projectSize || 0} kWp`,
-        inverterBrand: formData.brand || "-",
+        projectName: `โซลาร์เซลล์ ${projectSizeStr}`,
+        maxPower: maxPowerDisplay,
+        inverterBrand: brandStr,
 
         date: new Date().toLocaleDateString("th-TH", {
+          day: "numeric",
+          month: "numeric",
           year: "numeric",
-          month: "2-digit",
-          day: "2-digit",
         }),
-        docNumber: formData.documentNumber || "DRAFT",
+        docNumber: quoteData.document_num || formData.documentNumber || "DRAFT",
 
-        items: formattedItems as any, // Cast any เพื่อเลี่ยง Type error เล็กน้อยหาก Interface ไม่ตรงเป๊ะ
+        items: sortedItems as any, // ส่งข้อมูลที่เรียงแล้วเข้าไป
 
-        // ข้อมูลส่วนท้าย (Hardcode ไว้ก่อน หรือดึงจาก Sale Package ถ้ามีเก็บไว้)
-        paymentTerms: [
-          "มัดจำ 30% ณ วันอนุมัติสั่งซื้อ",
-          "ชำระ 50% เมื่ออุปกรณ์หลัก (แผง/อินเวอร์เตอร์) ถึงหน้างาน",
-          "ชำระ 20% เมื่อติดตั้งแล้วเสร็จพร้อมส่งมอบงาน",
-        ],
-        warrantyTerms: [
-          "รับประกันผลงานการติดตั้ง 2 ปี",
-          "รับประกันอินเวอร์เตอร์ตามเงื่อนไขผู้ผลิต (5-10 ปี)",
-          "รับประกันแผงโซลาร์เซลล์ตามเงื่อนไขผู้ผลิต (Product 12 ปี / Power 25-30 ปี)",
-        ],
-        remarks: "กำหนดยืนราคา 30 วัน นับจากวันที่เสนอราคา",
+        paymentTerms: paymentTermsDB,
+        warrantyTerms: warrantyTermsDB,
+        remarks: noteDB,
 
-        discount: 0, // ยังไม่มีระบบส่วนลด ใส่ 0 ไปก่อน
-        vatRate: 0.07, // VAT 7%
+        discount: 0,
+        vatRate: 0.07,
       };
 
-      // 5. เรียกฟังก์ชันสร้าง Excel
       await generateQuotationExcel(exportData);
 
       toast({

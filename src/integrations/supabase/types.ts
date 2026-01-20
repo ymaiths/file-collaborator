@@ -403,7 +403,8 @@ export type Database = {
         | "pv_mounting_structure"
         | "zero_export_smart_logger"
         | "cable"
-        | "operation";
+        | "operation"
+        | "electrical_management";
     };
     CompositeTypes: {
       [_ in never]: never;
@@ -558,6 +559,7 @@ export const Constants = {
         "pv_mounting_structure",
         "zero_export_smart_logger",
         "cable",
+        "electrical_management",
       ],
     },
   },

@@ -1,90 +1,212 @@
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 
-// Type สำหรับข้อมูลที่จะรับเข้ามา (ปรับตาม Interface จริงของคุณ)
-interface LineItem {
-  id: string;
+// Helper Function: โหลดรูปภาพจาก URL (แทน fs.readFileSync)
+const loadImage = async (url: string): Promise<ArrayBuffer | null> => {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Failed to load image: ${url}`);
+    return await response.arrayBuffer();
+  } catch (error) {
+    console.warn(error);
+    return null;
+  }
+};
+
+// Helper Function: แปลงตัวเลขเป็นคำอ่านภาษาไทย (จาก Script ของคุณ)
+const getBahtText = (num: number): string => {
+  if (!num) return "ศูนย์บาทถ้วน";
+  num = Number(num);
+  const suffix = "บาท";
+  const satangSuffix = "สตางค์";
+  const fullSuffix = "ถ้วน";
+  const textNum = [
+    "ศูนย์",
+    "หนึ่ง",
+    "สอง",
+    "สาม",
+    "สี่",
+    "ห้า",
+    "หก",
+    "เจ็ด",
+    "แปด",
+    "เก้า",
+  ];
+  const textScale = ["", "สิบ", "ร้อย", "พัน", "หมื่น", "แสน", "ล้าน"];
+
+  const splitNum = String(num.toFixed(2)).split(".");
+  let baht = splitNum[0];
+  let satang = splitNum[1];
+
+  const convert = (numberStr: string) => {
+    let res = "";
+    const len = numberStr.length;
+    for (let i = 0; i < len; i++) {
+      const digit = Number(numberStr[i]);
+      if (digit !== 0) {
+        const scaleIdx = len - i - 1;
+        if (digit === 1 && scaleIdx === 0 && len > 1) {
+          res += "เอ็ด";
+        } else if (digit === 1 && scaleIdx === 1) {
+          res += "";
+        } else if (digit === 2 && scaleIdx === 1) {
+          res += "ยี่";
+        } else {
+          res += textNum[digit];
+        }
+        if (scaleIdx === 1 && digit === 1) res += "สิบ";
+        else res += textScale[scaleIdx];
+      }
+    }
+    return res;
+  };
+
+  let bahtText = "";
+  if (baht.length > 6) {
+    const overMillion = baht.substring(0, baht.length - 6);
+    const underMillion = baht.substring(baht.length - 6);
+    bahtText = convert(overMillion) + "ล้าน" + convert(underMillion);
+  } else {
+    bahtText = convert(baht);
+  }
+  bahtText += suffix;
+  if (Number(satang) === 0) {
+    bahtText += fullSuffix;
+  } else {
+    bahtText += convert(satang) + satangSuffix;
+  }
+  return bahtText;
+};
+
+// Interface สำหรับข้อมูลที่จะรับเข้ามา (Map ให้ตรงกับ mockData เดิมของคุณ)
+export interface ExcelLineItem {
   no: number;
   name: string;
   brand: string;
   qty: number;
   unit: string;
-  // Material (ของ)
-  matUnitPrice: number;
+  matUnit: number;
   matTotal: number;
-  // Labor (แรงงาน/ติดตั้ง)
-  labUnitPrice: number;
+  labUnit: number;
   labTotal: number;
-  // Total
-  totalPrice: number;
-  category: "A" | "B"; // A = Main Equipment, B = Project Management
+  total: number;
+  category: "A" | "B";
 }
 
-interface QuotationData {
+export interface QuotationData {
+  // ข้อมูลบริษัท
+  companyName: string;
+  companyAddress: string;
+  companyPhone: string;
+  companyTaxId: string;
+  // ข้อมูลลูกค้าและโปรเจค
   customerName: string;
   customerAddress: string;
-  customerTaxId?: string;
+  customerID: string; // Tax ID ลูกค้า
   projectName: string;
-  maxPower: string; // e.g. "250.19 kWp"
+  maxPower: string;
   inverterBrand: string;
   date: string;
   docNumber: string;
-  items: LineItem[];
-  // Terms
+  // รายการสินค้า
+  items: ExcelLineItem[];
+  // เงื่อนไข
   paymentTerms: string[];
   warrantyTerms: string[];
   remarks: string;
-  // Totals
+  // ยอดรวม
   discount: number;
-  vatRate: number; // 0.07
+  vatRate: number;
 }
 
 export const generateQuotationExcel = async (data: QuotationData) => {
-  const workbook = new ExcelJS.Workbook();
-  const worksheet = workbook.addWorksheet("Quotation");
+  console.log("⏳ กำลังสร้างไฟล์ Excel...");
 
-  // 1. ตั้งค่า Column Width ให้ใกล้เคียงกับรูป
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet("Quotation", {
+    properties: { defaultRowHeight: 24.5 },
+  });
+
+  const defaultFont = { name: "Kanit Light", size: 9 };
+
+  // ==========================================
+  // 1. LOAD IMAGES (จาก public folder)
+  // ==========================================
+  const logoBuffer = await loadImage("/logo.png");
+  const signBuffer = await loadImage("/signature.png");
+  const wmBuffer = await loadImage("/watermark.png");
+
+  let logoId: number | null = null;
+  let signatureId: number | null = null;
+  let watermarkId: number | null = null;
+
+  if (logoBuffer) {
+    logoId = workbook.addImage({ buffer: logoBuffer, extension: "png" });
+  }
+  if (signBuffer) {
+    signatureId = workbook.addImage({ buffer: signBuffer, extension: "png" });
+  }
+  if (wmBuffer) {
+    watermarkId = workbook.addImage({ buffer: wmBuffer, extension: "png" });
+  }
+
+  // ==========================================
+  // 2. SETUP COLUMNS
+  // ==========================================
   worksheet.columns = [
-    { key: "no", width: 5 }, // A: No
-    { key: "name", width: 40 }, // B: Description
-    { key: "brand", width: 10 }, // C: Brand
-    { key: "qty", width: 8 }, // D: Qty
-    { key: "unit", width: 8 }, // E: Unit
-    { key: "matUnit", width: 12 }, // F: Material Unit
-    { key: "matTotal", width: 15 }, // G: Material Total
-    { key: "labUnit", width: 12 }, // H: Labor Unit
-    { key: "labTotal", width: 15 }, // I: Labor Total
-    { key: "total", width: 18 }, // J: Grand Total
+    { key: "no", width: 5, style: { font: defaultFont } },
+    { key: "name", width: 50, style: { font: defaultFont } },
+    { key: "company", width: 12, style: { font: defaultFont } },
+    { key: "brand", width: 12, style: { font: defaultFont } },
+    { key: "qty", width: 12, style: { font: defaultFont } },
+    { key: "unit", width: 8, style: { font: defaultFont } },
+    { key: "matUnit", width: 12, style: { font: defaultFont } },
+    { key: "matTotal", width: 12, style: { font: defaultFont } },
+    { key: "labUnit", width: 12, style: { font: defaultFont } },
+    { key: "labTotal", width: 12, style: { font: defaultFont } },
+    { key: "total", width: 14, style: { font: defaultFont } },
   ];
 
   // ==========================================
-  // 2. HEADER SECTION (Logo & Company Info)
+  // 3. HEADER SECTION
   // ==========================================
+  if (logoId !== null) {
+    worksheet.addImage(logoId, {
+      tl: { col: 0, row: 0 } as any,
+      br: { col: 2, row: 10 } as any,
+    });
+  }
 
-  // *หมายเหตุ: คุณต้องเตรียม Logo เป็น Base64 string*
-  // const logoId = workbook.addImage({
-  //   base64: 'data:image/png;base64,...',
-  //   extension: 'png',
-  // });
-  // worksheet.addImage(logoId, {
-  //   tl: { col: 0, row: 0 },
-  //   ext: { width: 150, height: 50 },
-  // });
+  if (watermarkId !== null) {
+    worksheet.addImage(watermarkId, {
+      tl: { col: 10.5, row: 1 } as any,
+      br: { col: 11, row: 10 } as any,
+    });
+  }
 
-  // Company Info (Centered)
-  worksheet.mergeCells("A1:F5"); // Area for Logo & Address
-  const companyInfoCell = worksheet.getCell("A1");
-  companyInfoCell.value = `บริษัท โพนิซ จำกัด (สำนักงานใหญ่)\nที่อยู่ 612 ถนนช้างเผือก ตำบลในเมือง อำเภอเมือง\nจังหวัดนครราชสีมา 30000\nTel : 082-4360444, 063-1411454\nเลขประจำตัวผู้เสียภาษี: 0-3055-60003-13-9`;
-  companyInfoCell.alignment = {
+  // ใช้ข้อมูลจริงจาก data.company...
+  worksheet.mergeCells("C1:H3");
+  const companynameCell = worksheet.getCell("C1");
+  companynameCell.value = data.companyName;
+  companynameCell.alignment = {
+    vertical: "bottom",
+    horizontal: "center",
+    wrapText: true,
+  };
+  companynameCell.font = { name: "Kanit Light", size: 16, bold: true };
+
+  worksheet.mergeCells("C4:H10");
+  const companyinfoCell = worksheet.getCell("C4");
+  companyinfoCell.value = `ที่อยู่ ${data.companyAddress}\nTel : ${data.companyPhone}\nเลขประจำตัวผู้เสียภาษี: ${data.companyTaxId}`;
+  companyinfoCell.alignment = {
     vertical: "middle",
     horizontal: "center",
     wrapText: true,
   };
-  companyInfoCell.font = { name: "Sarabun", size: 10, bold: true };
+  companyinfoCell.font = { name: "Kanit Light", size: 12 };
 
-  // Quotation Title Box (Right Side)
-  worksheet.mergeCells("G1:J2");
-  const titleCell = worksheet.getCell("G1");
+  worksheet.mergeCells("I1:K10");
+  const titleCell = worksheet.getCell("I1");
   titleCell.value = "ใบเสนอราคา\nQUOTATION";
   titleCell.alignment = {
     vertical: "middle",
@@ -92,454 +214,612 @@ export const generateQuotationExcel = async (data: QuotationData) => {
     wrapText: true,
   };
   titleCell.font = {
-    name: "Sarabun",
-    size: 16,
+    name: "Kanit Light",
+    size: 20,
     bold: true,
     color: { argb: "FF002060" },
-  }; // Dark Blue
-  // (Optional: Add borders/background image for the graphic element)
+  };
+  titleCell.border = {
+    top: { style: "thin" },
+    left: { style: "thin" },
+    bottom: { style: "thin" },
+    right: { style: "thin" },
+  };
 
-  // ==========================================
-  // 3. CUSTOMER & DOC INFO
-  // ==========================================
-
-  // Left: Customer Info
-  worksheet.mergeCells("A6:F8");
-  const customerCell = worksheet.getCell("A6");
-  customerCell.value = `ชื่อลูกค้า : ${data.customerName}\nที่อยู่ : ${
-    data.customerAddress
-  }\nเลขประจำตัวผู้เสียภาษี : ${data.customerTaxId || "-"}`;
+  worksheet.mergeCells("A11:H20");
+  const customerCell = worksheet.getCell("A11");
+  // ใช้ข้อมูลจริงจาก data.customer...
+  customerCell.value = `\n ชื่อลูกค้า/เบอร์โทร : ${
+    data.customerName
+  }\n\n ที่อยู่ : ${data.customerAddress}\n\n เลขประจำตัวผู้เสียภาษี : ${
+    data.customerID || "-"
+  }`;
   customerCell.alignment = {
     vertical: "top",
     horizontal: "left",
     wrapText: true,
   };
+  customerCell.font = { name: "Kanit Light", size: 10 };
   customerCell.border = {
     top: { style: "thin" },
     left: { style: "thin" },
-    right: { style: "thin" },
     bottom: { style: "thin" },
+    right: { style: "thin" },
   };
 
-  // Right: Doc Info
-  const startRowRight = 6;
-  // Row 6
-  worksheet.mergeCells(`G${startRowRight}:J${startRowRight}`);
-  worksheet.getCell(`G${startRowRight}`).value = `โปรเจค : ${data.projectName}`;
-  // Row 7
-  worksheet.mergeCells(`G${startRowRight + 1}:J${startRowRight + 1}`);
-  worksheet.getCell(
-    `G${startRowRight + 1}`
-  ).value = `กำลังไฟสูงสุด (${data.maxPower})`;
-  worksheet.getCell(`G${startRowRight + 1}`).alignment = {
-    horizontal: "right",
-  }; // Align text inside if needed
-  // Row 8
-  worksheet.mergeCells(`G${startRowRight + 2}:J${startRowRight + 2}`);
-  worksheet.getCell(
-    `G${startRowRight + 2}`
-  ).value = `INVERTER : ${data.inverterBrand}`;
-  // Row 9
-  worksheet.mergeCells(`G${startRowRight + 3}:J${startRowRight + 3}`);
-  worksheet.getCell(`G${startRowRight + 3}`).value = `วันที่ : ${data.date}`;
-  // Row 10
-  worksheet.mergeCells(`G${startRowRight + 4}:J${startRowRight + 4}`);
-  worksheet.getCell(
-    `G${startRowRight + 4}`
-  ).value = `เลขที่เอกสาร : ${data.docNumber}`;
-
-  // Style Right Box
-  for (let r = 6; r <= 10; r++) {
-    worksheet.getCell(`G${r}`).border = { right: { style: "thin" } };
-    worksheet.getCell(`G${r}`).font = { size: 9 };
-  }
-  worksheet.getCell("G6").border = {
+  worksheet.mergeCells("I11:K20");
+  const projectinfoCell = worksheet.getCell("I11");
+  // ใช้ข้อมูลจริงจาก data.project...
+  projectinfoCell.value = `โปรเจค : ${data.projectName} \n      ${data.maxPower} \n      INVERTER : ${data.inverterBrand} \n\n วันที่ : ${data.date} \n \n เลขที่เอกสาร : ${data.docNumber}`;
+  projectinfoCell.alignment = {
+    vertical: "middle",
+    horizontal: "left",
+    wrapText: true,
+  };
+  projectinfoCell.font = { name: "Kanit Light", size: 9.5 };
+  projectinfoCell.border = {
     top: { style: "thin" },
+    left: { style: "thin" },
+    bottom: { style: "thin" },
     right: { style: "thin" },
   };
 
   // ==========================================
-  // 4. TABLE HEADER (Green Area)
+  // 4. TABLE HEADER (เหมือนเดิม)
   // ==========================================
-  const headerRowStart = 12;
-
-  // --- ROW 12: Top Headers (Material / Labor) ---
-  worksheet.getCell(`F${headerRowStart}`).value = "Material";
-  worksheet.mergeCells(`F${headerRowStart}:G${headerRowStart}`);
-
-  worksheet.getCell(`H${headerRowStart}`).value = "Labor";
-  worksheet.mergeCells(`H${headerRowStart}:I${headerRowStart}`);
-
-  worksheet.getCell(`J${headerRowStart}`).value = "Total";
-  // Merge Total ลงมา 3 แถว (12, 13, 14) ให้ดูสวยงาม
-  worksheet.mergeCells(`J${headerRowStart}:J${headerRowStart + 2}`);
-
-  // --- ROW 13: Main Columns ---
-  const r13 = headerRowStart + 1;
-
-  // A: No (Merge ลงมาถึง Row 14)
-  worksheet.getCell(`A${r13}`).value = "No";
-  worksheet.mergeCells(`A${r13}:A${r13 + 1}`);
-
-  // B: Main Equipment / Description (Merge ลงมาถึง Row 14)
-  worksheet.getCell(`B${r13}`).value = "Main Equipment";
-  worksheet.mergeCells(`B${r13}:B${r13 + 1}`);
-
-  // C: Brand (Merge ลงมาถึง Row 14)
-  worksheet.getCell(`C${r13}`).value = "Brand";
-  worksheet.mergeCells(`C${r13}:C${r13 + 1}`);
-
-  // D: Q'Ty (Merge ลงมาถึง Row 14)
-  worksheet.getCell(`D${r13}`).value = "Q'Ty";
-  worksheet.mergeCells(`D${r13}:D${r13 + 1}`);
-
-  // E: Unit (Merge ลงมาถึง Row 14)
-  worksheet.getCell(`E${r13}`).value = "Unit";
-  worksheet.mergeCells(`E${r13}:E${r13 + 1}`);
-
-  // F-G: Scope of Work
-  worksheet.getCell(`F${r13}`).value = "Scope of Work";
-  worksheet.mergeCells(`F${r13}:G${r13}`);
-
-  // H-I: Scope of Supply
-  worksheet.getCell(`H${r13}`).value = "Scope of Supply";
-  worksheet.mergeCells(`H${r13}:I${r13}`);
-
-  // --- ROW 14: Sub Headers ---
-  const r14 = headerRowStart + 2;
-  worksheet.getCell(`F${r14}`).value = "PONIX";
-  worksheet.getCell(`G${r14}`).value = "Cost";
-  worksheet.getCell(`H${r14}`).value = "PONIX";
-  worksheet.getCell(`I${r14}`).value = "Cost";
-
-  // Styling Headers
-  const headerFill: ExcelJS.Fill = {
+  worksheet.mergeCells(`A21:K22`);
+  const greenBar = worksheet.getCell(`A21`);
+  greenBar.value = "";
+  greenBar.fill = {
     type: "pattern",
     pattern: "solid",
-    fgColor: { argb: "FF92D050" }, // Light Green
+    fgColor: { argb: "FF54B985" },
+  };
+  greenBar.border = {
+    top: { style: "thin" },
+    bottom: { style: "thin" },
+    left: { style: "thin" },
+    right: { style: "thin" },
   };
 
-  // Apply styles to all header cells
-  // (A13-E14, F12-G14, H12-I14, J12-J14)
-  const headerCells = [
-    `A${r13}`,
-    `B${r13}`,
-    `C${r13}`,
-    `D${r13}`,
-    `E${r13}`, // Main Cols
-    `F${headerRowStart}`,
-    `G${headerRowStart}`,
-    `H${headerRowStart}`,
-    `I${headerRowStart}`, // Top Row
-    `F${r13}`,
-    `H${r13}`, // Middle Merged
-    `F${r14}`,
-    `G${r14}`,
-    `H${r14}`,
-    `I${r14}`, // Sub headers
-    `J${headerRowStart}`, // Total
-  ];
+  const hTopStart = 23;
+  const hTopEnd = 24;
+  const hMiddle = 25;
+  const hSubStart = 26;
+  const hSubEnd = 27;
+  const hMain = hTopStart;
 
+  worksheet.getCell(`A${hMain}`).value = "Main Equipment";
+  worksheet.mergeCells(`A${hMain}:C${hSubEnd}`);
+  worksheet.getCell(`D${hMain}`).value = "Brand";
+  worksheet.mergeCells(`D${hMain}:D${hSubEnd}`);
+  worksheet.getCell(`E${hMain}`).value = "Q'ty";
+  worksheet.mergeCells(`E${hMain}:E${hSubEnd}`);
+  worksheet.getCell(`F${hMain}`).value = "Unit";
+  worksheet.mergeCells(`F${hMain}:F${hSubEnd}`);
+  worksheet.getCell(`K${hTopStart}`).value = "Total";
+  worksheet.mergeCells(`K${hTopStart}:K${hSubEnd}`);
+
+  worksheet.getCell(`G${hTopStart}`).value = "Material";
+  worksheet.mergeCells(`G${hTopStart}:H${hTopEnd}`);
+  worksheet.getCell(`I${hTopStart}`).value = "Labor";
+  worksheet.mergeCells(`I${hTopStart}:J${hTopEnd}`);
+
+  worksheet.getCell(`G${hMiddle}`).value = "Scope of Work";
+  worksheet.mergeCells(`G${hMiddle}:H${hMiddle}`);
+  worksheet.getCell(`I${hMiddle}`).value = "Scope of Supply";
+  worksheet.mergeCells(`I${hMiddle}:J${hMiddle}`);
+
+  worksheet.getCell(`G${hSubStart}`).value = "PONIX";
+  worksheet.mergeCells(`G${hSubStart}:G${hSubEnd}`);
+  worksheet.getCell(`H${hSubStart}`).value = "Cost";
+  worksheet.mergeCells(`H${hSubStart}:H${hSubEnd}`);
+  worksheet.getCell(`I${hSubStart}`).value = "PONIX";
+  worksheet.mergeCells(`I${hSubStart}:I${hSubEnd}`);
+  worksheet.getCell(`J${hSubStart}`).value = "Cost";
+  worksheet.mergeCells(`J${hSubStart}:J${hSubEnd}`);
+
+  const headerCenterStyle = {
+    alignment: { vertical: "middle", horizontal: "center", wrapText: true },
+    font: { bold: false, name: "Kanit Light", size: 10 },
+  };
+
+  const headerCells = [
+    `A${hMain}`,
+    `D${hMain}`,
+    `E${hMain}`,
+    `F${hMain}`,
+    `G${hTopStart}`,
+    `I${hTopStart}`,
+    `K${hTopStart}`,
+    `G${hMiddle}`,
+    `I${hMiddle}`,
+    `G${hSubStart}`,
+    `H${hSubStart}`,
+    `I${hSubStart}`,
+    `J${hSubStart}`,
+  ];
   headerCells.forEach((ref) => {
     const cell = worksheet.getCell(ref);
-    cell.fill = headerFill;
-    cell.alignment = {
-      vertical: "middle",
-      horizontal: "center",
-      wrapText: true,
-    };
-    cell.font = { bold: true };
+    // @ts-ignore
+    cell.alignment = headerCenterStyle.alignment;
+    // @ts-ignore
+    cell.font = headerCenterStyle.font;
   });
 
-  // Apply borders to the whole header block
-  for (let r = headerRowStart; r <= r14; r++) {
-    for (let c = 1; c <= 10; c++) {
-      worksheet.getCell(r, c).border = {
-        top: { style: "thin" },
-        left: { style: "thin" },
-        bottom: { style: "thin" },
-        right: { style: "thin" },
-      };
+  for (let r = hTopStart; r <= hSubEnd; r++) {
+    for (let c = 1; c <= 11; c++) {
+      const cell = worksheet.getCell(r, c);
+      if (!cell.address.startsWith("C")) {
+        cell.border = {
+          top: { style: "thin" },
+          left: { style: "thin" },
+          bottom: { style: "thin" },
+          right: { style: "thin" },
+        };
+      }
     }
   }
 
   // ==========================================
-  // 5. DATA ROWS (Section A)
+  // 5. DATA ROWS
   // ==========================================
-  let currentRow = 15;
+  let currentRow = 28;
+  let itemRunningNumber = 1;
 
-  // Section A Header
-  worksheet.mergeCells(`A${currentRow}:B${currentRow}`);
-  worksheet.getCell(`A${currentRow}`).value = "A | ระบบโซลาร์ ... kWp สองระบบ"; // ใส่ชื่อระบบจริง
-  worksheet.getCell(`A${currentRow}`).font = { bold: true };
-  worksheet.getRow(currentRow).height = 20;
-  // Apply borders to the full row A-J
-  for (let c = 1; c <= 10; c++)
-    worksheet.getCell(currentRow, c).border = {
+  const createSectionHeader = (
+    rowNum: number,
+    sectionLetter: string,
+    title: string,
+    mergeEndCol: string
+  ) => {
+    const nextRow = rowNum + 1;
+    const cellA = worksheet.getCell(`A${rowNum}`);
+    worksheet.mergeCells(`A${rowNum}:A${nextRow}`);
+    cellA.value = sectionLetter;
+    cellA.font = { bold: true, name: "Kanit Light", size: 10 };
+    cellA.alignment = { horizontal: "center", vertical: "middle" };
+    cellA.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFBFBFBF" },
+    };
+    cellA.border = {
       top: { style: "thin" },
       bottom: { style: "thin" },
       left: { style: "thin" },
       right: { style: "thin" },
     };
-  currentRow++;
 
-  let sumA = 0;
-  const itemsA = data.items.filter((i) => i.category === "A");
+    worksheet.mergeCells(`B${rowNum}:${mergeEndCol}${nextRow}`);
+    const cellB = worksheet.getCell(`B${rowNum}`);
+    cellB.value = title;
+    cellB.font = { bold: true, name: "Kanit Light", size: 10 };
+    cellB.alignment = { horizontal: "left", vertical: "middle" };
+    cellB.border = {
+      top: { style: "thin" },
+      bottom: { style: "thin" },
+      left: { style: "thin" },
+      right: { style: "thin" },
+    };
 
-  itemsA.forEach((item, index) => {
-    const r = worksheet.getRow(currentRow);
-    r.getCell("no").value = index + 1;
-    r.getCell("name").value = item.name;
-    r.getCell("brand").value = item.brand;
-    r.getCell("qty").value = item.qty;
-    r.getCell("unit").value = item.unit;
-
-    r.getCell("matUnit").value = item.matUnitPrice;
-    r.getCell("matTotal").value = item.matTotal;
-
-    r.getCell("labUnit").value = item.labUnitPrice;
-    r.getCell("labTotal").value = item.labTotal;
-
-    r.getCell("total").value = item.totalPrice;
-
-    sumA += item.totalPrice;
-    currentRow++;
-  });
-
-  // Style Data Rows
-  for (let r = 16; r < currentRow; r++) {
-    const row = worksheet.getRow(r);
-    // Number Formats
-    ["matUnit", "matTotal", "labUnit", "labTotal", "total"].forEach((key) => {
-      row.getCell(key).numFmt = "#,##0.00";
+    ["D", "E", "F", "G", "H", "I", "J", "K"].forEach((col) => {
+      if (col <= mergeEndCol) return;
+      worksheet.mergeCells(`${col}${rowNum}:${col}${nextRow}`);
+      const cell = worksheet.getCell(`${col}${rowNum}`);
+      cell.border = {
+        top: { style: "thin" },
+        bottom: { style: "thin" },
+        left: { style: "thin" },
+        right: { style: "thin" },
+      };
     });
-    // Borders
-    for (let c = 1; c <= 10; c++)
-      row.getCell(c).border = {
-        left: { style: "thin" },
-        right: { style: "thin" },
-        bottom: { style: "dotted" },
-      };
-  }
-
-  // SUM A Row
-  worksheet.mergeCells(`A${currentRow}:I${currentRow}`);
-  worksheet.getCell(`A${currentRow}`).value = "SUM A";
-  worksheet.getCell(`A${currentRow}`).alignment = { horizontal: "center" };
-  worksheet.getCell(`A${currentRow}`).font = { bold: true };
-  worksheet.getCell(`A${currentRow}`).fill = {
-    type: "pattern",
-    pattern: "solid",
-    fgColor: { argb: "FFD9D9D9" },
-  }; // Gray
-
-  worksheet.getCell(`J${currentRow}`).value = sumA;
-  worksheet.getCell(`J${currentRow}`).numFmt = "#,##0.00";
-  worksheet.getCell(`J${currentRow}`).fill = {
-    type: "pattern",
-    pattern: "solid",
-    fgColor: { argb: "FFD9D9D9" },
-  };
-  worksheet.getRow(currentRow).border = {
-    top: { style: "thin" },
-    bottom: { style: "thin" },
   };
 
-  currentRow++;
+  const formatZero = (num: number) => (num === 0 ? "" : num);
 
-  // ==========================================
-  // 6. DATA ROWS (Section B)
-  // ==========================================
-
-  // Section B Header
-  worksheet.mergeCells(`A${currentRow}:B${currentRow}`);
-  worksheet.getCell(`A${currentRow}`).value = "B | Project Management";
-  worksheet.getCell(`A${currentRow}`).font = { bold: true };
-  // Borders
-  for (let c = 1; c <= 10; c++)
-    worksheet.getCell(currentRow, c).border = {
-      top: { style: "thin" },
-      bottom: { style: "thin" },
-      left: { style: "thin" },
-      right: { style: "thin" },
-    };
-  currentRow++;
-
-  let sumB = 0;
-  const itemsB = data.items.filter((i) => i.category === "B");
-  const startRowB = currentRow;
-
-  itemsB.forEach((item, index) => {
-    const r = worksheet.getRow(currentRow);
-    r.getCell("no").value = itemsA.length + index + 1; // ต่อเลขลำดับ
-    r.getCell("name").value = item.name;
-    r.getCell("qty").value = item.qty;
-    r.getCell("unit").value = item.unit;
-    // B usually only has Total in the example, but adapt as needed
-    r.getCell("total").value = item.totalPrice;
-
-    sumB += item.totalPrice;
-    currentRow++;
-  });
-
-  // Style Data Rows B
-  for (let r = startRowB; r < currentRow; r++) {
-    const row = worksheet.getRow(r);
-    row.getCell("total").numFmt = "#,##0.00";
-    for (let c = 1; c <= 10; c++)
-      row.getCell(c).border = {
-        left: { style: "thin" },
-        right: { style: "thin" },
-        bottom: { style: "dotted" },
-      };
-  }
-
-  // SUM B Row
-  worksheet.mergeCells(`A${currentRow}:I${currentRow}`);
-  worksheet.getCell(`A${currentRow}`).value = "SUM B";
-  worksheet.getCell(`A${currentRow}`).alignment = { horizontal: "center" };
-  worksheet.getCell(`A${currentRow}`).font = { bold: true };
-  worksheet.getCell(`A${currentRow}`).fill = {
-    type: "pattern",
-    pattern: "solid",
-    fgColor: { argb: "FFD9D9D9" },
-  };
-
-  worksheet.getCell(`J${currentRow}`).value = sumB;
-  worksheet.getCell(`J${currentRow}`).numFmt = "#,##0.00";
-  worksheet.getCell(`J${currentRow}`).fill = {
-    type: "pattern",
-    pattern: "solid",
-    fgColor: { argb: "FFD9D9D9" },
-  };
-
-  currentRow++;
-
-  // ==========================================
-  // 7. FOOTER (Totals & Terms)
-  // ==========================================
-
-  // Total Calculation
-  const total = sumA + sumB;
-  const discount = data.discount || 0;
-  const afterDiscount = total - discount;
-  const vat = afterDiscount * data.vatRate;
-  const grandTotal = afterDiscount + vat;
-
-  const startFooterRow = currentRow;
-
-  // -- Right Side Totals --
-  // Total
-  worksheet.getCell(`I${currentRow}`).value = "รวม (Total)";
-  worksheet.getCell(`J${currentRow}`).value = total;
-  currentRow++;
-  // Discount
-  worksheet.getCell(`I${currentRow}`).value = "ส่วนลด (Discount)";
-  worksheet.getCell(`J${currentRow}`).value = discount;
-  currentRow++;
-  // Total after Discount (Optional row based on image logic, skipping to match exact image flow)
-  worksheet.getCell(`I${currentRow}`).value = "รวม (Total)";
-  worksheet.getCell(`J${currentRow}`).value = afterDiscount;
-  currentRow++;
-  // VAT
-  worksheet.getCell(`I${currentRow}`).value = "ภาษีมูลค่าเพิ่ม Vat 7%";
-  worksheet.getCell(`J${currentRow}`).value = vat;
-  currentRow++;
-  // Grand Total
-  worksheet.getCell(`I${currentRow}`).value = "รวมเงินทั้งสิ้น (Grand Total)";
-  worksheet.getCell(`J${currentRow}`).value = grandTotal;
-
-  // Formatting Totals
-  for (let r = startFooterRow; r <= currentRow; r++) {
-    worksheet.getCell(`I${r}`).border = {
-      left: { style: "thin" },
-      bottom: { style: "thin" },
-    };
-    worksheet.getCell(`J${r}`).border = {
-      right: { style: "thin" },
-      bottom: { style: "thin" },
-      left: { style: "thin" },
-    };
-    worksheet.getCell(`J${r}`).numFmt = "#,##0.00";
-  }
-  // Color the Grand Total
-  worksheet.getCell(`J${currentRow}`).fill = {
-    type: "pattern",
-    pattern: "solid",
-    fgColor: { argb: "FFD9D9D9" },
-  };
-
-  // -- Left Side Terms --
-  // Payment Terms
-  worksheet.getCell(`A${startFooterRow}`).value = "เงื่อนไขการชำระเงิน";
-  worksheet.getCell(`A${startFooterRow}`).font = { bold: true };
-  data.paymentTerms.forEach((term, idx) => {
-    worksheet.getCell(`A${startFooterRow + 1 + idx}`).value = `${
-      idx + 1
-    }. ${term}`;
-  });
-
-  // Remarks
-  const remarkRow = startFooterRow + 1 + data.paymentTerms.length;
-  worksheet.getCell(`A${remarkRow}`).value = "หมายเหตุ";
-  worksheet.getCell(`A${remarkRow}`).font = { bold: true };
-  worksheet.getCell(`A${remarkRow + 1}`).value = data.remarks;
-
-  // Warranty (Right side of left block) - or below based on space.
-  // In image it's column E-F roughly.
-  worksheet.getCell(`E${startFooterRow}`).value = "เงื่อนไขการรับประกัน";
-  worksheet.getCell(`E${startFooterRow}`).font = { bold: true };
-  data.warrantyTerms.forEach((term, idx) => {
-    worksheet.getCell(`E${startFooterRow + 1 + idx}`).value = `${
-      idx + 1
-    }. ${term}`;
-  });
-
-  // Text Baht (Below Grand Total)
-  // Assuming currentRow is at Grand Total line
-  currentRow++;
-  worksheet.mergeCells(`D${currentRow}:J${currentRow}`);
-  worksheet.getCell(`D${currentRow}`).value = `( ตัวอักษรจำนวนเงินบาทไทย )`; // คุณต้องใช้ library `bahttext` แปลงค่า grandTotal มาใส่ตรงนี้
-  worksheet.getCell(`D${currentRow}`).alignment = { horizontal: "center" };
-
-  // ==========================================
-  // 8. SIGNATURES
-  // ==========================================
+  // Section A
+  const sectionATitle = `ระบบโซลาร์ ${data.maxPower
+    .replace("กำลังไฟสูงสุด ( ", "")
+    .replace(" )", "")}`;
+  createSectionHeader(currentRow, "A", sectionATitle, "C");
   currentRow += 2;
 
-  // Ponix
-  worksheet.mergeCells(`B${currentRow}:D${currentRow + 3}`);
-  worksheet.getCell(`B${currentRow}`).value =
-    "ลงชื่อผู้ให้บริการ\n\n\n___________________\nธนพร สดาการ\nวันที่ 18 / 7 / 2568";
-  worksheet.getCell(`B${currentRow}`).alignment = {
-    horizontal: "center",
-    vertical: "bottom",
-    wrapText: true,
+  let sumA = 0;
+  data.items
+    .filter((i) => i.category === "A")
+    .forEach((item) => {
+      const nextRow = currentRow + 1;
+      const row = worksheet.getRow(currentRow);
+      row.values = [
+        itemRunningNumber++,
+        item.name,
+        "",
+        item.brand,
+        formatZero(item.qty),
+        item.unit,
+        formatZero(item.matUnit),
+        formatZero(item.matTotal),
+        formatZero(item.labUnit),
+        formatZero(item.labTotal),
+        formatZero(item.total),
+      ];
+      worksheet.mergeCells(`A${currentRow}:A${nextRow}`);
+      worksheet.mergeCells(`B${currentRow}:C${nextRow}`);
+      worksheet.mergeCells(`D${currentRow}:D${nextRow}`);
+      ["E", "F", "G", "H", "I", "J", "K"].forEach((col) => {
+        worksheet.mergeCells(`${col}${currentRow}:${col}${nextRow}`);
+      });
+      [5, 7, 8, 9, 10, 11].forEach((c) => (row.getCell(c).numFmt = "#,##0.00"));
+      for (let r = currentRow; r <= nextRow; r++) {
+        const rRow = worksheet.getRow(r);
+        for (let c = 1; c <= 11; c++) {
+          if (c === 3) continue;
+          rRow.getCell(c).border = {
+            left: { style: "thin" },
+            right: { style: "thin" },
+            bottom: { style: "thin" },
+          };
+        }
+      }
+      [1, 4, 5, 6].forEach((c) => {
+        worksheet.getCell(currentRow, c).alignment = {
+          horizontal: "center",
+          vertical: "middle",
+        };
+      });
+      worksheet.getCell(`B${currentRow}`).alignment = {
+        horizontal: "left",
+        vertical: "middle",
+        wrapText: true,
+      };
+      sumA += item.total;
+      currentRow += 2;
+    });
+
+  // SUM A
+  const sumANextRow = currentRow + 1;
+  worksheet.mergeCells(`A${currentRow}:J${sumANextRow}`);
+  const sumACell = worksheet.getCell(`A${currentRow}`);
+  sumACell.value = "SUM A";
+  sumACell.alignment = { horizontal: "center", vertical: "middle" };
+  sumACell.font = { bold: true, name: "Kanit Light", size: 10 };
+  sumACell.fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FFBFBFBF" },
   };
-  worksheet.getCell(`B${currentRow}`).border = {
+  sumACell.border = {
     top: { style: "thin" },
     bottom: { style: "thin" },
     left: { style: "thin" },
     right: { style: "thin" },
   };
 
-  // Customer
-  worksheet.mergeCells(`G${currentRow}:I${currentRow + 3}`);
-  worksheet.getCell(`G${currentRow}`).value =
-    "ลงชื่อลูกค้า\n\n\n___________________\n\nวันที่ ___/___/___";
-  worksheet.getCell(`G${currentRow}`).alignment = {
-    horizontal: "center",
-    vertical: "bottom",
+  worksheet.mergeCells(`K${currentRow}:K${sumANextRow}`);
+  const sumATotalCell = worksheet.getCell(`K${currentRow}`);
+  sumATotalCell.value = sumA;
+  sumATotalCell.numFmt = "#,##0.00";
+  sumATotalCell.alignment = { horizontal: "right", vertical: "middle" };
+  sumATotalCell.fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FFBFBFBF" },
+  };
+  sumATotalCell.border = {
+    top: { style: "thin" },
+    bottom: { style: "thin" },
+    left: { style: "thin" },
+    right: { style: "thin" },
+  };
+  currentRow += 2;
+
+  // Section B
+  createSectionHeader(currentRow, "B", "Project Management", "D");
+  currentRow += 2;
+
+  let sumB = 0;
+  data.items
+    .filter((i) => i.category === "B")
+    .forEach((item) => {
+      const nextRow = currentRow + 1;
+      const row = worksheet.getRow(currentRow);
+      row.values = [
+        itemRunningNumber++,
+        item.name,
+        "",
+        "",
+        formatZero(item.qty),
+        item.unit,
+        formatZero(item.matUnit),
+        formatZero(item.matTotal),
+        formatZero(item.labUnit),
+        formatZero(item.labTotal),
+        formatZero(item.total),
+      ];
+      worksheet.mergeCells(`A${currentRow}:A${nextRow}`);
+      worksheet.mergeCells(`B${currentRow}:D${nextRow}`);
+      ["E", "F", "G", "H", "I", "J", "K"].forEach((col) => {
+        worksheet.mergeCells(`${col}${currentRow}:${col}${nextRow}`);
+      });
+      [5, 7, 8, 9, 10, 11].forEach((c) => (row.getCell(c).numFmt = "#,##0.00"));
+      for (let r = currentRow; r <= nextRow; r++) {
+        const rRow = worksheet.getRow(r);
+        for (let c = 1; c <= 11; c++) {
+          if (c === 3 || c === 4) continue;
+          rRow.getCell(c).border = {
+            left: { style: "thin" },
+            right: { style: "thin" },
+            bottom: { style: "thin" },
+          };
+        }
+      }
+      [1, 5, 6].forEach((c) => {
+        worksheet.getCell(currentRow, c).alignment = {
+          horizontal: "center",
+          vertical: "middle",
+        };
+      });
+      worksheet.getCell(`B${currentRow}`).alignment = {
+        horizontal: "left",
+        vertical: "middle",
+        wrapText: true,
+      };
+      sumB += item.total;
+      currentRow += 2;
+    });
+
+  // SUM B
+  const sumBNextRow = currentRow + 1;
+  worksheet.mergeCells(`A${currentRow}:J${sumBNextRow}`);
+  const sumBCell = worksheet.getCell(`A${currentRow}`);
+  sumBCell.value = "SUM B";
+  sumBCell.alignment = { horizontal: "center", vertical: "middle" };
+  sumBCell.font = { bold: true, name: "Kanit Light", size: 10 };
+  sumBCell.fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FFBFBFBF" },
+  };
+  sumBCell.border = {
+    top: { style: "thin" },
+    bottom: { style: "thin" },
+    left: { style: "thin" },
+    right: { style: "thin" },
+  };
+
+  worksheet.mergeCells(`K${currentRow}:K${sumBNextRow}`);
+  const sumBTotalCell = worksheet.getCell(`K${currentRow}`);
+  sumBTotalCell.value = sumB;
+  sumBTotalCell.numFmt = "#,##0.00";
+  sumBTotalCell.alignment = { horizontal: "right", vertical: "middle" };
+  sumBTotalCell.fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FFBFBFBF" },
+  };
+  sumBTotalCell.border = {
+    top: { style: "thin" },
+    bottom: { style: "thin" },
+    left: { style: "thin" },
+    right: { style: "thin" },
+  };
+  currentRow += 2;
+
+// ==========================================
+  // 6. FOOTER
+  // ==========================================
+  const footerStart = currentRow;
+  const footerEndRow = footerStart + 9;
+
+  // -- Left Side Terms -- (เงื่อนไขการชำระเงิน)
+  worksheet.mergeCells(`A${footerStart}:B${footerEndRow}`);
+  const leftTermCell = worksheet.getCell(`A${footerStart}`);
+  
+  const leftRichText: any[] = [
+    {
+      text: "เงื่อนไขการชำระเงิน\n",
+      font: { bold: true, name: "Kanit Light", size: 11 },
+    },
+  ];
+
+  // ✅ เช็คจำนวนข้อ: ถ้ามีมากกว่า 1 ข้อ ให้ใส่เลขลำดับ (1. 2. 3.) ถ้ามีข้อเดียวไม่ต้องใส่
+  data.paymentTerms.forEach((term, i) => {
+    // กำหนด prefix: ถ้าข้อมูลมีหลายข้อ ให้ใส่ "1. " ถ้ามีข้อเดียวให้ว่างไว้
+    const prefix = data.paymentTerms.length > 1 ? `${i + 1}. ` : "";
+    
+    leftRichText.push({
+      text: `${prefix}${term}\n`, // ใส่ prefix หน้าข้อความ
+      font: { name: "Kanit Light", size: 11 },
+    });
+  });
+
+  // เพิ่มหมายเหตุต่อท้าย
+  leftRichText.push({
+    text: "หมายเหตุ\n",
+    font: { bold: true, name: "Kanit Light", size: 11 },
+  });
+  leftRichText.push({
+    text: data.remarks,
+    font: { name: "Kanit Light", size: 11 },
+  });
+
+  leftTermCell.value = { richText: leftRichText };
+  leftTermCell.alignment = {
+    vertical: "middle",
+    horizontal: "left",
     wrapText: true,
   };
-  // worksheet.getCell(`G${currentRow}`).border = ... (If needed)
+  leftTermCell.border = {
+    top: { style: "thin" },
+    bottom: { style: "thin" },
+    left: { style: "thin" },
+    right: { style: "thin" },
+  };
+
+  // --- ส่วนเงื่อนไขการรับประกัน (ตรงกลาง) ---
+  worksheet.mergeCells(`C${footerStart}:H${footerEndRow}`);
+  const midTermCell = worksheet.getCell(`C${footerStart}`);
+  const midRichText: any[] = [
+    {
+      text: "\nเงื่อนไขการรับประกัน\n",
+      font: { bold: true, name: "Kanit Light", size: 11 },
+    },
+  ];
+
+  data.warrantyTerms.forEach((term, i) => {
+    const prefix = data.warrantyTerms.length > 1 ? `${i + 1}. ` : "";
+    midRichText.push({
+      text: `${prefix}${term}\n`,
+      font: { name: "Kanit Light", size: 10 },
+    });
+  });
+
+  midTermCell.value = { richText: midRichText };
+  midTermCell.alignment = {
+    vertical: "middle",
+    horizontal: "left",
+    wrapText: true,
+  };
+  midTermCell.border = {
+    top: { style: "thin" },
+    bottom: { style: "thin" },
+    left: { style: "thin" },
+    right: { style: "thin" },
+  };
+
+
+  const totalAmount = sumA + sumB;
+  const vatAmount = totalAmount * data.vatRate;
+  const grandTotal = totalAmount + vatAmount;
+
+  let r = footerStart;
+  const totals = [
+    { t: "รวม(Total)", v: totalAmount },
+    { t: "ส่วนลด(Discount)", v: data.discount || 0 }, // ถ้า 0 จะโชว์ 0 ถ้าอยากได้ขีดให้แก้ตอน Map
+    { t: "รวม(Total)", v: totalAmount - data.discount },
+    { t: "ภาษีมูลค่าเพิ่ม Vat7%", v: vatAmount },
+    { t: "รวมเงินทั้งสิ้น (Grand Total)", v: grandTotal },
+  ];
+
+  totals.forEach((item, idx) => {
+    // ถ้าเป็นส่วนลด และค่าเป็น 0 ให้แสดง "-"
+    const displayVal = idx === 1 && item.v === 0 ? "-" : item.v;
+
+    const nextR = r + 1;
+    worksheet.mergeCells(`I${r}:J${nextR}`);
+    const label = worksheet.getCell(`I${r}`);
+    label.value = item.t;
+    label.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFBFBFBF" },
+    };
+    label.font = { name: "Kanit Light", size: 9, bold: false };
+    label.alignment = { vertical: "middle", horizontal: "left" };
+    label.border = {
+      left: { style: "thin" },
+      bottom: { style: "thin" },
+      top: { style: "thin" },
+      right: { style: "thin" },
+    };
+
+    worksheet.mergeCells(`K${r}:K${nextR}`);
+    const val = worksheet.getCell(`K${r}`);
+    val.value = displayVal;
+    if (typeof displayVal === "number") val.numFmt = "#,##0.00";
+    val.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFBFBFBF" },
+    };
+    val.font = { name: "Kanit Light", size: 9, bold: false };
+    val.alignment = { vertical: "middle", horizontal: "right" };
+    val.border = {
+      right: { style: "thin" },
+      bottom: { style: "thin" },
+      left: { style: "thin" },
+      top: { style: "thin" },
+    };
+    r += 2;
+  });
+
+  currentRow = footerEndRow + 1;
 
   // ==========================================
-  // 9. OUTPUT
+  // 7. BAHT TEXT ROW
   // ==========================================
+  const bahtTextNextRow = currentRow + 1;
+  worksheet.mergeCells(`A${currentRow}:K${bahtTextNextRow}`);
+  const bahtCell = worksheet.getCell(`A${currentRow}`);
+  bahtCell.value = getBahtText(grandTotal);
+  bahtCell.alignment = { vertical: "middle", horizontal: "center" };
+  bahtCell.font = { name: "Kanit Light", size: 11 };
+  bahtCell.border = {
+    top: { style: "thin" },
+    bottom: { style: "thin" },
+    left: { style: "thin" },
+    right: { style: "thin" },
+  };
+  currentRow += 2;
+
+  // ==========================================
+  // 8. SIGNATURES
+  // ==========================================
+  if (signatureId !== null) {
+    worksheet.addImage(signatureId, {
+      tl: { col: 0.2, row: currentRow } as any,
+      ext: { width: 230, height: 95 },
+    });
+  }
+
+  worksheet.mergeCells(`A${currentRow}:E${currentRow + 7}`);
+  const sign1 = worksheet.getCell(`A${currentRow}`);
+  const spaces = "                       ";
+  sign1.value = `${spaces}ลงชื่อผู้ให้บริการ\n\n${spaces}___________________\n${spaces}วันที่ ${data.date}`; // ใช้ data.date
+  sign1.alignment = {
+    vertical: "middle",
+    horizontal: "center",
+    wrapText: true,
+  };
+  sign1.border = {
+    top: { style: "thin" },
+    bottom: { style: "thin" },
+    left: { style: "thin" },
+    right: { style: "thin" },
+  };
+  sign1.font = { name: "Kanit Light", size: 10 };
+
+  worksheet.mergeCells(`F${currentRow}:K${currentRow + 7}`);
+  const sign2 = worksheet.getCell(`F${currentRow}`);
+  sign2.value = "ลงชื่อลูกค้า\n\n___________________\nวันที่ ___/___/___";
+  sign2.alignment = {
+    vertical: "middle",
+    horizontal: "center",
+    wrapText: true,
+  };
+  sign2.border = {
+    top: { style: "thin" },
+    bottom: { style: "thin" },
+    left: { style: "thin" },
+    right: { style: "thin" },
+  };
+  sign2.font = { name: "Kanit Light", size: 10 };
+
+  // ==========================================
+  // FORCE ROW HEIGHT & SAVE
+  // ==========================================
+  worksheet.eachRow({ includeEmpty: true }, (row) => {
+    row.height = 24.5;
+    (row as any).customHeight = true;
+  });
+
+  // Browser Save (using file-saver)
   const buffer = await workbook.xlsx.writeBuffer();
   const blob = new Blob([buffer], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   });
   saveAs(blob, `Quotation_${data.docNumber}.xlsx`);
+
+  console.log("✅ สร้างไฟล์ Excel สำเร็จ!");
 };
