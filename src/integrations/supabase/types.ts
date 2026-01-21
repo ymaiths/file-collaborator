@@ -344,6 +344,9 @@ export type Database = {
           edited_note: string | null;
           edited_payment_terms: string | null;
           edited_warranty_terms: string | null;
+          payment_terms: string | null
+          warranty_terms: string | null
+          note: string | null
           id: string;
           price_id: string | null;
           sale_name: string;
@@ -355,6 +358,9 @@ export type Database = {
           edited_note?: string | null;
           edited_payment_terms?: string | null;
           edited_warranty_terms?: string | null;
+          payment_terms?: string | null;
+          warranty_terms?: string | null;
+          note?: string | null;
           id?: string;
           price_id?: string | null;
           sale_name: string;
@@ -366,6 +372,9 @@ export type Database = {
           edited_note?: string | null;
           edited_payment_terms?: string | null;
           edited_warranty_terms?: string | null;
+          payment_terms?: string | null;
+          warranty_terms?: string | null;
+          note?: string | null;
           id?: string;
           price_id?: string | null;
           sale_name?: string;
