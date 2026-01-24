@@ -5,7 +5,6 @@ import { Database } from "@/integrations/supabase/types";
 import {
   calculateItemCost,
   isIncludedItem,
-  roundToHundred,
 } from "@/utils/pricing-logic";
 
 type Product = Database["public"]["Tables"]["products"]["Row"];
@@ -21,15 +20,18 @@ interface CalculatedLineItem extends DbLineItem {
 }
 
 export const useCalculatePricing = () => {
-  const [isCalculating, setIsCalculating] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Helper: ปัดเศษหาค่าใกล้เคียง 100 ที่สุด
+  const roundNearestHundred = (num: number) => Math.round(num / 100) * 100;
 
   const calculateAndSavePricing = async (quotationId: string) => {
-    setIsCalculating(true);
+    setIsLoading(true);
     console.clear();
-    console.log("🚀 Starting Calculation (Force Integer Mode)...");
+    console.group("🚀 PRICING: 3-ROUND LOGIC (High Precision)");
 
     try {
-      // 1. ดึงข้อมูล
+      // 1. Fetch Data
       const { data: quote, error: quoteError } = await supabase
         .from("quotations")
         .select(`*, sale_packages(*)`)
@@ -42,7 +44,7 @@ export const useCalculatePricing = () => {
       const phase = quote.electrical_phase || "single_phase";
       const salePackageId = quote.sale_package_id;
 
-      // 2. ราคาเป้าหมาย
+      // 2. Target Price
       const { data: priceList } = await supabase
         .from("sale_package_prices")
         .select("*")
@@ -57,21 +59,19 @@ export const useCalculatePricing = () => {
             (p.kw_max || 0) >= projectSizeWatt
       );
 
-      if (!matchedPrice) throw new Error("Price not found");
-
-      let rawTargetPrice = 0;
-      const priceData = matchedPrice as any;
-      if (priceData.is_exact_price) {
-        rawTargetPrice = priceData.price_exact || 0;
-      } else {
-        rawTargetPrice = (priceData.price_percentage || 0) * projectSizeWatt;
+      let TOTAL_PROJECT_PRICE = 0;
+      if (matchedPrice) {
+          const priceData = matchedPrice as any;
+          if (priceData.is_exact_price) {
+            TOTAL_PROJECT_PRICE = priceData.price_exact || 0;
+          } else {
+            TOTAL_PROJECT_PRICE = Math.round((priceData.price_percentage || 0) * projectSizeWatt);
+          }
       }
+      
+      console.log(`💰 TARGET PRICE: ${TOTAL_PROJECT_PRICE.toLocaleString()}`);
 
-      // ปัดเศษยอดรวมโครงการให้เป็นจำนวนเต็มทันที
-      const TOTAL_PROJECT_PRICE = Math.round(rawTargetPrice);
-      console.log(`💰 Target Price (Rounded): ${TOTAL_PROJECT_PRICE.toLocaleString()}`);
-
-      // 3. ดึงสินค้า
+      // 3. Line Items
       const { data: lineItems } = await supabase
         .from("product_line_items")
         .select(`*, products(*)`)
@@ -80,7 +80,7 @@ export const useCalculatePricing = () => {
       if (!lineItems) throw new Error("No items found");
 
       // =========================================================
-      // Step 1: คำนวณต้นทุน (Cost)
+      // Step 1: Base Cost
       // =========================================================
       let items: CalculatedLineItem[] = lineItems.map((item) => {
         const baseItem = {
@@ -89,252 +89,271 @@ export const useCalculatePricing = () => {
           costEq: 0,
           costInst: 0,
           isIncluded: false,
-          finalPriceEq: 0,
-          finalPriceInst: 0,
+          finalPriceEq: item.product_price || 0,
+          finalPriceInst: item.installation_price || 0,
         };
         if (!item.products) return baseItem;
 
-        const { costEq, costInst } = calculateItemCost(
-          baseItem,
-          projectSizeWatt
-        );
+        const { costEq, costInst } = calculateItemCost(baseItem, projectSizeWatt);
         const isIncluded = isIncludedItem(item.products, projectSizeWatt);
 
         return { ...baseItem, costEq, costInst, isIncluded };
       });
 
-      // =========================================================
-      // Step 2: Excluded Items
-      // =========================================================
-      items = items.map((item) => {
-        if (!item.isIncluded) {
-          // ถ้าไม่รวมใน Markup -> ขายเท่าทุน
-          return {
-            ...item,
-            finalPriceEq: item.costEq,
-            finalPriceInst: item.costInst,
-          };
-        }
-        return item;
-      });
-
-      // =========================================================
-      // Step 3: Markup Calculation
-      // =========================================================
-      const includedItems = items.filter((i) => i.isIncluded);
-      
-      // Helper function เช็คว่าเป็น Mounting Structure หรือไม่ (แบบยืดหยุ่น)
-      const isMountingItem = (category: string) => {
-         const cat = category.toLowerCase().trim();
-         return cat.includes("mounting") || cat.includes("structure");
+      // Helpers
+      const checkIsMajorItem = (product: Product | null) => {
+          if (!product) return false;
+          const cat = product.product_category || "";
+          const name = product.name.toLowerCase();
+          if (cat === "solar_panel" || cat === "inverter" || cat === "zero_export_smart_logger") return true;
+          if (name.includes("optimizer") || name.includes("inverter")) return true;
+          return false;
+      };
+      const checkIsMounting = (product: Product | null) => {
+          if (!product) return false;
+          const cat = product.product_category || "";
+          return cat === "pv_mounting_structure" || product.name.toLowerCase().includes("mounting");
       };
 
-      const excludedInstallItems = includedItems.filter((i) =>
-        ["solar_panel", "pv_mounting_structure"].includes(
-          i.products?.product_category || ""
-        )
-      );
-      const excludedInstallCost = excludedInstallItems.reduce(
-        (sum, i) => sum + i.costInst,
-        0
-      );
+      // =========================================================
+      // Step 2: Identify Locked Price
+      // =========================================================
+      let totalFixedPrice = 0;
+      let totalVariableBaseCost = 0; // ต้นทุนรวมของตัวที่ไม่ล็อค
 
-      const totalIncludedCost = includedItems.reduce(
-        (sum, item) => sum + item.costEq + item.costInst,
-        0
-      );
-
-      const costBaseForMarkup = totalIncludedCost - excludedInstallCost;
-      const priceTargetForMarkup = TOTAL_PROJECT_PRICE - excludedInstallCost;
-
-      let markupRatio = 1;
-      if (costBaseForMarkup > 0) {
-        markupRatio = priceTargetForMarkup / costBaseForMarkup;
-      }
-
-      // 3.1 Apply Markup
-      items = items.map((item) => {
-        if (item.isIncluded) {
-          let priceEq = item.costEq * markupRatio;
-          let priceInst = item.costInst * markupRatio;
-
-          if (
-            ["solar_panel", "pv_mounting_structure"].includes(
-              item.products?.product_category || ""
-            )
-          ) {
-            priceInst = item.costInst;
+      items = items.map(item => {
+          // Excluded -> Fixed
+          if (!item.isIncluded) {
+              const finalEq = item.is_edited_product_price ? item.finalPriceEq : item.costEq;
+              const finalInst = item.is_edited_installation_price ? item.finalPriceInst : item.costInst;
+              totalFixedPrice += finalEq + finalInst;
+              return { ...item, finalPriceEq: finalEq, finalPriceInst: finalInst };
           }
-          return { ...item, finalPriceEq: priceEq, finalPriceInst: priceInst };
-        }
-        return item;
+          return item;
       });
 
+      items.filter(i => i.isIncluded).forEach(item => {
+          const category = item.products?.product_category || "";
+          // Check Equipment
+          if (item.is_edited_product_price) totalFixedPrice += item.finalPriceEq;
+          else totalVariableBaseCost += item.costEq;
+
+          // Check Installation
+          if (item.is_edited_installation_price) totalFixedPrice += item.finalPriceInst;
+          else {
+              const isNoMarkupInst = ["solar_panel", "pv_mounting_structure"].includes(category);
+              if (isNoMarkupInst) totalFixedPrice += item.costInst;
+              else totalVariableBaseCost += item.costInst;
+          }
+      });
+
+      const remainingBudget = TOTAL_PROJECT_PRICE - totalFixedPrice;
+      
       // =========================================================
-      // 3.2 Rounding & Diff
+      // 🔄 ROUND 1: เกลี่ยทุกตัวเท่ากัน (Universal Dist.)
       // =========================================================
-      let currentSum = 0;
-      let cableIndex = -1;
+      console.group("🔄 Round 1: Universal Distribution");
+      
+      let ratio1 = 1;
+      if (totalVariableBaseCost > 0) ratio1 = remainingBudget / totalVariableBaseCost;
+      if (ratio1 < 0) ratio1 = 0;
 
-      items = items.map((item, index) => {
-        const category = item.products?.product_category || "";
-        const name = item.products?.name || "";
-        const isMounting = isMountingItem(category);
+      console.log(`Ratio 1: ${ratio1.toFixed(6)}`);
 
-        if (item.isIncluded) {
-          const isCable = name.includes("สายไฟ VCT") || name.includes("THW");
+      let sumRound1 = 0;
 
-          if (isCable) {
-            cableIndex = index;
-            const roundedInst = roundToHundred(item.finalPriceInst);
-            const rawEq = item.finalPriceEq; 
-            currentSum += rawEq + roundedInst;
-            return {
-              ...item,
-              finalPriceEq: rawEq,
-              finalPriceInst: roundedInst,
-            };
-          } else if (isMounting) {
-            // Mounting (Included)
-            // Equipment: Round Unit Price to Integer -> * Quantity
-            // Installation: Round Unit Cost to Integer -> * Quantity
-            
-            const quantity = item.quantity || 1;
-            
-            // Calculate Unit Price based on Total / Quantity
-            const rawUnitEq = item.finalPriceEq / quantity;
-            const rawUnitInst = item.finalPriceInst / quantity;
+      items = items.map(item => {
+          if (!item.isIncluded) {
+              sumRound1 += item.finalPriceEq + item.finalPriceInst;
+              return item;
+          }
+          
+          const product = item.products;
+          const isMajor = checkIsMajorItem(product);
+          const isMounting = checkIsMounting(product);
+          const isNoMarkupInst = ["solar_panel", "pv_mounting_structure"].includes(product?.product_category || "");
+          const qty = item.quantity || 1;
 
-            // Round Unit Price
-            const roundedUnitEq = Math.round(rawUnitEq);
-            const roundedUnitInst = Math.round(rawUnitInst);
+          // --- Equipment ---
+          let finalEq = item.finalPriceEq;
+          if (!item.is_edited_product_price) {
+              const rawTotal = item.costEq * ratio1;
+              if (isMajor) {
+                  // Major -> Unit Round 100
+                  finalEq = roundNearestHundred(rawTotal / qty) * qty;
+              } else if (isMounting) {
+                  // Mounting -> Unit Round 1
+                  finalEq = Math.round(rawTotal / qty) * qty;
+              } else {
+                  // General -> Total Round 100
+                  finalEq = roundNearestHundred(rawTotal);
+              }
+          }
 
-            // Recalculate Total
-            const finalEq = roundedUnitEq * quantity;
-            const finalInst = roundedUnitInst * quantity;
+          // --- Installation ---
+          let finalInst = item.finalPriceInst;
+          if (!item.is_edited_installation_price) {
+              const rawTotalInst = isNoMarkupInst ? item.costInst : (item.costInst * ratio1);
+              if (isMajor) {
+                  finalInst = roundNearestHundred(rawTotalInst / qty) * qty;
+              } else if (isMounting) {
+                  finalInst = Math.round(rawTotalInst / qty) * qty;
+              } else {
+                  finalInst = roundNearestHundred(rawTotalInst);
+              }
+          }
 
-            currentSum += finalEq + finalInst;
-            
-            return {
-              ...item,
-              finalPriceEq: finalEq,
-              finalPriceInst: finalInst,
-            };
-          } else if (category === "solar_panel") {
-            // Solar Panel (Included)
-            // Equipment: Round Unit Price to 100 -> * Quantity
-            // Installation: Round Unit Cost to Integer -> * Quantity
+          sumRound1 += finalEq + finalInst;
+          return { ...item, finalPriceEq: finalEq, finalPriceInst: finalInst };
+      });
 
-            const quantity = item.quantity || 1;
+      const diff1 = TOTAL_PROJECT_PRICE - sumRound1;
+      console.log(`Sum R1: ${sumRound1.toLocaleString()} | Diff R1: ${diff1}`);
+      console.groupEnd();
 
-            const rawUnitEq = item.finalPriceEq / quantity;
-            const rawUnitInst = item.finalPriceInst / quantity;
+      // =========================================================
+      // 🔄 ROUND 2: เกลี่ยเฉพาะตัว Qty < 100
+      // =========================================================
+      console.group("🔄 Round 2: Low Quantity Adjustment (<100)");
+      
+      if (diff1 !== 0) {
+          // หา Candidate: ไม่ล็อค และ จำนวน < 100
+          const candidatesR2 = items.filter(item => 
+              item.isIncluded && 
+              (!item.is_edited_product_price || !item.is_edited_installation_price) &&
+              (item.quantity || 1) < 100 // ✅ เงื่อนไขสำคัญ
+          );
 
-            // Round Unit
-            const roundedUnitEq = roundToHundred(rawUnitEq);
-            const roundedUnitInst = Math.round(rawUnitInst);
+          // คำนวณราคารวมปัจจุบันของกลุ่มนี้
+          const currentSumCandidates = candidatesR2.reduce((sum, item) => {
+              let s = 0;
+              if (!item.is_edited_product_price) s += item.finalPriceEq;
+              if (!item.is_edited_installation_price) s += item.finalPriceInst;
+              return sum + s;
+          }, 0);
 
-            // Recalculate Total
-            const finalEq = roundedUnitEq * quantity;
-            const finalInst = roundedUnitInst * quantity;
+          if (candidatesR2.length > 0 && currentSumCandidates > 0) {
+               // Ratio สำหรับรอบ 2 = (ราคาเดิม + ส่วนต่างที่ต้องแก้) / ราคาเดิม
+               let ratio2 = (currentSumCandidates + diff1) / currentSumCandidates;
+               if (ratio2 < 0) ratio2 = 0; // กันติดลบ
 
-            currentSum += finalEq + finalInst;
+               console.log(`Candidates: ${candidatesR2.length} items | Ratio 2: ${ratio2.toFixed(6)}`);
 
-            return {
-              ...item,
-              finalPriceEq: finalEq,
-              finalPriceInst: finalInst,
-            };
+               // Apply Ratio 2 & Round Again
+               items = items.map(item => {
+                   if (!candidatesR2.find(c => c.id === item.id)) return item; // ถ้าไม่ใช่ Candidate ข้าม
+
+                   const qty = item.quantity || 1;
+                   const isMajor = checkIsMajorItem(item.products);
+                   const isMounting = checkIsMounting(item.products);
+
+                   // Eq
+                   if (!item.is_edited_product_price) {
+                       const rawTotal = item.finalPriceEq * ratio2;
+                       if (isMajor) item.finalPriceEq = roundNearestHundred(rawTotal / qty) * qty;
+                       else if (isMounting) item.finalPriceEq = Math.round(rawTotal / qty) * qty;
+                       else item.finalPriceEq = roundNearestHundred(rawTotal);
+                   }
+                   // Inst
+                   if (!item.is_edited_installation_price) {
+                       // ระวัง: Installation บางอันเป็น NoMarkup ไม่ควรไปยุ่ง
+                       const isNoMarkup = ["solar_panel", "pv_mounting_structure"].includes(item.products?.product_category||"");
+                       if (!isNoMarkup) {
+                           const rawTotal = item.finalPriceInst * ratio2;
+                           if (isMajor) item.finalPriceInst = roundNearestHundred(rawTotal / qty) * qty;
+                           else if (isMounting) item.finalPriceInst = Math.round(rawTotal / qty) * qty;
+                           else item.finalPriceInst = roundNearestHundred(rawTotal);
+                       }
+                   }
+                   return item;
+               });
           } else {
-            // General Items -> Round Total to 100
-            const roundedEq = roundToHundred(item.finalPriceEq);
-            const roundedInst = roundToHundred(item.finalPriceInst);
-            currentSum += roundedEq + roundedInst;
-            return {
-              ...item,
-              finalPriceEq: roundedEq,
-              finalPriceInst: roundedInst,
-            };
+              console.log("No candidates with Qty < 100 found. Skipping Round 2.");
           }
-        } else {
-            // Excluded Items
-            if (isMounting) {
-                 const quantity = item.quantity || 1;
-                 const rawUnitEq = item.finalPriceEq / quantity;
-                 const rawUnitInst = item.finalPriceInst / quantity;
-
-                 const finalEq = Math.round(rawUnitEq) * quantity;
-                 const finalInst = Math.round(rawUnitInst) * quantity;
-
-                return {
-                    ...item,
-                    finalPriceEq: finalEq,
-                    finalPriceInst: finalInst,
-                };
-            }
-        }
-        return item;
-      });
-
-      // Adjust Diff
-      if (cableIndex !== -1) {
-        const diff = TOTAL_PROJECT_PRICE - currentSum;
-        items[cableIndex].finalPriceEq += diff;
       }
+      
+      const sumRound2 = items.reduce((sum, i) => sum + i.finalPriceEq + i.finalPriceInst, 0);
+      const diff2 = TOTAL_PROJECT_PRICE - sumRound2;
+      console.log(`Sum R2: ${sumRound2.toLocaleString()} | Diff R2: ${diff2}`);
+      console.groupEnd();
 
       // =========================================================
-      // Step 4: Update DB
+      // 🔄 ROUND 3: สายไฟรับจบ (Wire Dump)
       // =========================================================
-      const finalUpdates = items.map((item) => {
-        let finalEq = isNaN(item.finalPriceEq) ? 0 : item.finalPriceEq;
-        let finalInst = isNaN(item.finalPriceInst) ? 0 : item.finalPriceInst;
-        
-        // Safety check: ensure they are integers if not already handled
-        finalEq = Math.round(finalEq);
-        finalInst = Math.round(finalInst);
+      console.group("🔄 Round 3: Wire Adjustment (Final)");
+      
+      if (diff2 !== 0) {
+          const wireIndex = items.findIndex(item => 
+              item.isIncluded && !item.is_edited_product_price &&
+              (item.products?.product_category === "cable" || (item.products?.name || "").includes("สายไฟ"))
+          );
 
-        return {
+          if (wireIndex !== -1) {
+              const item = items[wireIndex];
+              const before = item.finalPriceEq;
+              
+              console.log(`🎯 Target Wire: ${item.products?.name}`);
+
+              // Safety Check: ถ้าลดแล้วติดลบ
+              if (diff2 < 0 && (item.finalPriceEq + diff2) < 0) {
+                   console.warn("⚠️ Wire cannot absorb full diff (will hit 0).");
+                   const deductable = item.finalPriceEq;
+                   item.finalPriceEq = 0;
+                   const remainingDiff = diff2 + deductable;
+
+                   // Fallback: ถ้าสายไฟตายแล้ว ให้โยนไปที่ "ตัวที่แพงที่สุด" ในโครงการ (Emergency)
+                   if (Math.abs(remainingDiff) > 1) {
+                       console.warn(`⚠️ Emergency Spillover: ${remainingDiff} -> Largest Item`);
+                       const largestItem = items.reduce((prev, current) => 
+                           (!current.is_edited_product_price && current.finalPriceEq > prev.finalPriceEq) ? current : prev
+                       , items[0]);
+                       largestItem.finalPriceEq += remainingDiff;
+                   }
+              } else {
+                   item.finalPriceEq += diff2;
+                   console.log(`✅ Adjusted Wire: ${before} -> ${item.finalPriceEq}`);
+              }
+          } else {
+              console.warn("⚠️ No unlocked wire found! Applying to largest General Item.");
+              // Fallback 
+              const largestItem = items.reduce((prev, current) => 
+                   (!current.is_edited_product_price && current.finalPriceEq > prev.finalPriceEq) ? current : prev
+              , items[0]);
+              largestItem.finalPriceEq += diff2;
+          }
+      }
+      
+      const finalSum = items.reduce((sum, i) => sum + i.finalPriceEq + i.finalPriceInst, 0);
+      console.log(`Final Sum: ${finalSum.toLocaleString()} (Target: ${TOTAL_PROJECT_PRICE.toLocaleString()})`);
+      console.groupEnd();
+
+      // =========================================================
+      // Save
+      // =========================================================
+      const finalUpdates = items.map((item) => ({
             id: item.id,
-            product_price: finalEq,
-            installation_price: finalInst,
-        };
-      });
-
-      // 🔍 Log for verify
-      console.log("📋 Final Payload to DB:", finalUpdates);
+            product_price: Math.round(item.finalPriceEq), 
+            installation_price: Math.round(item.finalPriceInst),
+      }));
 
       await Promise.all(
         finalUpdates.map((update) =>
-          supabase
-            .from("product_line_items")
-            .update({
-              product_price: update.product_price,
-              installation_price: update.installation_price,
-            })
-            .eq("id", update.id)
+          supabase.from("product_line_items").update(update).eq("id", update.id)
         )
       );
 
-      await supabase
-        .from("quotations")
-        .update({ updated_at: new Date().toISOString() })
-        .eq("id", quotationId);
+      await supabase.from("quotations").update({ updated_at: new Date().toISOString() }).eq("id", quotationId);
+      
+      console.groupEnd();
+      toast({ title: "คำนวณราคาสำเร็จ", description: `Updated Total: ${TOTAL_PROJECT_PRICE.toLocaleString()}` });
 
-      toast({
-        title: "คำนวณราคาสำเร็จ",
-        description: `ยอดรวม: ${TOTAL_PROJECT_PRICE.toLocaleString()} บาท`,
-      });
     } catch (error) {
-      console.error("Error:", error);
-      toast({
-        title: "Error",
-        description: "เกิดข้อผิดพลาดในการคำนวณ",
-        variant: "destructive",
-      });
+      console.error("Pricing Error:", error);
+      toast({ title: "Error", variant: "destructive" });
     } finally {
-      setIsCalculating(false);
+      setIsLoading(false);
     }
   };
 
-  return { calculateAndSavePricing, isCalculating };
+  return { calculateAndSavePricing, isLoading };
 };

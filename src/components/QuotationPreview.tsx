@@ -1,7 +1,7 @@
 import React from "react";
+import { EditableCell } from "./EditableCell";
 
 // Helper จัดรูปแบบเงิน
-// ✅ แก้ไข: ถ้าเป็น 0 หรือ null/undefined ให้ส่งคืนค่าว่าง "" แทนเครื่องหมาย -
 const formatCurrency = (num: number | undefined | null) => {
   if (num === undefined || num === null || isNaN(num) || num === 0) return "";
   return num.toLocaleString("en-US", {
@@ -10,7 +10,7 @@ const formatCurrency = (num: number | undefined | null) => {
   });
 };
 
-// Helper เช็คข้อความ ถ้าเป็น "-" ให้ส่งคืนค่าว่าง
+// Helper เช็คข้อความ
 const formatText = (text: string | undefined | null) => {
   if (!text || text === "-") return "";
   return text;
@@ -22,6 +22,7 @@ export interface PreviewData {
   projectName: string;
   docNumber: string;
   date: string;
+  quotationId: string;
   items: any[];
   paymentTerms: string[];
   warrantyTerms: string[];
@@ -30,7 +31,14 @@ export interface PreviewData {
   discount?: number;
 }
 
-export const QuotationPreview = ({ data }: { data: PreviewData | null }) => {
+interface QuotationPreviewProps {
+  data: PreviewData | null;
+  isEditMode: boolean;
+  onUpdateItem: (itemId: string, field: string, value: any) => void;
+  onUpdateTerms: (field: string, value: string) => void;
+}
+
+export const QuotationPreview = ({ data, isEditMode, onUpdateItem, onUpdateTerms }: QuotationPreviewProps) => {
   if (!data) return <div className="text-center p-10 text-xs">กำลังโหลดตัวอย่าง...</div>;
 
   const itemsA = data.items.filter((i) => i.category === "A");
@@ -47,9 +55,17 @@ export const QuotationPreview = ({ data }: { data: PreviewData | null }) => {
   const borderClass = "border border-gray-400 p-1 text-xs align-middle";
   const headerClass = "bg-gray-200 font-bold text-center " + borderClass;
   
+  // คำนวณราคาต่อหน่วยเพื่อแสดงผล
   const calcUnit = (total: number, qty: number) => {
       if (!qty || qty === 0) return 0;
       return total / qty;
+  };
+  
+  // Helper เลือกค่า Original หรือ Edited
+  const getVal = (item: any, field: string) => {
+      return item[`edited_${field}`] !== null && item[`edited_${field}`] !== undefined && item[`edited_${field}`] !== "" 
+             ? item[`edited_${field}`] 
+             : item[field];
   };
 
   return (
@@ -89,20 +105,95 @@ export const QuotationPreview = ({ data }: { data: PreviewData | null }) => {
             </tr>
           )}
           {itemsA.map((item, idx) => (
-            <tr key={`a-${idx}`}>
+            <tr key={`a-${item.id || idx}`}>
               <td className={`${borderClass} text-center`}>{idx + 1}</td>
-              <td className={`${borderClass}`}>{item.name}</td>
-              {/* ✅ ใช้ formatText เพื่อเว้นว่างถ้าไม่มีข้อมูล */}
-              <td className={`${borderClass} text-center`}>{formatText(item.brand)}</td>
-              <td className={`${borderClass} text-center`}>{item.qty}</td>
-              <td className={`${borderClass} text-center`}>{item.unit}</td>
               
-              {/* ✅ ใช้ formatCurrency แบบใหม่ (0 เป็นค่าว่าง) */}
-              <td className={`${borderClass} text-right`}>{formatCurrency(calcUnit(item.matUnit, item.qty))}</td>
-              <td className={`${borderClass} text-right bg-gray-50`}>{formatCurrency(item.matUnit)}</td>
-              <td className={`${borderClass} text-right`}>{formatCurrency(calcUnit(item.labUnit, item.qty))}</td>
-              <td className={`${borderClass} text-right bg-gray-50`}>{formatCurrency(item.labUnit)}</td>
-              <td className={`${borderClass} text-right font-semibold`}>{formatCurrency(item.total)}</td>
+              {/* 1. รายการ (Editable - Master Data) */}
+              <td className={`${borderClass}`}>
+                <EditableCell 
+                  isEditMode={isEditMode}
+                  value={getVal(item, "name")}
+                  onSave={(val) => onUpdateItem(item.id, "edited_name", val)}
+                />
+              </td>
+
+              {/* 2. ยี่ห้อ (Editable - Master Data) */}
+              <td className={`${borderClass}`}>
+                <EditableCell 
+                  isEditMode={isEditMode}
+                  align="center"
+                  value={getVal(item, "brand")}
+                  onSave={(val) => onUpdateItem(item.id, "edited_brand", val)}
+                />
+              </td>
+
+              {/* 3. จำนวน (Editable - Functional) */}
+              <td className={`${borderClass}`}>
+                <EditableCell 
+                  isEditMode={isEditMode}
+                  type="number"
+                  align="center"
+                  value={item.qty}
+                  onSave={(val) => onUpdateItem(item.id, "quantity", parseFloat(val))}
+                />
+              </td>
+
+              {/* 4. หน่วย (Editable - Master Data) */}
+              <td className={`${borderClass}`}>
+                <EditableCell 
+                  isEditMode={isEditMode}
+                  align="center"
+                  value={getVal(item, "unit")}
+                  onSave={(val) => onUpdateItem(item.id, "edited_unit", val)}
+                />
+              </td>
+              
+              {/* 5. ราคาอุปกรณ์/หน่วย (Editable - Functional) */}
+              <td className={`${borderClass}`}>
+                 <EditableCell 
+                  isEditMode={isEditMode}
+                  type="number"
+                  align="right"
+                  // แสดงผล: ราคาต่อหน่วย
+                  value={calcUnit(item.matUnit, item.qty)}
+                  // ✅ แก้ไข: เมื่อ Save ต้องคูณ Qty กลับไปเป็นราคารวม
+                  onSave={(val) => {
+                      const unitPrice = parseFloat(val);
+                      const totalPrice = unitPrice * (item.qty || 1);
+                      onUpdateItem(item.id, "product_price", totalPrice);
+                  }}
+                />
+              </td>
+              {/* ค่าอุปกรณ์รวม (Read only) */}
+              <td className={`${borderClass} text-right bg-gray-50`}>
+                 {formatCurrency(item.matUnit)}
+              </td>
+              
+              {/* 6. ค่าแรง/หน่วย (Editable - Functional) */}
+              <td className={`${borderClass}`}>
+                 <EditableCell 
+                  isEditMode={isEditMode}
+                  type="number"
+                  align="right"
+                  // แสดงผล: ราคาต่อหน่วย
+                  value={calcUnit(item.labUnit, item.qty)}
+                  // ✅ แก้ไข: เมื่อ Save ต้องคูณ Qty กลับไปเป็นราคารวม
+                  onSave={(val) => {
+                      const unitPrice = parseFloat(val);
+                      const totalPrice = unitPrice * (item.qty || 1);
+                      onUpdateItem(item.id, "installation_price", totalPrice);
+                  }}
+                />
+              </td>
+              {/* ค่าแรงรวม (Read only) */}
+              <td className={`${borderClass} text-right bg-gray-50`}>
+                 {formatCurrency(item.labUnit)}
+              </td>
+              
+              {/* รวมเงินทั้งหมด (Read only) */}
+              <td className={`${borderClass} text-right font-semibold`}>
+                 {formatCurrency(item.total)}
+              </td>
             </tr>
           ))}
 
@@ -115,18 +206,43 @@ export const QuotationPreview = ({ data }: { data: PreviewData | null }) => {
             </tr>
           )}
           {itemsB.map((item, idx) => (
-            <tr key={`b-${idx}`}>
+            <tr key={`b-${item.id || idx}`}>
               <td className={`${borderClass} text-center`}>{itemsA.length + idx + 1}</td>
-              <td className={`${borderClass}`}>{item.name}</td>
-              {/* ✅ เอาขีด - ออก ปล่อยว่าง */}
+              
+              <td className={`${borderClass}`}>
+                <EditableCell 
+                  isEditMode={isEditMode}
+                  value={getVal(item, "name")}
+                  onSave={(val) => onUpdateItem(item.id, "edited_name", val)}
+                />
+              </td>
+
               <td className={`${borderClass} text-center`}></td> 
-              <td className={`${borderClass} text-center`}>{item.qty}</td>
-              <td className={`${borderClass} text-center`}>{item.unit}</td>
-              {/* ✅ เอาขีด - ออก ปล่อยว่าง */}
+              
+              <td className={`${borderClass}`}>
+                 <EditableCell 
+                  isEditMode={isEditMode}
+                  type="number"
+                  align="center"
+                  value={item.qty}
+                  onSave={(val) => onUpdateItem(item.id, "quantity", parseFloat(val))}
+                />
+              </td>
+              
+              <td className={`${borderClass}`}>
+                 <EditableCell 
+                  isEditMode={isEditMode}
+                  align="center"
+                  value={getVal(item, "unit")}
+                  onSave={(val) => onUpdateItem(item.id, "edited_unit", val)}
+                />
+              </td>
+
               <td className={`${borderClass} text-right`}></td>
               <td className={`${borderClass} text-right bg-gray-50`}></td>
               <td className={`${borderClass} text-right`}></td>
               <td className={`${borderClass} text-right bg-gray-50`}></td>
+              
               <td className={`${borderClass} text-right font-semibold`}>{formatCurrency(item.total)}</td>
             </tr>
           ))}
@@ -135,38 +251,43 @@ export const QuotationPreview = ({ data }: { data: PreviewData | null }) => {
         {/* --- FOOTER STRUCTURE --- */}
         <tfoot>
           <tr>
-            {/* 1. LEFT BLOCK (Terms & Remarks) */}
             <td colSpan={7} className="border border-gray-400 p-0 align-top h-full">
                 <div className="flex h-full min-h-[160px]">
                     <div className="w-1/2 flex flex-col border-r border-gray-400">
+                        {/* เงื่อนไขการชำระเงิน */}
                         <div className="flex-1 p-2 border-b border-gray-400">
                              <h4 className="font-bold text-gray-800 underline mb-1 text-xs">เงื่อนไขการชำระเงิน</h4>
-                             <ul className="list-none space-y-0.5 pl-0 text-[10px] text-gray-600">
-                                {data.paymentTerms.map((t, i) => {
-                                  // กรองค่าที่เป็น - หรือว่างออก
-                                  const text = formatText(t);
-                                  if (!text) return null;
-                                  return <li key={i}>{data.paymentTerms.length > 1 && `${i+1}. `}{text}</li>
-                                })}
-                             </ul>
+                             <EditableCell
+                                isEditMode={isEditMode}
+                                type="textarea"
+                                value={data.paymentTerms.join("\n")}
+                                onSave={(val) => onUpdateTerms("edited_payment_terms", val)}
+                                className="text-[10px] text-gray-600"
+                             />
                         </div>
+                        {/* หมายเหตุ */}
                         <div className="flex-1 p-2 bg-gray-50">
                              <h4 className="font-bold text-gray-800 underline mb-1 text-xs">หมายเหตุ</h4>
-                             <p className="text-[10px] text-gray-600 whitespace-pre-wrap">
-                                {formatText(data.remarks)}
-                             </p>
+                             <EditableCell
+                                isEditMode={isEditMode}
+                                type="textarea"
+                                value={data.remarks}
+                                onSave={(val) => onUpdateTerms("edited_note", val)}
+                                className="text-[10px] text-gray-600"
+                             />
                         </div>
                     </div>
 
                     <div className="w-1/2 p-2">
+                        {/* เงื่อนไขการรับประกัน */}
                         <h4 className="font-bold text-gray-800 underline mb-1 text-xs">เงื่อนไขการรับประกัน</h4>
-                        <ul className="list-none space-y-0.5 pl-0 text-[10px] text-gray-600">
-                             {data.warrantyTerms.map((t, i) => {
-                               const text = formatText(t);
-                               if (!text) return null;
-                               return <li key={i}>{data.warrantyTerms.length > 1 && `${i+1}. `}{text}</li>
-                             })}
-                        </ul>
+                        <EditableCell
+                            isEditMode={isEditMode}
+                            type="textarea"
+                            value={data.warrantyTerms.join("\n")}
+                            onSave={(val) => onUpdateTerms("edited_warranty_terms", val)}
+                            className="text-[10px] text-gray-600"
+                        />
                     </div>
                 </div>
             </td>
@@ -174,14 +295,11 @@ export const QuotationPreview = ({ data }: { data: PreviewData | null }) => {
             {/* 2. RIGHT BLOCK (Totals) */}
             <td colSpan={3} className="border border-gray-400 p-0 align-top">
                 <div className="flex flex-col h-full text-xs">
-                    {/* Row 1: Total */}
                     <div className="flex border-b border-gray-400">
                         <div className="w-1/2 p-1 text-right font-bold bg-gray-100 border-r border-gray-400 flex items-center justify-end">รวม (Total)</div>
                         <div className="w-1/2 p-1 text-right flex items-center justify-end font-medium">{formatCurrency(totalAmount)}</div>
                     </div>
                     
-                    {/* Row 2: Discount */}
-                    {/* ✅ แก้ไข: ลบ text-red-600 ออก และแสดงค่าว่างถ้า discount เป็น 0 */}
                     <div className="flex border-b border-gray-400">
                         <div className="w-1/2 p-1 text-right font-bold bg-gray-100 border-r border-gray-400 flex items-center justify-end">ส่วนลด (Discount)</div>
                         <div className="w-1/2 p-1 text-right flex items-center justify-end">
@@ -189,19 +307,16 @@ export const QuotationPreview = ({ data }: { data: PreviewData | null }) => {
                         </div>
                     </div>
                     
-                    {/* Row 3: Total after discount */}
                     <div className="flex border-b border-gray-400">
                         <div className="w-1/2 p-1 text-right font-bold bg-gray-100 border-r border-gray-400 flex items-center justify-end">รวม (Total)</div>
                         <div className="w-1/2 p-1 text-right flex items-center justify-end font-medium">{formatCurrency(totalAfterDiscount)}</div>
                     </div>
                     
-                    {/* Row 4: VAT */}
                     <div className="flex border-b border-gray-400">
                         <div className="w-1/2 p-1 text-right text-gray-600 bg-gray-100 border-r border-gray-400 flex items-center justify-end">ภาษีมูลค่าเพิ่ม (VAT 7%)</div>
                         <div className="w-1/2 p-1 text-right text-gray-600 flex items-center justify-end">{formatCurrency(vatAmount)}</div>
                     </div>
                     
-                    {/* Row 5: Grand Total */}
                     <div className="flex flex-1">
                         <div className="w-1/2 p-1 text-right font-bold text-primary bg-blue-50 border-r border-gray-400 flex items-center justify-end">รวมเงินทั้งสิ้น<br/>(Grand Total)</div>
                         <div className="w-1/2 p-1 text-right font-bold text-primary text-sm flex items-center justify-end">{formatCurrency(grandTotal)}</div>

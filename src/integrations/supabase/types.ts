@@ -217,6 +217,10 @@ export type Database = {
           note: string | null;
           sale_package_id: string | null;
           updated_at: string | null;
+          // ✅ Added these 3 lines
+          edited_payment_terms: string | null;
+          edited_warranty_terms: string | null;
+          edited_note: string | null;
         };
         Insert: {
           created_at?: string | null;
@@ -234,6 +238,10 @@ export type Database = {
           note?: string | null;
           sale_package_id?: string | null;
           updated_at?: string | null;
+          // ✅ Added these 3 lines
+          edited_payment_terms?: string | null;
+          edited_warranty_terms?: string | null;
+          edited_note?: string | null;
         };
         Update: {
           created_at?: string | null;
@@ -251,6 +259,10 @@ export type Database = {
           note?: string | null;
           sale_package_id?: string | null;
           updated_at?: string | null;
+          // ✅ Added these 3 lines
+          edited_payment_terms?: string | null;
+          edited_warranty_terms?: string | null;
+          edited_note?: string | null;
         };
         Relationships: [
           {
@@ -344,9 +356,9 @@ export type Database = {
           edited_note: string | null;
           edited_payment_terms: string | null;
           edited_warranty_terms: string | null;
-          payment_terms: string | null
-          warranty_terms: string | null
-          note: string | null
+          payment_terms: string | null;
+          warranty_terms: string | null;
+          note: string | null;
           id: string;
           price_id: string | null;
           sale_name: string;
