@@ -84,7 +84,13 @@ const CreateQuotation = () => {
   // ------------------------------------------------------------------
   // ✅ 1. Handlers for In-Place Editing
   // ------------------------------------------------------------------
-  
+  const SYNCED_GROUP_KEYWORDS = [
+  "Common Temporary Facilities, Construction Facilities",
+  "Electrical drawing, Facility system, layout and schematic",
+  "Commissioning test", // เช็คคำสะกดใน DB ให้ดีนะครับ (Comissioning vs Commissioning)
+  "Tempolary Utility Expense",    // ใช้คำกว้างๆ เพื่อดักจับ Tempolary/Temporary
+  "Safety Operation"
+];
   // Handle Item Updates (Name, Brand, Qty, Price)
   const handleUpdateItem = async (itemId: string, field: string, value: any) => {
     try {
@@ -98,26 +104,76 @@ const CreateQuotation = () => {
          updateData[`is_edited_${field}`] = true; // ✅ Mark Flag ว่า User แก้เอง
       }
 
-      // 2. Save to DB
-      const { error } = await supabase.from("product_line_items").update(updateData).eq("id", itemId);
-      if (error) throw error;
+      // --- LOGIC พิเศษสำหรับ Section B (Synced Group) ---
+    // เช็คว่า field ที่แก้คือราคาหรือไม่
+    if (field === "product_price") {
+        // 1. ดึงข้อมูล Item ปัจจุบันมาก่อน เพื่อเช็คชื่อ
+        const { data: currentItem } = await supabase
+            .from("product_line_items")
+            .select("*, products(name)")
+            .eq("id", itemId)
+            .single();
 
-      // 3. Logic การเรียก Re-pricing (แก้ไขใหม่)
-      // ✅ ถ้ามีการแก้ Qty หรือ Price (Equipment/Install) ให้เรียกคำนวณใหม่ทั้งหมด
-      // เพื่อให้ระบบนำค่าที่ Lock ไว้ไปหักลบออกจากงบ แล้วเกลี่ยส่วนต่างลงตัวอื่น
-      if (["quantity", "product_price", "installation_price"].includes(field)) {
-         await calculateAndSavePricing(currentQuotationId!); // 🔄 Recalculate Logic
-         await loadPreviewData(currentQuotationId!);         // 🔄 Refresh UI
-      } else {
-         // กรณีแก้ชื่อ/ยี่ห้อ: ไม่ต้องคำนวณราคาใหม่ แค่โหลดหน้าจอ
-         await loadPreviewData(currentQuotationId!);
-      }
+        const itemName = currentItem?.products?.name || "";
+        
+        // 2. เช็คว่าชื่อสินค้า อยู่ในกลุ่ม 5 สหายหรือไม่?
+        const isSyncedItem = SYNCED_GROUP_KEYWORDS.some(keyword => 
+            itemName.toLowerCase().includes(keyword.toLowerCase())
+        );
 
-    } catch (err) {
-      console.error("Update Error:", err);
-      toast({ title: "Update Failed", variant: "destructive" });
+        if (isSyncedItem) {
+            console.log("🔄 Updating Synced Group for Section B...");
+            
+            // 3. หาเพื่อนร่วมกลุ่มทั้งหมดใน Quotation นี้
+            const { data: allItems } = await supabase
+                .from("product_line_items")
+                .select("*, products(name)")
+                .eq("quotation_id", currentQuotationId);
+
+            if (allItems) {
+                // กรองเอาเฉพาะตัวที่ชื่อเข้าข่าย
+                const itemsToUpdate = allItems.filter(i => 
+                    SYNCED_GROUP_KEYWORDS.some(k => i.products?.name?.toLowerCase().includes(k.toLowerCase()))
+                );
+
+                // 4. Update ทุกตัวให้ราคาเท่ากับค่าใหม่ (value)
+                const updates = itemsToUpdate.map(i => ({
+                    id: i.id,
+                    product_price: value, // ค่าใหม่ที่ User กรอก
+                    is_edited_product_price: true
+                }));
+
+                await Promise.all(
+                    updates.map(u => supabase.from("product_line_items").update(u).eq("id", u.id))
+                );
+
+                // ถ้าทำ Group Update แล้ว ให้ข้ามการ update ปกติด้านล่างไป (หรือ return เลยก็ได้)
+                // แต่เพื่อความชัวร์ ให้โค้ดด้านล่างรัน Recalculate ต่อ
+            }
+        } else {
+            // ถ้าไม่ใช่กลุ่มพิเศษ ก็ Update ตัวเดียวตามปกติ
+            const { error } = await supabase.from("product_line_items").update(updateData).eq("id", itemId);
+            if (error) throw error;
+        }
+    } else {
+        // ถ้าแก้ field อื่นที่ไม่ใช่ราคา ก็ update ปกติ
+        const { error } = await supabase.from("product_line_items").update(updateData).eq("id", itemId);
+        if (error) throw error;
     }
-  };
+
+    // 3. Recalculate & Refresh UI
+    if (["quantity", "product_price", "installation_price"].includes(field)) {
+       await calculateAndSavePricing(currentQuotationId!); 
+       await loadPreviewData(currentQuotationId!);
+    } else {
+       await loadPreviewData(currentQuotationId!);
+    }
+
+  } catch (err) {
+    console.error("Update Error:", err);
+    toast({ title: "Update Failed", variant: "destructive" });
+  }
+};
 
   // Handle Terms Updates (Payment, Warranty, Note)
   const handleUpdateTerms = async (field: string, value: string) => {

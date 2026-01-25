@@ -67,7 +67,7 @@ export const QuotationPreview = ({ data, isEditMode, onUpdateItem, onUpdateTerms
              ? item[`edited_${field}`] 
              : item[field];
   };
-
+  
   return (
     <div className="bg-white p-[10mm] shadow-lg text-gray-800 border border-gray-200 w-full mx-auto font-sans box-border">
       
@@ -152,15 +152,16 @@ export const QuotationPreview = ({ data, isEditMode, onUpdateItem, onUpdateTerms
               <td className={`${borderClass}`}>
                  <EditableCell 
                   isEditMode={isEditMode}
-                  type="number"
+                  type="text"
                   align="right"
                   // แสดงผล: ราคาต่อหน่วย
-                  value={calcUnit(item.matUnit, item.qty)}
+                  value={formatCurrency(calcUnit(item.matUnit, item.qty))}
                   // ✅ แก้ไข: เมื่อ Save ต้องคูณ Qty กลับไปเป็นราคารวม
                   onSave={(val) => {
-                      const unitPrice = parseFloat(val);
-                      const totalPrice = unitPrice * (item.qty || 1);
-                      onUpdateItem(item.id, "product_price", totalPrice);
+                    const cleanVal = val.replace(/,/g, '');
+                    const unitPrice = parseFloat(cleanVal);
+                    const totalPrice = unitPrice * (item.qty || 1);
+                    onUpdateItem(item.id, "product_price", totalPrice);
                   }}
                 />
               </td>
@@ -173,13 +174,12 @@ export const QuotationPreview = ({ data, isEditMode, onUpdateItem, onUpdateTerms
               <td className={`${borderClass}`}>
                  <EditableCell 
                   isEditMode={isEditMode}
-                  type="number"
+                  type="text"
                   align="right"
-                  // แสดงผล: ราคาต่อหน่วย
-                  value={calcUnit(item.labUnit, item.qty)}
-                  // ✅ แก้ไข: เมื่อ Save ต้องคูณ Qty กลับไปเป็นราคารวม
+                  value={formatCurrency(calcUnit(item.labUnit, item.qty))}
                   onSave={(val) => {
-                      const unitPrice = parseFloat(val);
+                      const cleanVal = val.replace(/,/g, '');
+                      const unitPrice = parseFloat(cleanVal);
                       const totalPrice = unitPrice * (item.qty || 1);
                       onUpdateItem(item.id, "installation_price", totalPrice);
                   }}
@@ -243,8 +243,29 @@ export const QuotationPreview = ({ data, isEditMode, onUpdateItem, onUpdateTerms
               <td className={`${borderClass} text-right`}></td>
               <td className={`${borderClass} text-right bg-gray-50`}></td>
               
-              <td className={`${borderClass} text-right font-semibold`}>{formatCurrency(item.total)}</td>
-            </tr>
+              <td className={`${borderClass} text-right font-semibold`}>
+                <EditableCell 
+                  isEditMode={isEditMode}
+                  type="text"
+                  align="right"
+                  value={formatCurrency(item.total)} // แสดงผลราคารวม
+                  onSave={(val) => {
+                    const cleanVal = val.replace(/,/g, '');
+                    const newTotal = parseFloat(cleanVal);
+                    
+                    // ป้องกัน NaN กรณีลบหมด
+                    if (isNaN(newTotal)) return;
+
+                    // คำนวณย้อนกลับเป็นราคาต่อหน่วย (Product Price)
+                    const qty = item.qty || 1;
+                    const newUnitPrice = newTotal / qty;
+          
+                    // ส่งค่าไป update (เราใช้ field 'product_price' สำหรับราคาของ Section B)
+                    onUpdateItem(item.id, "product_price", newUnitPrice);
+                  }}
+                />
+              </td>
+    </tr>
           ))}
         </tbody>
         
