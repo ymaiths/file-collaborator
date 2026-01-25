@@ -64,6 +64,7 @@ const CreateQuotation = () => {
   
   const { generateMainEquipment } = useAutoGenerateLineItems();
   const { generateAdditionalEquipment } = useAutoGenerateAdditionalItems();
+  // ✅ Destructure calculateAndSavePricing
   const { calculateAndSavePricing } = useCalculatePricing();
 
   const [formData, setFormData] = useState({
@@ -87,27 +88,25 @@ const CreateQuotation = () => {
   const SYNCED_GROUP_KEYWORDS = [
   "Common Temporary Facilities, Construction Facilities",
   "Electrical drawing, Facility system, layout and schematic",
-  "Commissioning test", // เช็คคำสะกดใน DB ให้ดีนะครับ (Comissioning vs Commissioning)
-  "Tempolary Utility Expense",    // ใช้คำกว้างๆ เพื่อดักจับ Tempolary/Temporary
+  "Commissioning test", 
+  "Tempolary Utility Expense", 
   "Safety Operation"
 ];
+
   // Handle Item Updates (Name, Brand, Qty, Price)
   const handleUpdateItem = async (itemId: string, field: string, value: any) => {
     try {
       let updateData: any = {};
       
-      // 1. Prepare Update Data
       if (["edited_name", "edited_brand", "edited_unit"].includes(field)) {
          updateData[field] = value;
       } else if (["quantity", "product_price", "installation_price"].includes(field)) {
          updateData[field] = value;
-         updateData[`is_edited_${field}`] = true; // ✅ Mark Flag ว่า User แก้เอง
+         updateData[`is_edited_${field}`] = true; 
       }
 
       // --- LOGIC พิเศษสำหรับ Section B (Synced Group) ---
-    // เช็คว่า field ที่แก้คือราคาหรือไม่
     if (field === "product_price") {
-        // 1. ดึงข้อมูล Item ปัจจุบันมาก่อน เพื่อเช็คชื่อ
         const { data: currentItem } = await supabase
             .from("product_line_items")
             .select("*, products(name)")
@@ -115,53 +114,42 @@ const CreateQuotation = () => {
             .single();
 
         const itemName = currentItem?.products?.name || "";
-        
-        // 2. เช็คว่าชื่อสินค้า อยู่ในกลุ่ม 5 สหายหรือไม่?
         const isSyncedItem = SYNCED_GROUP_KEYWORDS.some(keyword => 
             itemName.toLowerCase().includes(keyword.toLowerCase())
         );
 
         if (isSyncedItem) {
             console.log("🔄 Updating Synced Group for Section B...");
-            
-            // 3. หาเพื่อนร่วมกลุ่มทั้งหมดใน Quotation นี้
             const { data: allItems } = await supabase
                 .from("product_line_items")
                 .select("*, products(name)")
                 .eq("quotation_id", currentQuotationId);
 
             if (allItems) {
-                // กรองเอาเฉพาะตัวที่ชื่อเข้าข่าย
                 const itemsToUpdate = allItems.filter(i => 
                     SYNCED_GROUP_KEYWORDS.some(k => i.products?.name?.toLowerCase().includes(k.toLowerCase()))
                 );
 
-                // 4. Update ทุกตัวให้ราคาเท่ากับค่าใหม่ (value)
                 const updates = itemsToUpdate.map(i => ({
                     id: i.id,
-                    product_price: value, // ค่าใหม่ที่ User กรอก
+                    product_price: value, 
                     is_edited_product_price: true
                 }));
 
                 await Promise.all(
                     updates.map(u => supabase.from("product_line_items").update(u).eq("id", u.id))
                 );
-
-                // ถ้าทำ Group Update แล้ว ให้ข้ามการ update ปกติด้านล่างไป (หรือ return เลยก็ได้)
-                // แต่เพื่อความชัวร์ ให้โค้ดด้านล่างรัน Recalculate ต่อ
             }
         } else {
-            // ถ้าไม่ใช่กลุ่มพิเศษ ก็ Update ตัวเดียวตามปกติ
             const { error } = await supabase.from("product_line_items").update(updateData).eq("id", itemId);
             if (error) throw error;
         }
     } else {
-        // ถ้าแก้ field อื่นที่ไม่ใช่ราคา ก็ update ปกติ
         const { error } = await supabase.from("product_line_items").update(updateData).eq("id", itemId);
         if (error) throw error;
     }
 
-    // 3. Recalculate & Refresh UI
+    // Recalculate & Refresh UI
     if (["quantity", "product_price", "installation_price"].includes(field)) {
        await calculateAndSavePricing(currentQuotationId!); 
        await loadPreviewData(currentQuotationId!);
@@ -175,10 +163,39 @@ const CreateQuotation = () => {
   }
 };
 
+  // ✅ New Handler: Override Net/Grand Total
+  const handleUpdateTotalOverride = async (type: 'net' | 'grand', value: number) => {
+     if (!currentQuotationId) return;
+
+     try {
+        let newNetTotal = 0;
+        const currentDiscount = previewData?.discount || 0; 
+
+        if (type === 'net') {
+            newNetTotal = value;
+            console.log(`User Edited NET TOTAL: ${value}`);
+        } else {
+            // Formula: Net = (Grand / 1.07) + Discount
+            const totalAfterVatRemoved = value / 1.07;
+            newNetTotal = totalAfterVatRemoved + currentDiscount;
+            console.log(`User Edited GRAND TOTAL: ${value} -> Calculated NET: ${newNetTotal}`);
+        }
+
+        // 🚀 Call Pricing Engine with Manual Target
+        await calculateAndSavePricing(currentQuotationId, newNetTotal);
+        
+        await loadPreviewData(currentQuotationId);
+        toast({ title: "Pricing Updated", description: "Re-calculated based on new total." });
+
+     } catch (error) {
+        console.error("Total Override Error:", error);
+        toast({ title: "Error", description: "Failed to update total.", variant: "destructive" });
+     }
+  };
+
   // Handle Terms Updates (Payment, Warranty, Note)
   const handleUpdateTerms = async (field: string, value: string) => {
     try {
-       // Save to 'quotations' table (Override)
        const { error } = await supabase.from("quotations").update({ [field]: value }).eq("id", currentQuotationId);
        if (error) throw error;
        await loadPreviewData(currentQuotationId!);
@@ -189,7 +206,7 @@ const CreateQuotation = () => {
   };
 
   // ------------------------------------------------------------------
-  // ✅ 2. Load Preview Data (With Edited Logic)
+  // ✅ 2. Load Preview Data
   // ------------------------------------------------------------------
   const loadPreviewData = async (quotationId: string) => {
     try {
@@ -198,12 +215,10 @@ const CreateQuotation = () => {
       
       if (!quoteData || !lineItems) return;
 
-      // --- Logic for Terms: Check Quotation (Edited) -> Then Sale Package (Original) ---
       let rawPayment = "-";
       let rawWarranty = "-";
       let rawNote = "-";
 
-      // 1. Get from Sale Package first
       if (quoteData.sale_package_id) {
           const { data: pkgData } = await supabase
              .from("sale_packages")
@@ -218,7 +233,6 @@ const CreateQuotation = () => {
           }
       }
 
-      // 2. Override with Edited values from Quotation if they exist
       if (quoteData.edited_payment_terms) rawPayment = quoteData.edited_payment_terms;
       if (quoteData.edited_warranty_terms) rawWarranty = quoteData.edited_warranty_terms;
       if (quoteData.edited_note) rawNote = quoteData.edited_note;
@@ -229,10 +243,9 @@ const CreateQuotation = () => {
           const isSectionB = categoryRaw === "operation"; 
           
           return {
-             id: item.id, // ✅ IMPORTANT: Need ID for updates
+             id: item.id,
              name: product?.name || "Unknown",
              brand: product?.brand || "-",
-             // ✅ IMPORTANT: Pass edited fields so Preview knows what to display
              edited_name: item.edited_name,
              edited_brand: item.edited_brand,
              edited_unit: item.edited_unit,
@@ -275,7 +288,7 @@ const CreateQuotation = () => {
   };
 
   // ------------------------------------------------------------------
-  // ✅ 3. Export Excel (Use same logic as loadPreviewData)
+  // ✅ 3. Export Excel
   // ------------------------------------------------------------------
   const handleExportExcel = async () => {
     if (!currentQuotationId) {
@@ -287,13 +300,12 @@ const CreateQuotation = () => {
     try {
       const { data: quoteData } = await supabase
         .from("quotations")
-        .select(`*, sale_packages(*)`) // Select everything to get edited_ terms
+        .select(`*, sale_packages(*)`) 
         .eq("id", currentQuotationId)
         .single();
         
       if (!quoteData) throw new Error("Quotation not found");
 
-      // Terms Logic (Copy from loadPreviewData)
       let rawPayment = "-";
       let rawWarranty = "-";
       let rawNote = "-";
@@ -306,26 +318,21 @@ const CreateQuotation = () => {
            rawNote = pkgData.note || "-";
         }
       }
-      // Override
       if (quoteData.edited_payment_terms) rawPayment = quoteData.edited_payment_terms;
       if (quoteData.edited_warranty_terms) rawWarranty = quoteData.edited_warranty_terms;
       if (quoteData.edited_note) rawNote = quoteData.edited_note;
 
-      // Line Items
       const { data: lineItems } = await supabase.from("product_line_items").select(`*, products(*)`).eq("quotation_id", currentQuotationId);
       const { data: companyData } = await supabase.from("company_info").select("*").maybeSingle();
 
-      // Calculation
       const projectKw = (quoteData.kw_size || 0) / 1000;
       const peakKw = (quoteData.kw_peak || 0) / 1000;
       
-      // Map Items
       const mappedItems = lineItems?.map((item, index) => {
           const product = item.products;
           const categoryRaw = (product?.product_category || "") as string;
           const isSectionB = categoryRaw === "operation";
           
-          // Use edited values if exist
           const finalName = item.edited_name || product?.name || "Unknown";
           const finalBrand = item.edited_brand || product?.brand || "-";
           
@@ -349,13 +356,12 @@ const CreateQuotation = () => {
           };
         }) || [];
 
-      // Sorting (Same as preview)
       const sectionAOrder = ["solar_panel", "pv_mounting_structure", "inverter", "optimizer", "zero_export_smart_logger", "ac_box", "dc_box", "cable", "service", "support_inverter", "electrical_management", "other"];
       const itemsA = mappedItems.filter((i) => i.category === "A").sort((a, b) => {
         const indexA = sectionAOrder.indexOf(a._rawCategory); const indexB = sectionAOrder.indexOf(b._rawCategory);
         return (indexA === -1 ? 999 : indexA) - (indexB === -1 ? 999 : indexB);
       });
-      const itemsB = mappedItems.filter((i) => i.category === "B"); // Simple sort for B
+      const itemsB = mappedItems.filter((i) => i.category === "B"); 
 
       const exportData = {
         companyName: companyData?.name || "Company Name",
@@ -395,11 +401,10 @@ const CreateQuotation = () => {
 
   useEffect(() => {
      if(currentQuotationId && showQuotation) {
-        loadPreviewData(currentQuotationId);
+       loadPreviewData(currentQuotationId);
      }
   }, [currentQuotationId, showQuotation]);
 
-  // ... (Other useEffects for loading Programs, Brands, Panels, QuotationData stay the same) ...
   useEffect(() => {
     const fetchSalesPrograms = async () => {
       try {
@@ -664,12 +669,13 @@ const CreateQuotation = () => {
               <div className="flex flex-col items-center justify-center min-h-[400px] overflow-auto mt-12">
                 {previewData ? (
                   <div className="origin-top scale-95 transition-transform w-full flex justify-center">
-                    {/* ✅ Correctly passing props here */}
+                    {/* ✅ Passed all necessary props including onUpdateTotalOverride */}
                     <QuotationPreview 
                         data={previewData} 
                         isEditMode={isEditMode}
                         onUpdateItem={handleUpdateItem}
                         onUpdateTerms={handleUpdateTerms}
+                        onUpdateTotalOverride={handleUpdateTotalOverride}
                     />
                   </div>
                 ) : (

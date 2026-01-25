@@ -24,11 +24,12 @@ export const useCalculatePricing = () => {
 
   // Helper: ปัดเศษหาค่าใกล้เคียง 100 ที่สุด
   const roundNearestHundred = (num: number) => Math.round(num / 100) * 100;
-
-  const calculateAndSavePricing = async (quotationId: string) => {
+  const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
+  // ✅ เพิ่ม parameter: manualTargetPrice (สำหรับรับค่า Net Total ที่ user แก้ไข)
+  const calculateAndSavePricing = async (quotationId: string, manualTargetPrice?: number) => {
     setIsLoading(true);
     console.clear();
-    console.group("🚀 PRICING: 3-ROUND LOGIC (High Precision)");
+    console.group("🚀 PRICING: 3-ROUND LOGIC + TARGET OVERRIDE");
 
     try {
       // 1. Fetch Data
@@ -40,36 +41,46 @@ export const useCalculatePricing = () => {
       if (quoteError || !quote) throw new Error("Quotation not found");
 
       const projectSizeWatt = quote.kw_size || 0;
-      const brand = quote.inverter_brand || "";
-      const phase = quote.electrical_phase || "single_phase";
-      const salePackageId = quote.sale_package_id;
-
-      // 2. Target Price
-      const { data: priceList } = await supabase
-        .from("sale_package_prices")
-        .select("*")
-        .eq("sale_package_id", salePackageId)
-        .eq("inverter_brand", brand as any)
-        .eq("electronic_phase", phase as any);
-
-      const matchedPrice = priceList?.find((p) =>
-        p.is_exact_kw
-          ? p.kw_min === projectSizeWatt
-          : (p.kw_min || 0) <= projectSizeWatt &&
-            (p.kw_max || 0) >= projectSizeWatt
-      );
-
       let TOTAL_PROJECT_PRICE = 0;
-      if (matchedPrice) {
-          const priceData = matchedPrice as any;
-          if (priceData.is_exact_price) {
-            TOTAL_PROJECT_PRICE = priceData.price_exact || 0;
-          } else {
-            TOTAL_PROJECT_PRICE = Math.round((priceData.price_percentage || 0) * projectSizeWatt);
+
+      // =========================================================
+      // 2. Determine Target Price (DB vs Manual)
+      // =========================================================
+      // ✅ เช็คว่ามีการส่ง manualTargetPrice มาหรือไม่?
+      if (manualTargetPrice !== undefined && manualTargetPrice !== null) {
+          // กรณี User แก้ Net Total / Grand Total เอง
+          TOTAL_PROJECT_PRICE = manualTargetPrice;
+          console.log(`🎯 MANUAL TARGET OVERRIDE: ${TOTAL_PROJECT_PRICE.toLocaleString()}`);
+      } else {
+          // กรณีปกติ: คำนวณจาก Sale Package ใน DB
+          const brand = quote.inverter_brand || "";
+          const phase = quote.electrical_phase || "single_phase";
+          const salePackageId = quote.sale_package_id;
+
+          const { data: priceList } = await supabase
+            .from("sale_package_prices")
+            .select("*")
+            .eq("sale_package_id", salePackageId)
+            .eq("inverter_brand", brand as any)
+            .eq("electronic_phase", phase as any);
+
+          const matchedPrice = priceList?.find((p) =>
+            p.is_exact_kw
+              ? p.kw_min === projectSizeWatt
+              : (p.kw_min || 0) <= projectSizeWatt &&
+                (p.kw_max || 0) >= projectSizeWatt
+          );
+
+          if (matchedPrice) {
+              const priceData = matchedPrice as any;
+              if (priceData.is_exact_price) {
+                TOTAL_PROJECT_PRICE = priceData.price_exact || 0;
+              } else {
+                TOTAL_PROJECT_PRICE = Math.round((priceData.price_percentage || 0) * projectSizeWatt);
+              }
           }
+          console.log(`💰 DB TARGET PRICE: ${TOTAL_PROJECT_PRICE.toLocaleString()}`);
       }
-      
-      console.log(`💰 TARGET PRICE: ${TOTAL_PROJECT_PRICE.toLocaleString()}`);
 
       // 3. Line Items
       const { data: lineItems } = await supabase
@@ -80,7 +91,7 @@ export const useCalculatePricing = () => {
       if (!lineItems) throw new Error("No items found");
 
       // =========================================================
-      // Step 1: Base Cost
+      // Step 1: Base Cost Setup
       // =========================================================
       let items: CalculatedLineItem[] = lineItems.map((item) => {
         const baseItem = {
@@ -100,7 +111,7 @@ export const useCalculatePricing = () => {
         return { ...baseItem, costEq, costInst, isIncluded };
       });
 
-      // Helpers
+      // Helpers Classification
       const checkIsMajorItem = (product: Product | null) => {
           if (!product) return false;
           const cat = product.product_category || "";
@@ -116,10 +127,10 @@ export const useCalculatePricing = () => {
       };
 
       // =========================================================
-      // Step 2: Identify Locked Price
+      // Step 2: Identify Locked Price (Fixed vs Variable)
       // =========================================================
       let totalFixedPrice = 0;
-      let totalVariableBaseCost = 0; // ต้นทุนรวมของตัวที่ไม่ล็อค
+      let totalVariableBaseCost = 0;
 
       items = items.map(item => {
           // Excluded -> Fixed
@@ -147,8 +158,7 @@ export const useCalculatePricing = () => {
           }
       });
 
-      const remainingBudget = TOTAL_PROJECT_PRICE - totalFixedPrice;
-      
+      const remainingBudget = round2(TOTAL_PROJECT_PRICE - totalFixedPrice);
       // =========================================================
       // 🔄 ROUND 1: เกลี่ยทุกตัวเท่ากัน (Universal Dist.)
       // =========================================================
@@ -178,29 +188,18 @@ export const useCalculatePricing = () => {
           let finalEq = item.finalPriceEq;
           if (!item.is_edited_product_price) {
               const rawTotal = item.costEq * ratio1;
-              if (isMajor) {
-                  // Major -> Unit Round 100
-                  finalEq = roundNearestHundred(rawTotal / qty) * qty;
-              } else if (isMounting) {
-                  // Mounting -> Unit Round 1
-                  finalEq = Math.round(rawTotal / qty) * qty;
-              } else {
-                  // General -> Total Round 100
-                  finalEq = roundNearestHundred(rawTotal);
-              }
+              if (isMajor) finalEq = roundNearestHundred(rawTotal / qty) * qty;
+              else if (isMounting) finalEq = Math.round(rawTotal / qty) * qty;
+              else finalEq = roundNearestHundred(rawTotal);
           }
 
           // --- Installation ---
           let finalInst = item.finalPriceInst;
           if (!item.is_edited_installation_price) {
               const rawTotalInst = isNoMarkupInst ? item.costInst : (item.costInst * ratio1);
-              if (isMajor) {
-                  finalInst = roundNearestHundred(rawTotalInst / qty) * qty;
-              } else if (isMounting) {
-                  finalInst = Math.round(rawTotalInst / qty) * qty;
-              } else {
-                  finalInst = roundNearestHundred(rawTotalInst);
-              }
+              if (isMajor) finalInst = roundNearestHundred(rawTotalInst / qty) * qty;
+              else if (isMounting) finalInst = Math.round(rawTotalInst / qty) * qty;
+              else finalInst = roundNearestHundred(rawTotalInst);
           }
 
           sumRound1 += finalEq + finalInst;
@@ -217,14 +216,12 @@ export const useCalculatePricing = () => {
       console.group("🔄 Round 2: Low Quantity Adjustment (<100)");
       
       if (diff1 !== 0) {
-          // หา Candidate: ไม่ล็อค และ จำนวน < 100
           const candidatesR2 = items.filter(item => 
               item.isIncluded && 
               (!item.is_edited_product_price || !item.is_edited_installation_price) &&
-              (item.quantity || 1) < 100 // ✅ เงื่อนไขสำคัญ
+              (item.quantity || 1) < 100 
           );
 
-          // คำนวณราคารวมปัจจุบันของกลุ่มนี้
           const currentSumCandidates = candidatesR2.reduce((sum, item) => {
               let s = 0;
               if (!item.is_edited_product_price) s += item.finalPriceEq;
@@ -233,15 +230,13 @@ export const useCalculatePricing = () => {
           }, 0);
 
           if (candidatesR2.length > 0 && currentSumCandidates > 0) {
-               // Ratio สำหรับรอบ 2 = (ราคาเดิม + ส่วนต่างที่ต้องแก้) / ราคาเดิม
                let ratio2 = (currentSumCandidates + diff1) / currentSumCandidates;
-               if (ratio2 < 0) ratio2 = 0; // กันติดลบ
+               if (ratio2 < 0) ratio2 = 0;
 
                console.log(`Candidates: ${candidatesR2.length} items | Ratio 2: ${ratio2.toFixed(6)}`);
 
-               // Apply Ratio 2 & Round Again
                items = items.map(item => {
-                   if (!candidatesR2.find(c => c.id === item.id)) return item; // ถ้าไม่ใช่ Candidate ข้าม
+                   if (!candidatesR2.find(c => c.id === item.id)) return item;
 
                    const qty = item.quantity || 1;
                    const isMajor = checkIsMajorItem(item.products);
@@ -256,7 +251,6 @@ export const useCalculatePricing = () => {
                    }
                    // Inst
                    if (!item.is_edited_installation_price) {
-                       // ระวัง: Installation บางอันเป็น NoMarkup ไม่ควรไปยุ่ง
                        const isNoMarkup = ["solar_panel", "pv_mounting_structure"].includes(item.products?.product_category||"");
                        if (!isNoMarkup) {
                            const rawTotal = item.finalPriceInst * ratio2;
@@ -267,13 +261,11 @@ export const useCalculatePricing = () => {
                    }
                    return item;
                });
-          } else {
-              console.log("No candidates with Qty < 100 found. Skipping Round 2.");
           }
       }
       
       const sumRound2 = items.reduce((sum, i) => sum + i.finalPriceEq + i.finalPriceInst, 0);
-      const diff2 = TOTAL_PROJECT_PRICE - sumRound2;
+      const diff2 = round2(TOTAL_PROJECT_PRICE - sumRound2); //  คำนวณเศษทศนิยมที่เหลือ
       console.log(`Sum R2: ${sumRound2.toLocaleString()} | Diff R2: ${diff2}`);
       console.groupEnd();
 
@@ -291,19 +283,15 @@ export const useCalculatePricing = () => {
           if (wireIndex !== -1) {
               const item = items[wireIndex];
               const before = item.finalPriceEq;
-              
-              console.log(`🎯 Target Wire: ${item.products?.name}`);
-
-              // Safety Check: ถ้าลดแล้วติดลบ
+              const newPrice = round2(item.finalPriceEq + diff2);
               if (diff2 < 0 && (item.finalPriceEq + diff2) < 0) {
-                   console.warn("⚠️ Wire cannot absorb full diff (will hit 0).");
                    const deductable = item.finalPriceEq;
                    item.finalPriceEq = 0;
                    const remainingDiff = diff2 + deductable;
 
-                   // Fallback: ถ้าสายไฟตายแล้ว ให้โยนไปที่ "ตัวที่แพงที่สุด" ในโครงการ (Emergency)
+                   // Emergency Spillover to Largest Item
                    if (Math.abs(remainingDiff) > 1) {
-                       console.warn(`⚠️ Emergency Spillover: ${remainingDiff} -> Largest Item`);
+                       console.warn(`⚠️ Emergency Spillover: ${remainingDiff}`);
                        const largestItem = items.reduce((prev, current) => 
                            (!current.is_edited_product_price && current.finalPriceEq > prev.finalPriceEq) ? current : prev
                        , items[0]);
@@ -311,20 +299,20 @@ export const useCalculatePricing = () => {
                    }
               } else {
                    item.finalPriceEq += diff2;
-                   console.log(`✅ Adjusted Wire: ${before} -> ${item.finalPriceEq}`);
+                   console.log(`✅ Wire Adjusted by: ${diff2}`);
               }
           } else {
-              console.warn("⚠️ No unlocked wire found! Applying to largest General Item.");
-              // Fallback 
+              // Fallback to Largest Item
               const largestItem = items.reduce((prev, current) => 
                    (!current.is_edited_product_price && current.finalPriceEq > prev.finalPriceEq) ? current : prev
               , items[0]);
               largestItem.finalPriceEq += diff2;
+              console.log(`✅ Fallback Adjusted Largest Item by: ${diff2}`);
           }
       }
       
       const finalSum = items.reduce((sum, i) => sum + i.finalPriceEq + i.finalPriceInst, 0);
-      console.log(`Final Sum: ${finalSum.toLocaleString()} (Target: ${TOTAL_PROJECT_PRICE.toLocaleString()})`);
+      console.log(`Final Sum: ${finalSum.toLocaleString(undefined, {minimumFractionDigits: 2})} (Target: ${TOTAL_PROJECT_PRICE.toLocaleString(undefined, {minimumFractionDigits: 2})})`);
       console.groupEnd();
 
       // =========================================================
@@ -332,8 +320,8 @@ export const useCalculatePricing = () => {
       // =========================================================
       const finalUpdates = items.map((item) => ({
             id: item.id,
-            product_price: Math.round(item.finalPriceEq), 
-            installation_price: Math.round(item.finalPriceInst),
+            product_price: round2(item.finalPriceEq), 
+            installation_price: round2(item.finalPriceInst),
       }));
 
       await Promise.all(

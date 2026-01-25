@@ -3,7 +3,7 @@ import { EditableCell } from "./EditableCell";
 
 // Helper จัดรูปแบบเงิน
 const formatCurrency = (num: number | undefined | null) => {
-  if (num === undefined || num === null || isNaN(num) || num === 0) return "";
+  if (num === undefined || num === null || isNaN(num)) return ""; // เอา num === 0 ออกเพื่อให้แสดง 0.00 ได้ถ้าต้องการ หรือใส่กลับถ้าต้องการซ่อน
   return num.toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -36,16 +36,18 @@ interface QuotationPreviewProps {
   isEditMode: boolean;
   onUpdateItem: (itemId: string, field: string, value: any) => void;
   onUpdateTerms: (field: string, value: string) => void;
+  // ✅ เพิ่ม Prop นี้เข้ามาเพื่อรองรับการแก้ Net/Grand Total
+  onUpdateTotalOverride?: (type: 'net' | 'grand', value: number) => void;
 }
 
-export const QuotationPreview = ({ data, isEditMode, onUpdateItem, onUpdateTerms }: QuotationPreviewProps) => {
+export const QuotationPreview = ({ data, isEditMode, onUpdateItem, onUpdateTerms, onUpdateTotalOverride }: QuotationPreviewProps) => {
   if (!data) return <div className="text-center p-10 text-xs">กำลังโหลดตัวอย่าง...</div>;
 
   const itemsA = data.items.filter((i) => i.category === "A");
   const itemsB = data.items.filter((i) => i.category === "B");
 
   // การคำนวณราคา
-  const totalAmount = data.items.reduce((sum, i) => sum + i.total, 0);
+  const totalAmount = data.items.reduce((sum, i) => sum + i.total, 0); // นี่คือ Net Total (ยอดรวมสินค้า)
   const discount = data.discount || 0;
   const totalAfterDiscount = totalAmount - discount;
   const vatAmount = totalAfterDiscount * data.vatRate;
@@ -108,7 +110,7 @@ export const QuotationPreview = ({ data, isEditMode, onUpdateItem, onUpdateTerms
             <tr key={`a-${item.id || idx}`}>
               <td className={`${borderClass} text-center`}>{idx + 1}</td>
               
-              {/* 1. รายการ (Editable - Master Data) */}
+              {/* 1. รายการ */}
               <td className={`${borderClass}`}>
                 <EditableCell 
                   isEditMode={isEditMode}
@@ -117,7 +119,7 @@ export const QuotationPreview = ({ data, isEditMode, onUpdateItem, onUpdateTerms
                 />
               </td>
 
-              {/* 2. ยี่ห้อ (Editable - Master Data) */}
+              {/* 2. ยี่ห้อ */}
               <td className={`${borderClass}`}>
                 <EditableCell 
                   isEditMode={isEditMode}
@@ -127,7 +129,7 @@ export const QuotationPreview = ({ data, isEditMode, onUpdateItem, onUpdateTerms
                 />
               </td>
 
-              {/* 3. จำนวน (Editable - Functional) */}
+              {/* 3. จำนวน */}
               <td className={`${borderClass}`}>
                 <EditableCell 
                   isEditMode={isEditMode}
@@ -138,7 +140,7 @@ export const QuotationPreview = ({ data, isEditMode, onUpdateItem, onUpdateTerms
                 />
               </td>
 
-              {/* 4. หน่วย (Editable - Master Data) */}
+              {/* 4. หน่วย */}
               <td className={`${borderClass}`}>
                 <EditableCell 
                   isEditMode={isEditMode}
@@ -148,15 +150,13 @@ export const QuotationPreview = ({ data, isEditMode, onUpdateItem, onUpdateTerms
                 />
               </td>
               
-              {/* 5. ราคาอุปกรณ์/หน่วย (Editable - Functional) */}
+              {/* 5. ราคาอุปกรณ์/หน่วย */}
               <td className={`${borderClass}`}>
                  <EditableCell 
                   isEditMode={isEditMode}
                   type="text"
                   align="right"
-                  // แสดงผล: ราคาต่อหน่วย
                   value={formatCurrency(calcUnit(item.matUnit, item.qty))}
-                  // ✅ แก้ไข: เมื่อ Save ต้องคูณ Qty กลับไปเป็นราคารวม
                   onSave={(val) => {
                     const cleanVal = val.replace(/,/g, '');
                     const unitPrice = parseFloat(cleanVal);
@@ -165,12 +165,11 @@ export const QuotationPreview = ({ data, isEditMode, onUpdateItem, onUpdateTerms
                   }}
                 />
               </td>
-              {/* ค่าอุปกรณ์รวม (Read only) */}
               <td className={`${borderClass} text-right bg-gray-50`}>
                  {formatCurrency(item.matUnit)}
               </td>
               
-              {/* 6. ค่าแรง/หน่วย (Editable - Functional) */}
+              {/* 6. ค่าแรง/หน่วย */}
               <td className={`${borderClass}`}>
                  <EditableCell 
                   isEditMode={isEditMode}
@@ -185,12 +184,10 @@ export const QuotationPreview = ({ data, isEditMode, onUpdateItem, onUpdateTerms
                   }}
                 />
               </td>
-              {/* ค่าแรงรวม (Read only) */}
               <td className={`${borderClass} text-right bg-gray-50`}>
                  {formatCurrency(item.labUnit)}
               </td>
               
-              {/* รวมเงินทั้งหมด (Read only) */}
               <td className={`${borderClass} text-right font-semibold`}>
                  {formatCurrency(item.total)}
               </td>
@@ -248,24 +245,18 @@ export const QuotationPreview = ({ data, isEditMode, onUpdateItem, onUpdateTerms
                   isEditMode={isEditMode}
                   type="text"
                   align="right"
-                  value={formatCurrency(item.total)} // แสดงผลราคารวม
+                  value={formatCurrency(item.total)}
                   onSave={(val) => {
                     const cleanVal = val.replace(/,/g, '');
                     const newTotal = parseFloat(cleanVal);
-                    
-                    // ป้องกัน NaN กรณีลบหมด
                     if (isNaN(newTotal)) return;
-
-                    // คำนวณย้อนกลับเป็นราคาต่อหน่วย (Product Price)
                     const qty = item.qty || 1;
                     const newUnitPrice = newTotal / qty;
-          
-                    // ส่งค่าไป update (เราใช้ field 'product_price' สำหรับราคาของ Section B)
                     onUpdateItem(item.id, "product_price", newUnitPrice);
                   }}
                 />
               </td>
-    </tr>
+            </tr>
           ))}
         </tbody>
         
@@ -316,11 +307,27 @@ export const QuotationPreview = ({ data, isEditMode, onUpdateItem, onUpdateTerms
             {/* 2. RIGHT BLOCK (Totals) */}
             <td colSpan={3} className="border border-gray-400 p-0 align-top">
                 <div className="flex flex-col h-full text-xs">
+                    
+                    {/* ✅ 1. รวม (Net Total) - แก้ไขให้เป็น EditableCell */}
                     <div className="flex border-b border-gray-400">
                         <div className="w-1/2 p-1 text-right font-bold bg-gray-100 border-r border-gray-400 flex items-center justify-end">รวม (Total)</div>
-                        <div className="w-1/2 p-1 text-right flex items-center justify-end font-medium">{formatCurrency(totalAmount)}</div>
+                        <div className="w-1/2 p-1 text-right flex items-center justify-end font-medium">
+                            <EditableCell 
+                                isEditMode={isEditMode}
+                                type="text"
+                                align="right"
+                                value={formatCurrency(totalAmount)}
+                                onSave={(val) => {
+                                    const cleanVal = parseFloat(val.replace(/,/g, ''));
+                                    if (!isNaN(cleanVal) && onUpdateTotalOverride) {
+                                        onUpdateTotalOverride('net', cleanVal);
+                                    }
+                                }}
+                            />
+                        </div>
                     </div>
                     
+                    {/* ส่วนลด */}
                     <div className="flex border-b border-gray-400">
                         <div className="w-1/2 p-1 text-right font-bold bg-gray-100 border-r border-gray-400 flex items-center justify-end">ส่วนลด (Discount)</div>
                         <div className="w-1/2 p-1 text-right flex items-center justify-end">
@@ -328,19 +335,35 @@ export const QuotationPreview = ({ data, isEditMode, onUpdateItem, onUpdateTerms
                         </div>
                     </div>
                     
+                    {/* หลังหักส่วนลด (Read Only) */}
                     <div className="flex border-b border-gray-400">
                         <div className="w-1/2 p-1 text-right font-bold bg-gray-100 border-r border-gray-400 flex items-center justify-end">รวม (Total)</div>
                         <div className="w-1/2 p-1 text-right flex items-center justify-end font-medium">{formatCurrency(totalAfterDiscount)}</div>
                     </div>
                     
+                    {/* VAT (Read Only) */}
                     <div className="flex border-b border-gray-400">
                         <div className="w-1/2 p-1 text-right text-gray-600 bg-gray-100 border-r border-gray-400 flex items-center justify-end">ภาษีมูลค่าเพิ่ม (VAT 7%)</div>
                         <div className="w-1/2 p-1 text-right text-gray-600 flex items-center justify-end">{formatCurrency(vatAmount)}</div>
                     </div>
                     
+                    {/* ✅ 2. รวมเงินทั้งสิ้น (Grand Total) - แก้ไขให้เป็น EditableCell */}
                     <div className="flex flex-1">
                         <div className="w-1/2 p-1 text-right font-bold text-primary bg-blue-50 border-r border-gray-400 flex items-center justify-end">รวมเงินทั้งสิ้น<br/>(Grand Total)</div>
-                        <div className="w-1/2 p-1 text-right font-bold text-primary text-sm flex items-center justify-end">{formatCurrency(grandTotal)}</div>
+                        <div className="w-1/2 p-1 text-right font-bold text-primary text-sm flex items-center justify-end">
+                             <EditableCell 
+                                isEditMode={isEditMode}
+                                type="text"
+                                align="right"
+                                value={formatCurrency(grandTotal)}
+                                onSave={(val) => {
+                                    const cleanVal = parseFloat(val.replace(/,/g, ''));
+                                    if (!isNaN(cleanVal) && onUpdateTotalOverride) {
+                                        onUpdateTotalOverride('grand', cleanVal);
+                                    }
+                                }}
+                            />
+                        </div>
                     </div>
                 </div>
             </td>
