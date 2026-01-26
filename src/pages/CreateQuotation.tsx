@@ -21,6 +21,7 @@ import { useAutoGenerateAdditionalItems } from "@/hooks/useAutoGenerateAdditiona
 import { useCalculatePricing } from "@/hooks/useCalculatePricing";
 import { generateQuotationExcel } from "@/utils/ExportExcel";
 import { QuotationPreview, PreviewData } from "@/components/QuotationPreview";
+import { SelectedProduct } from "@/components/ProductSelector";
 
 // Helper function: Brand formatting
 const formatBrandName = (brand: string) => {
@@ -88,6 +89,7 @@ const CreateQuotation = () => {
   // ------------------------------------------------------------------
   // Handlers for In-Place Editing & Updates
   // ------------------------------------------------------------------
+  
   const SYNCED_GROUP_KEYWORDS = [
     "Common Temporary Facilities, Construction Facilities",
     "Electrical drawing, Facility system, layout and schematic",
@@ -95,6 +97,72 @@ const CreateQuotation = () => {
     "Tempolary Utility Expense", 
     "Safety Operation"
   ];
+
+  const handleAddItem = async (section: "A" | "B", item: SelectedProduct) => {
+      if (!currentQuotationId || !item.name) return;
+      setIsLoading(true);
+
+      try {
+          let productId = item.id;
+
+          // 🆕 Case 1: สร้างใหม่ (New Product)
+          // ถ้า item.id เป็น null (มาจากปุ่มสร้างใหม่)
+          if (!productId) {
+              const cleanName = item.name.trim();
+              const category = section === "B" ? "operation" : "other"; 
+              
+              // สร้าง Product ใหม่ลง DB (Brand เป็น null ไปก่อน)
+              const { data: newProduct, error: createError } = await supabase
+                  .from("products")
+                  .insert({
+                      name: cleanName,
+                      product_category: category,
+                      unit: "Unit",
+                      brand: null, 
+                      cost_price: 0,
+                      sale_price: 0
+                  })
+                  .select("id")
+                  .single();
+              
+              if (createError) throw createError;
+              productId = newProduct.id;
+              console.log("✅ Created new product:", productId);
+          } else {
+              // 🟢 Case 2: เลือกจากที่มีอยู่ (Existing)
+              console.log("✅ Selected existing product ID:", productId);
+          }
+
+          // 3. เพิ่มลงในใบเสนอราคา (Product Line Items)
+          if (productId) {
+              const { error: lineItemError } = await supabase
+                  .from("product_line_items")
+                  .insert({
+                      quotation_id: currentQuotationId,
+                      product_id: productId,
+                      quantity: 1,
+                      product_price: 0,      // เริ่มต้น 0
+                      installation_price: 0, // เริ่มต้น 0
+                      is_edited_product_price: true, // บังคับว่า User แก้เอง (กันระบบ Auto-calc มาทับเป็น 0)
+                      is_edited_installation_price: true
+                  });
+              
+              if (lineItemError) throw lineItemError;
+              
+              toast({ title: "Added", description: `Added item to quotation.` });
+              
+              // 4. คำนวณราคาใหม่ และ โหลดหน้าจอใหม่
+              await calculateAndSavePricing(currentQuotationId);
+              await loadPreviewData(currentQuotationId);
+          }
+
+      } catch (error) {
+          console.error("Add Item Error:", error);
+          toast({ title: "Error", description: "Failed to add item", variant: "destructive" });
+      } finally {
+          setIsLoading(false);
+      }
+  };
 
   const handleUpdateItem = async (itemId: string, field: string, value: any) => {
     try {
@@ -709,6 +777,7 @@ const CreateQuotation = () => {
                         onUpdateItem={handleUpdateItem}
                         onUpdateTerms={handleUpdateTerms}
                         onUpdateTotalOverride={handleUpdateTotalOverride}
+                        onAddItem={handleAddItem}
                     />
                   </div>
                 ) : (

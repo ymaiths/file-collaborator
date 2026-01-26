@@ -1,5 +1,6 @@
 import React from "react";
 import { EditableCell } from "./EditableCell";
+import { ProductSelector, SelectedProduct } from "./ProductSelector";
 
 // Helper จัดรูปแบบเงิน
 const formatCurrency = (num: number | undefined | null) => {
@@ -36,11 +37,11 @@ interface QuotationPreviewProps {
   isEditMode: boolean;
   onUpdateItem: (itemId: string, field: string, value: any) => void;
   onUpdateTerms: (field: string, value: string) => void;
-  // ✅ เพิ่ม Prop นี้เข้ามาเพื่อรองรับการแก้ Net/Grand Total
   onUpdateTotalOverride?: (type: 'net' | 'grand', value: number) => void;
+  onAddItem?: (section: "A" | "B", item: SelectedProduct) => void;
 }
 
-export const QuotationPreview = ({ data, isEditMode, onUpdateItem, onUpdateTerms, onUpdateTotalOverride }: QuotationPreviewProps) => {
+export const QuotationPreview = ({ data, isEditMode, onUpdateItem, onUpdateTerms, onUpdateTotalOverride,onAddItem }: QuotationPreviewProps) => {
   if (!data) return <div className="text-center p-10 text-xs">กำลังโหลดตัวอย่าง...</div>;
 
   const itemsA = data.items.filter((i) => i.category === "A");
@@ -193,6 +194,17 @@ export const QuotationPreview = ({ data, isEditMode, onUpdateItem, onUpdateTerms
               </td>
             </tr>
           ))}
+          {isEditMode && (
+            <tr>
+                <td colSpan={10} className="p-2 border-l border-r border-b border-gray-400 bg-white">    
+                  <div className="flex justify-start">
+                    <div className="w-[420px]">
+                      <ProductSelector section="A" onSelect={(item) => onAddItem?.("A", item)} />
+                    </div>
+                  </div>
+                </td>
+            </tr>
+          )}
 
           {/* --- Section B --- */}
           {itemsB.length > 0 && (
@@ -258,6 +270,17 @@ export const QuotationPreview = ({ data, isEditMode, onUpdateItem, onUpdateTerms
               </td>
             </tr>
           ))}
+          {isEditMode && (
+            <tr className="bg-gray-50">
+                <td colSpan={10} className="p-2 border-l border-r border-b border-gray-400 bg-white">    
+                  <div className="flex justify-start">
+                    <div className="w-[420px]">
+                        <ProductSelector section="B" onSelect={(item) => onAddItem?.("B", item)} />
+                    </div>
+                  </div>
+                </td>
+            </tr>
+          )}
         </tbody>
         
         {/* --- FOOTER STRUCTURE --- */}
