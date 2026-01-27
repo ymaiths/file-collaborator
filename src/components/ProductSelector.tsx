@@ -18,11 +18,22 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
 
-// Interface สำหรับส่งค่ากลับไปหน้าหลัก (ส่งเป็น Object เพื่อความชัวร์)
+// ✅ 1. Update Interface to include ALL fields
 export interface SelectedProduct {
-    id: string | null; // ถ้า null แปลว่าสร้างใหม่
-    name: string;
-    isNew: boolean;
+  id: string | null;
+  name: string;
+  isNew: boolean;
+  // Optional fields that come from DB
+  brand?: string | null;
+  unit?: string | null;
+  min_kw?: number | null;
+  product_category?: string | null;
+  is_fixed_cost?: boolean | null;
+  cost_fixed?: number | null;
+  cost_percentage?: number | null;
+  is_fixed_installation_cost?: boolean | null;
+  fixed_installation_cost?: number | null;
+  installation_cost_percentage?: number | null;
 }
 
 interface ProductSelectorProps {
@@ -32,21 +43,34 @@ interface ProductSelectorProps {
 
 export function ProductSelector({ onSelect, section }: ProductSelectorProps) {
   const [open, setOpen] = useState(false);
-  const [products, setProducts] = useState<{ id: string; name: string; brand: string | null; min_kw: number | null }[]>([]);
+  // ✅ 2. Update State Type to allow all fields
+  const [products, setProducts] = useState<any[]>([]); 
   const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     const fetchProducts = async () => {
-      // ดึงข้อมูลละเอียด เพื่อใช้แยกแยะสินค้าชื่อเหมือนกัน
       const { data } = await supabase
         .from("products")
-        .select("id, name, brand, min_kw")
+        .select(`
+          id, 
+          name, 
+          brand, 
+          unit, 
+          min_kw,
+          product_category,
+          is_fixed_cost,
+          cost_fixed,
+          cost_percentage,
+          is_fixed_installation_cost,
+          fixed_installation_cost,
+          installation_cost_percentage
+        `)
         .order("name");
       
       if (data) setProducts(data);
     };
     fetchProducts();
-  }, [open]);
+  }, []); // Removed [open] dependency to prevent repeated fetches
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -77,7 +101,6 @@ export function ProductSelector({ onSelect, section }: ProductSelectorProps) {
                     variant="default"
                     className="w-full"
                     onClick={() => {
-                        // ✅ กรณีสร้างใหม่: ส่ง id=null
                         onSelect({ id: null, name: searchQuery, isNew: true }); 
                         setOpen(false);
                     }}
@@ -87,7 +110,6 @@ export function ProductSelector({ onSelect, section }: ProductSelectorProps) {
             </CommandEmpty>
             <CommandGroup heading="เลือกจากรายการที่มีอยู่">
               {products.map((product) => {
-                // สร้าง Keyword ให้ค้นหาเจอทั้งชื่อและยี่ห้อ
                 const searchKey = `${product.name} ${product.brand || ""} ${product.min_kw || ""}`;
                 
                 return (
@@ -95,8 +117,12 @@ export function ProductSelector({ onSelect, section }: ProductSelectorProps) {
                     key={product.id}
                     value={searchKey}
                     onSelect={() => {
-                        // ✅ กรณีมีอยู่แล้ว: ส่ง ID ไปเลย (ป้องกันผิดตัว)
-                        onSelect({ id: product.id, name: product.name, isNew: false });
+                        // ✅ 3. CRITICAL FIX: Spread the entire product object
+                        // This passes cost_fixed, cost_percentage, etc. to the parent
+                        onSelect({ 
+                            ...product, 
+                            isNew: false 
+                        });
                         setOpen(false);
                     }}
                     className="flex flex-col items-start gap-1 py-2 cursor-pointer border-b last:border-0"

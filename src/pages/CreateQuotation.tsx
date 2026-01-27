@@ -100,7 +100,15 @@ const CreateQuotation = () => {
 
   const handleAddItem = async (section: "A" | "B", selectedProduct: any) => {
   if (!currentQuotationId) return;
-
+    // 🔍 DEBUG: Check inputs
+    const projectSizeVal = parseFloat(formData.projectSize) || 0; 
+    console.log("---------------- DEBUG ADD ITEM ----------------");
+    console.log("1. Project Size:", projectSizeVal);
+    console.log("2. Selected Product Data:", selectedProduct);
+    console.log("   - is_fixed_cost:", selectedProduct.is_fixed_cost);
+    console.log("   - cost_fixed:", selectedProduct.cost_fixed);
+    console.log("   - cost_percentage:", selectedProduct.cost_percentage);
+    console.log("------------------------------------------------");
   try {
     const projectSizeVal = parseFloat(formData.projectSize) || 0; 
 
@@ -144,6 +152,7 @@ const CreateQuotation = () => {
 };
 
   const handleUpdateItem = async (itemId: string, field: string, value: any) => {
+    
     try {
       let updateData: any = {};
       
