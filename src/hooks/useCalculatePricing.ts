@@ -25,7 +25,7 @@ export const useCalculatePricing = () => {
   // Helper: ปัดเศษหาค่าใกล้เคียง 100 ที่สุด
   const roundNearestHundred = (num: number) => Math.round(num / 100) * 100;
   const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
-  // ✅ เพิ่ม parameter: manualTargetPrice (สำหรับรับค่า Net Total ที่ user แก้ไข)
+
   const calculateAndSavePricing = async (quotationId: string, manualTargetPrice?: number) => {
     setIsLoading(true);
     console.clear();
@@ -46,13 +46,10 @@ export const useCalculatePricing = () => {
       // =========================================================
       // 2. Determine Target Price (DB vs Manual)
       // =========================================================
-      // ✅ เช็คว่ามีการส่ง manualTargetPrice มาหรือไม่?
       if (manualTargetPrice !== undefined && manualTargetPrice !== null) {
-          // กรณี User แก้ Net Total / Grand Total เอง
           TOTAL_PROJECT_PRICE = manualTargetPrice;
           console.log(`🎯 MANUAL TARGET OVERRIDE: ${TOTAL_PROJECT_PRICE.toLocaleString()}`);
       } else {
-          // กรณีปกติ: คำนวณจาก Sale Package ใน DB
           const brand = quote.inverter_brand || "";
           const phase = quote.electrical_phase || "single_phase";
           const salePackageId = quote.sale_package_id;
@@ -102,6 +99,8 @@ export const useCalculatePricing = () => {
           isIncluded: false,
           finalPriceEq: item.product_price || 0,
           finalPriceInst: item.installation_price || 0,
+          // ✅ รับค่า is_additional_item มาด้วย (default false)
+          is_additional_item: item.is_additional_item ?? false 
         };
         if (!item.products) return baseItem;
 
@@ -133,18 +132,31 @@ export const useCalculatePricing = () => {
       let totalVariableBaseCost = 0;
 
       items = items.map(item => {
-          // Excluded -> Fixed
-          if (!item.isIncluded) {
+          // ✅ CHECK POINT 1: Excluded OR Additional Item -> Fixed Price (Lock)
+          // ถ้าเป็นของไม่รวมในแพ็ค หรือ เป็นของ User เพิ่มเอง -> ล็อคราคาเลย
+          if (!item.isIncluded || item.is_additional_item) {
               const finalEq = item.is_edited_product_price ? item.finalPriceEq : item.costEq;
               const finalInst = item.is_edited_installation_price ? item.finalPriceInst : item.costInst;
+              
+              // บวกเข้า Fixed Price (คือราคาที่ต้องจ่ายแน่ๆ ไม่อยู่ในงบเหมา)
+              // ⚠️ แต่เดี๋ยวก่อน! ถ้าเป็น Additional Item ราคาของมันคือ "ส่วนเพิ่ม" 
+              // ดังนั้นมันไม่ควรไปกินเนื้อ "งบเหมา (Target Price)" ของ Standard Items
+              // ถ้า Target Price คือราคารวมของทั้งโครงการ (รวม Add-on ด้วย) -> ก็ต้องบวกเข้าไป
+              // แต่ถ้า Target Price คือราคาแพ็คเกจเพียวๆ -> ต้องระวัง
+              
+              // สมมติ: TOTAL_PROJECT_PRICE คือราคาขายสุดท้ายที่ User อยากเห็น
+              // ดังนั้น Add-on ก็เป็นส่วนหนึ่งของราคานั้น -> บวกเข้าไปใน totalFixedPrice ถูกแล้ว
               totalFixedPrice += finalEq + finalInst;
+              
               return { ...item, finalPriceEq: finalEq, finalPriceInst: finalInst };
           }
           return item;
       });
 
-      items.filter(i => i.isIncluded).forEach(item => {
+      // วนลูปเฉพาะตัวที่เป็น Standard Items (Included และไม่ใช่ Additional)
+      items.filter(i => i.isIncluded && !i.is_additional_item).forEach(item => {
           const category = item.products?.product_category || "";
+          
           // Check Equipment
           if (item.is_edited_product_price) totalFixedPrice += item.finalPriceEq;
           else totalVariableBaseCost += item.costEq;
@@ -159,6 +171,7 @@ export const useCalculatePricing = () => {
       });
 
       const remainingBudget = round2(TOTAL_PROJECT_PRICE - totalFixedPrice);
+      
       // =========================================================
       // 🔄 ROUND 1: เกลี่ยทุกตัวเท่ากัน (Universal Dist.)
       // =========================================================
@@ -173,7 +186,8 @@ export const useCalculatePricing = () => {
       let sumRound1 = 0;
 
       items = items.map(item => {
-          if (!item.isIncluded) {
+          // ✅ CHECK POINT 2: Skip Additional Items
+          if (!item.isIncluded || item.is_additional_item) {
               sumRound1 += item.finalPriceEq + item.finalPriceInst;
               return item;
           }
@@ -217,7 +231,7 @@ export const useCalculatePricing = () => {
       
       if (diff1 !== 0) {
           const candidatesR2 = items.filter(item => 
-              item.isIncluded && 
+              item.isIncluded && !item.is_additional_item && // ✅ Skip Add-on
               (!item.is_edited_product_price || !item.is_edited_installation_price) &&
               (item.quantity || 1) < 100 
           );
@@ -265,7 +279,7 @@ export const useCalculatePricing = () => {
       }
       
       const sumRound2 = items.reduce((sum, i) => sum + i.finalPriceEq + i.finalPriceInst, 0);
-      const diff2 = round2(TOTAL_PROJECT_PRICE - sumRound2); //  คำนวณเศษทศนิยมที่เหลือ
+      const diff2 = round2(TOTAL_PROJECT_PRICE - sumRound2);
       console.log(`Sum R2: ${sumRound2.toLocaleString()} | Diff R2: ${diff2}`);
       console.groupEnd();
 
@@ -276,38 +290,44 @@ export const useCalculatePricing = () => {
       
       if (diff2 !== 0) {
           const wireIndex = items.findIndex(item => 
-              item.isIncluded && !item.is_edited_product_price &&
+              item.isIncluded && !item.is_additional_item && // ✅ Skip Add-on
+              !item.is_edited_product_price &&
               (item.products?.product_category === "cable" || (item.products?.name || "").includes("สายไฟ"))
           );
-
+          
+          // ... (ส่วน Logic การเกลี่ยเศษ Wire Dump ของเดิมใช้ได้เลย เพราะเรากรอง Add-on ออกแล้ว) ...
+          
           if (wireIndex !== -1) {
               const item = items[wireIndex];
               const before = item.finalPriceEq;
-              const newPrice = round2(item.finalPriceEq + diff2);
-              if (diff2 < 0 && (item.finalPriceEq + diff2) < 0) {
-                   const deductable = item.finalPriceEq;
-                   item.finalPriceEq = 0;
-                   const remainingDiff = diff2 + deductable;
+              // ... code เดิม
+               if (diff2 < 0 && (item.finalPriceEq + diff2) < 0) {
+                    const deductable = item.finalPriceEq;
+                    item.finalPriceEq = 0;
+                    const remainingDiff = diff2 + deductable;
 
-                   // Emergency Spillover to Largest Item
-                   if (Math.abs(remainingDiff) > 1) {
-                       console.warn(`⚠️ Emergency Spillover: ${remainingDiff}`);
-                       const largestItem = items.reduce((prev, current) => 
-                           (!current.is_edited_product_price && current.finalPriceEq > prev.finalPriceEq) ? current : prev
-                       , items[0]);
-                       largestItem.finalPriceEq += remainingDiff;
-                   }
-              } else {
-                   item.finalPriceEq += diff2;
-                   console.log(`✅ Wire Adjusted by: ${diff2}`);
-              }
+                    // Emergency Spillover to Largest Item (Standard Only)
+                    if (Math.abs(remainingDiff) > 1) {
+                        const largestItem = items.reduce((prev, current) => 
+                            (!current.is_edited_product_price && !current.is_additional_item && current.finalPriceEq > prev.finalPriceEq) ? current : prev
+                        , items.find(i => !i.is_additional_item && !i.is_edited_product_price) || items[0]);
+                        
+                        if (largestItem) largestItem.finalPriceEq += remainingDiff;
+                    }
+               } else {
+                    item.finalPriceEq += diff2;
+                    console.log(`✅ Wire Adjusted by: ${diff2}`);
+               }
           } else {
-              // Fallback to Largest Item
+              // Fallback to Largest Item (Standard Only)
               const largestItem = items.reduce((prev, current) => 
-                   (!current.is_edited_product_price && current.finalPriceEq > prev.finalPriceEq) ? current : prev
-              , items[0]);
-              largestItem.finalPriceEq += diff2;
-              console.log(`✅ Fallback Adjusted Largest Item by: ${diff2}`);
+                   (!current.is_edited_product_price && !current.is_additional_item && current.finalPriceEq > prev.finalPriceEq) ? current : prev
+              , items.find(i => !i.is_additional_item && !i.is_edited_product_price) || items[0]);
+              
+              if (largestItem) {
+                  largestItem.finalPriceEq += diff2;
+                  console.log(`✅ Fallback Adjusted Largest Item by: ${diff2}`);
+              }
           }
       }
       

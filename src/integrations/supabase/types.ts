@@ -79,6 +79,7 @@ export type Database = {
           is_edited_installation_price: boolean | null;
           is_edited_product_price: boolean | null;
           is_edited_quantity: boolean | null;
+          is_additional_item: boolean | null;
           product_id: string | null;
           product_price: number | null;
           quantity: number;
@@ -95,6 +96,7 @@ export type Database = {
           is_edited_installation_price?: boolean | null;
           is_edited_product_price?: boolean | null;
           is_edited_quantity?: boolean | null;
+          is_additional_item?: boolean | null;
           product_id?: string | null;
           product_price?: number | null;
           quantity?: number;
@@ -111,6 +113,7 @@ export type Database = {
           is_edited_installation_price?: boolean | null;
           is_edited_product_price?: boolean | null;
           is_edited_quantity?: boolean | null;
+          is_additional_item?: boolean | null;
           product_id?: string | null;
           product_price?: number | null;
           quantity?: number;
@@ -415,9 +418,7 @@ export type Database = {
       product_category:
         | "solar_panel"
         | "inverter"
-        | "ac_cabinet"
-        | "dc_cabinet"
-        | "other"
+        | "optimizer"
         | "ac_box"
         | "dc_box"
         | "service"
@@ -570,13 +571,10 @@ export const Constants = {
       product_category: [
         "solar_panel",
         "inverter",
-        "ac_cabinet",
-        "dc_cabinet",
-        "other",
+        "optimizer",
         "ac_box",
         "dc_box",
-        "walk_way",
-        "water_service",
+        "service",
         "pv_mounting_structure",
         "zero_export_smart_logger",
         "cable",

@@ -40,6 +40,24 @@ export const calculateItemCost = (
 
   return { costEq, costInst };
 };
+
+export const calculateDefaultLineItem = (
+  product: Product,
+  projectSizeWatt: number,
+  quantity: number = 1
+) => {
+  // Reuse the exact same pricing logic as the main quotation creation
+  const { costEq, costInst } = calculateItemCost(
+    { quantity, products: product },
+    projectSizeWatt
+  );
+
+  return {
+    quantity,
+    product_price: costEq,         // This becomes the default product_price in DB
+    installation_price: costInst,  // This becomes the default installation_price in DB
+  };
+};
 /**
  * 2. Helper ตรวจสอบว่าเป็น Included Items หรือไม่?
  */

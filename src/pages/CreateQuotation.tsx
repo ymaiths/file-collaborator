@@ -22,6 +22,7 @@ import { useCalculatePricing } from "@/hooks/useCalculatePricing";
 import { generateQuotationExcel } from "@/utils/ExportExcel";
 import { QuotationPreview, PreviewData } from "@/components/QuotationPreview";
 import { SelectedProduct } from "@/components/ProductSelector";
+import { calculateDefaultLineItem } from "@/utils/pricing-logic";
 
 // Helper function: Brand formatting
 const formatBrandName = (brand: string) => {
@@ -85,7 +86,6 @@ const CreateQuotation = () => {
   });
 
   const [previewData, setPreviewData] = useState<PreviewData | null>(null);
-
   // ------------------------------------------------------------------
   // Handlers for In-Place Editing & Updates
   // ------------------------------------------------------------------
@@ -98,71 +98,50 @@ const CreateQuotation = () => {
     "Safety Operation"
   ];
 
-  const handleAddItem = async (section: "A" | "B", item: SelectedProduct) => {
-      if (!currentQuotationId || !item.name) return;
-      setIsLoading(true);
+  const handleAddItem = async (section: "A" | "B", selectedProduct: any) => {
+  if (!currentQuotationId) return;
 
-      try {
-          let productId = item.id;
+  try {
+    const projectSizeVal = parseFloat(formData.projectSize) || 0; 
 
-          // 🆕 Case 1: สร้างใหม่ (New Product)
-          // ถ้า item.id เป็น null (มาจากปุ่มสร้างใหม่)
-          if (!productId) {
-              const cleanName = item.name.trim();
-              const category = section === "B" ? "operation" : "other"; 
-              
-              // สร้าง Product ใหม่ลง DB (Brand เป็น null ไปก่อน)
-              const { data: newProduct, error: createError } = await supabase
-                  .from("products")
-                  .insert({
-                      name: cleanName,
-                      product_category: category,
-                      unit: "Unit",
-                      brand: null, 
-                      cost_price: 0,
-                      sale_price: 0
-                  })
-                  .select("id")
-                  .single();
-              
-              if (createError) throw createError;
-              productId = newProduct.id;
-              console.log("✅ Created new product:", productId);
-          } else {
-              // 🟢 Case 2: เลือกจากที่มีอยู่ (Existing)
-              console.log("✅ Selected existing product ID:", productId);
-          }
+    // 1. Calculate Default Values
+    const defaults = calculateDefaultLineItem(
+      selectedProduct, 
+      projectSizeVal, 
+      1 
+    );
 
-          // 3. เพิ่มลงในใบเสนอราคา (Product Line Items)
-          if (productId) {
-              const { error: lineItemError } = await supabase
-                  .from("product_line_items")
-                  .insert({
-                      quotation_id: currentQuotationId,
-                      product_id: productId,
-                      quantity: 1,
-                      product_price: 0,      // เริ่มต้น 0
-                      installation_price: 0, // เริ่มต้น 0
-                      is_edited_product_price: true, // บังคับว่า User แก้เอง (กันระบบ Auto-calc มาทับเป็น 0)
-                      is_edited_installation_price: true
-                  });
-              
-              if (lineItemError) throw lineItemError;
-              
-              toast({ title: "Added", description: `Added item to quotation.` });
-              
-              // 4. คำนวณราคาใหม่ และ โหลดหน้าจอใหม่
-              await calculateAndSavePricing(currentQuotationId);
-              await loadPreviewData(currentQuotationId);
-          }
+    // 2. Insert into Supabase (No need to select data back)
+    const { error } = await supabase
+      .from("product_line_items")
+      .insert({
+        quotation_id: currentQuotationId,
+        product_id: selectedProduct.id,
+        quantity: defaults.quantity,
+        product_price: defaults.product_price,
+        installation_price: defaults.installation_price,
+        is_additional_item: true, 
+      });
 
-      } catch (error) {
-          console.error("Add Item Error:", error);
-          toast({ title: "Error", description: "Failed to add item", variant: "destructive" });
-      } finally {
-          setIsLoading(false);
-      }
-  };
+    if (error) throw error;
+
+    // 3. Refresh the Preview
+    await loadPreviewData(currentQuotationId);
+
+    toast({
+      title: "เพิ่มรายการสำเร็จ",
+      description: `เพิ่ม ${selectedProduct.name} เรียบร้อยแล้ว`,
+    });
+
+  } catch (error) {
+    console.error("Error adding item:", error);
+    toast({
+      title: "เกิดข้อผิดพลาด",
+      description: "ไม่สามารถเพิ่มรายการได้",
+      variant: "destructive",
+    });
+  }
+};
 
   const handleUpdateItem = async (itemId: string, field: string, value: any) => {
     try {
