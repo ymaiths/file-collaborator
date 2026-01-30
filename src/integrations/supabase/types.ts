@@ -419,14 +419,15 @@ export type Database = {
         | "solar_panel"
         | "inverter"
         | "optimizer"
+        | "support_inverter"
         | "ac_box"
         | "dc_box"
         | "service"
         | "pv_mounting_structure"
-        | "zero_export_smart_logger"
         | "cable"
         | "operation"
-        | "electrical_management";
+        | "electrical_management"
+        | "others";
     };
     CompositeTypes: {
       [_ in never]: never;
@@ -575,10 +576,11 @@ export const Constants = {
         "ac_box",
         "dc_box",
         "service",
+        "support_inverter",
         "pv_mounting_structure",
-        "zero_export_smart_logger",
         "cable",
         "electrical_management",
+        "others"
       ],
     },
   },

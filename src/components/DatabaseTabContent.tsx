@@ -14,9 +14,16 @@ type DatabaseSubTab = "company" | "sales" | "equipment";
 const enumToDisplayName: Record<string, string> = {
   solar_panel: "Solar Panel",
   inverter: "Inverter",
-  ac_cabinet: "AC box",
-  dc_cabinet: "DC box",
-  other: "Other",
+  ac_box: "AC box",
+  dc_box: "DC box",
+  support_inverter: "Support Inverter",
+  pv_mounting_structure: "PV Mounting Structure",
+  cable: "Cable & Connector",
+  operation: "Operation & Maintenance",
+  service: "Service",
+  optimizer: "Optimizer",
+  electrical_management: "Electrical Management",
+  others: "Others"
 };
 
 export const DatabaseTabContent = () => {

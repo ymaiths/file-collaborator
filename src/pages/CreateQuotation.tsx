@@ -35,20 +35,32 @@ const formatBrandName = (brand: string) => {
 
 // Helper function: Parse terms
 const parseTerms = (text: string | null) => {
-  if (!text) return ["-"];
+  if (!text || text === "-" || text.trim() === "") return [];
+
+  let items: string[] = [];
+
+  // 1. ถ้าใน Database มีการกด Enter (New line) มาแล้ว ให้ยึดตามนั้น
   if (text.includes("\n")) {
-    return text
-      .split("\n")
-      .map((t) => t.trim().replace(/^\d+\.\s*/, ""))
-      .filter((t) => t !== "");
+    items = text.split("\n");
+  } 
+  // 2. ถ้าเป็น Text ยาวๆ ที่มีเลขข้อ (เช่น "1. xxx 2. xxx") ให้ตัดด้วย Regex
+  else {
+    // ตัด string โดยมองหา Pattern "ตัวเลข+จุด+เว้นวรรค" (Positive Lookahead)
+    items = text.split(/(?=\d+\.\s)/);
   }
-  const parts = text.split(/(?=\d+\.\s)/);
-  if (parts.length > 0) {
-    return parts
-      .map((t) => t.trim().replace(/^\d+\.\s*/, ""))
-      .filter((t) => t !== "");
+
+  // Clean ข้อมูล (Trim ช่องว่าง)
+  const cleanedItems = items
+    .map((t) => t.trim())
+    .filter((t) => t !== "");
+
+  // 3. Logic: ถ้ามีแค่ข้อเดียว ให้ลบเลขข้อข้างหน้าออก (เช่น "1. รับประกัน..." -> "รับประกัน...")
+  if (cleanedItems.length === 1) {
+    return [cleanedItems[0].replace(/^\d+\.\s*/, "")];
   }
-  return [text];
+
+  // ถ้ามีหลายข้อ ให้ส่งกลับไปทั้งแบบนั้นเลย (จะมีเลข 1., 2. ติดไปด้วย ซึ่งตรงกับที่คุณต้องการ)
+  return cleanedItems;
 };
 
 const CreateQuotation = () => {
