@@ -20,6 +20,7 @@ interface ListManagementViewProps {
     includeInPrice: boolean,
     isRequired: boolean
   ) => Promise<void>;
+  onDeleteItem?: (id: string) => Promise<void>;
 }
 
 export const ListManagementView = ({
@@ -30,6 +31,7 @@ export const ListManagementView = ({
   newItemPlaceholder,
   onItemClick,
   onCreateNew,
+  onDeleteItem,
 }: ListManagementViewProps) => {
   const [items, setItems] = useState(initialItems);
 
@@ -57,13 +59,23 @@ export const ListManagementView = ({
     });
   };
 
-  const handleDelete = (id: string, name: string) => {
-    setItems(items.filter((item) => item.id !== id));
-    toast({
-      title: "Deleted",
-      description: `${name} has been deleted`,
-      variant: "destructive",
-    });
+  const handleDelete = async (id: string, name: string) => {
+    if (onDeleteItem) {
+      try {
+        await onDeleteItem(id);
+        // ไม่ต้อง setItems เอง เพราะ Parent จะส่ง props ใหม่มาและ useEffect จะทำงาน
+      } catch (error) {
+        console.error("Delete failed", error);
+      }
+    } else {
+      // Fallback กรณีไม่มี Parent Handler (ทำงานแบบ Local)
+      setItems(items.filter((item) => item.id !== id));
+      toast({
+        title: "Deleted",
+        description: `${name} has been deleted`,
+        variant: "destructive",
+      });
+    }
   };
 
   const handleCreateNew = async (

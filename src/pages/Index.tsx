@@ -8,6 +8,7 @@ import { DatabaseTabContent } from "@/components/DatabaseTabContent";
 import { supabase } from "@/integrations/supabase/client";
 import { format } from "date-fns";
 import { th } from "date-fns/locale";
+import { toast } from "@/hooks/use-toast";
 
 const Index = () => {
   const [activeTab, setActiveTab] = useState<"quotation" | "database">(
@@ -89,6 +90,34 @@ const Index = () => {
       setIsLoading(false);
     }
   };
+  const handleDeleteProject = async (id: string) => {
+    // ถามยืนยันก่อนลบ (Optional)
+    if (!confirm("คุณแน่ใจหรือไม่ที่จะลบใบเสนอราคานี้?")) return;
+
+    try {
+      const { error } = await supabase
+        .from("quotations")
+        .delete()
+        .eq("id", id);
+
+      if (error) throw error;
+
+      // ลบออกจาก State หน้าจอทันที เพื่อให้ไม่ต้องโหลดใหม่
+      setProjects((prev) => prev.filter((p) => p.id !== id));
+
+      toast({
+        title: "ลบสำเร็จ",
+        description: "ใบเสนอราคาถูกลบเรียบร้อยแล้ว",
+      });
+    } catch (error) {
+      console.error("Error deleting quotation:", error);
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: "ไม่สามารถลบใบเสนอราคาได้",
+        variant: "destructive",
+      });
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -111,7 +140,7 @@ const Index = () => {
                   {/* แสดงการ์ดโครงการ */}
                   {projects.length > 0 ? (
                     projects.map((project) => (
-                      <ProjectCard key={project.id} {...project} />
+                      <ProjectCard key={project.id} {...project} onDelete={handleDeleteProject} />
                     ))
                   ) : (
                     // กรณีไม่มีข้อมูล (แต่โหลดเสร็จแล้ว)

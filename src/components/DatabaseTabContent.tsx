@@ -27,7 +27,7 @@ const enumToDisplayName: Record<string, string> = {
 };
 
 export const DatabaseTabContent = () => {
-  // --- State Definitions (ส่วนสำคัญที่ห้ามหาย) ---
+  // --- State Definitions ---
   const [activeSubTab, setActiveSubTab] = useState<DatabaseSubTab>("company");
   const [selectedCategory, setSelectedCategory] = useState<{
     id: string;
@@ -103,7 +103,6 @@ export const DatabaseTabContent = () => {
           seenNames.add(p.sale_name);
           uniquePrograms.push({
             id: p.id,
-
             name: p.sale_name,
           });
         }
@@ -111,11 +110,17 @@ export const DatabaseTabContent = () => {
 
       setSalesPrograms(uniquePrograms);
     } catch (error) {
-      // ... (ส่วน error handling เดิม)
+      console.error("Error fetching sales programs:", error);
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: "ไม่สามารถโหลดรายการโปรแกรมการขายได้",
+        variant: "destructive",
+      });
     } finally {
       setLoading(false);
     }
   };
+
   // --- Handlers ---
   const handleCategoryClick = (id: string, name: string) => {
     setSelectedCategory({ id, name });
@@ -128,6 +133,56 @@ export const DatabaseTabContent = () => {
   const handleBackToList = () => {
     setSelectedCategory(null);
     setSelectedSalesProgram(null);
+    // Refresh data to show updates if returning from detail view
+    if (activeSubTab === "sales") fetchSalesPrograms();
+    if (activeSubTab === "equipment") fetchEquipmentCategories();
+  };
+
+  // [NEW] Delete Handler for Sales Program
+  const handleDeleteSalesProgram = async (id: string) => {
+    try {
+      const { error } = await supabase.from("sale_packages").delete().eq("id", id);
+      if (error) throw error;
+
+      toast({
+        title: "ลบสำเร็จ",
+        description: "ลบโปรแกรมการขายเรียบร้อยแล้ว",
+      });
+      fetchSalesPrograms(); // Refresh the list
+    } catch (error) {
+      console.error("Error deleting sales program:", error);
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: "ไม่สามารถลบรายการได้",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // [NEW] Delete Handler for Equipment Category
+  const handleDeleteCategory = async (id: string) => {
+    try {
+      // Warning: This deletes ALL products in this category because the category list 
+      // is derived from existing products.
+      const { error } = await supabase
+        .from("products")
+        .delete()
+        .eq("product_category", id as Database["public"]["Enums"]["product_category"]);
+      if (error) throw error;
+
+      toast({
+        title: "ลบสำเร็จ",
+        description: "ลบหมวดหมู่และอุปกรณ์ภายในทั้งหมดแล้ว",
+      });
+      fetchEquipmentCategories(); // Refresh the list
+    } catch (error) {
+      console.error("Error deleting category:", error);
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: "ไม่สามารถลบหมวดหมู่ได้",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleCreateEquipmentCategory = async (
@@ -186,14 +241,10 @@ export const DatabaseTabContent = () => {
 
   const handleCreateSalesProgram = async (name: string) => {
     try {
-      // ไม่ต้องเรียก supabase.functions.invoke เหมือน Equipment
-      // เพราะเราปลดล็อก Database ให้รับ Text ได้แล้ว Insert ได้เลย
-
       const { data: packageData, error: packageError } = await supabase
         .from("sale_packages")
         .insert([
           {
-            // ใช้ as any เพื่อข้ามการตรวจสอบ Type ของ TypeScript ชั่วคราว
             sale_name: name as any,
           },
         ])
@@ -202,7 +253,6 @@ export const DatabaseTabContent = () => {
 
       if (packageError) throw packageError;
 
-      // โหลดข้อมูลใหม่ เพื่อให้รายการที่เพิ่งเพิ่มแสดงขึ้นมา
       await fetchSalesPrograms();
 
       toast({
@@ -265,9 +315,10 @@ export const DatabaseTabContent = () => {
               title="Sales Programme"
               items={salesPrograms}
               createNewLabel="Create New SalesProgramme"
-              newItemPlaceholder="Name Sales Program" // Placeholder ที่คุณต้องการ
+              newItemPlaceholder="Name Sales Program"
               onItemClick={handleSalesProgramClick}
               onCreateNew={handleCreateSalesProgram}
+              onDeleteItem={handleDeleteSalesProgram} //  [NEW] Connected delete handler
             />
           )}
         </>
@@ -290,9 +341,10 @@ export const DatabaseTabContent = () => {
               items={equipmentCategories}
               createNewLabel="Create New Equipment & Operation"
               showCheckboxes={true}
-              newItemPlaceholder="Name Category" // Placeholder สำหรับหมวดอุปกรณ์
+              newItemPlaceholder="Name Category"
               onItemClick={handleCategoryClick}
               onCreateNew={handleCreateEquipmentCategory}
+              onDeleteItem={handleDeleteCategory} // [NEW] Connected delete handler
             />
           )}
         </>

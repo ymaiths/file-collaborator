@@ -18,6 +18,7 @@ interface ProjectCardProps {
   salesProgramme: string;
   editedDate: string;
   createdDate: string;
+  onDelete: (id: string) => void;
 }
 
 export const ProjectCard = ({
@@ -29,11 +30,17 @@ export const ProjectCard = ({
   salesProgramme,
   editedDate,
   createdDate,
+  onDelete,
 }: ProjectCardProps) => {
   const navigate = useNavigate();
 
   const handleCardClick = () => {
     navigate(`/quotation/${id}`);
+  };
+
+  const handleDeleteClick = (e: React.MouseEvent) => {
+    e.stopPropagation(); // ป้องกันไม่ให้คลิกที่ Card ไปด้วย
+    onDelete(id);
   };
 
   return (
@@ -65,13 +72,14 @@ export const ProjectCard = ({
             variant="ghost"
             size="icon"
             className="absolute bottom-4 right-4 h-8 w-8"
+            onClick={(e)=>e.stopPropagation()}
           >
             <MoreVertical className="h-4 w-4" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem>Duplicate</DropdownMenuItem>
-          <DropdownMenuItem className="text-destructive">
+          <DropdownMenuItem className="text-destructive cursor-pointer" onClick={handleDeleteClick}>
             Delete
           </DropdownMenuItem>
         </DropdownMenuContent>
