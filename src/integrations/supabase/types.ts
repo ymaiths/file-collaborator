@@ -414,7 +414,7 @@ export type Database = {
     };
     Enums: {
       electronic_phase: "single_phase" | "three_phase";
-      inverter_brand: "huawei" | "huawei_optimizer" | "solaredge" | "hoimine";
+      inverter_brand: "huawei" | "huawei_optimizer" | "solaredge" | "hoymiles";
       product_category:
         | "solar_panel"
         | "inverter"
@@ -564,10 +564,9 @@ export const Constants = {
         "sungrow",
         "growatt",
         "other",
-        "huawei__optimizer",
-        "huaweioptimizer",
+        "huawei_optimizer",
         "solaredge",
-        "hoimine",
+        "hoymiles",
       ],
       product_category: [
         "solar_panel",

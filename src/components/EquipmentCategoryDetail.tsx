@@ -13,26 +13,11 @@ import { Minus, Plus, Copy, Upload, PlusCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import type { Database } from "@/integrations/supabase/types";
+import { ExcelImportModal } from "./ExcelImportModal";
 
 type ProductCategory = Database["public"]["Enums"]["product_category"];
 
-// Mapping between display names and database enum values
-const categoryNameToEnum: Record<string, ProductCategory> = {
-  "Solar Panel": "solar_panel",
-  Inverter: "inverter",
-  "AC Box": "ac_box",
-  "DC Box": "dc_box",
-  "PV Mounting Structure": "pv_mounting_structure",
-  "Cable & Connector": "cable",
-  "Operation & Maintenance": "operation",
-  "Service": "service",
-  "Optimizer": "optimizer",
-  "Support Inverter": "support_inverter",
-  "Electrical Management": "electrical_management",
-  "Others": "others",
-};
-
-// Reverse mapping
+// Mapping สำหรับแสดงผล
 const enumToDisplayName: Partial<Record<ProductCategory, string>> &
   Record<string, string> = {
   solar_panel: "Solar Panel",
@@ -85,21 +70,22 @@ export const EquipmentCategoryDetail = ({
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // Global settings for the category
+  // Global settings
   const [isPriceIncluded, setIsPriceIncluded] = useState(true);
   const [isRequired, setIsRequired] = useState(false);
   const [isFixedCost, setIsFixedCost] = useState(true);
   const [isFixedInstallationCost, setIsFixedInstallationCost] = useState(true);
   const [isExactKw, setIsExactKw] = useState(true);
 
-  // Determine current category enum
-  const currentCategoryEnum = (categoryNameToEnum[categoryName] ||
-    categoryName) as ProductCategory;
+  // Import States
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importMode, setImportMode] = useState<"append" | "replace">("append");
+
+  const currentCategoryEnum = categoryId as ProductCategory;
   const isInverter = currentCategoryEnum === "inverter";
 
   useEffect(() => {
     if (products.length > 0) {
-      // Set initial state based on the first product in the list
       setIsPriceIncluded(products[0]?.is_price_included ?? true);
       setIsRequired(products[0]?.is_required_product ?? false);
       setIsFixedCost(products[0]?.is_fixed_cost ?? true);
@@ -110,7 +96,7 @@ export const EquipmentCategoryDetail = ({
 
   useEffect(() => {
     fetchProducts();
-  }, [categoryId]);
+  }, [currentCategoryEnum]);
 
   const fetchProducts = async () => {
     try {
@@ -134,6 +120,73 @@ export const EquipmentCategoryDetail = ({
     }
   };
 
+  const openImportModal = (mode: "append" | "replace") => {
+    setImportMode(mode);
+    setIsImportModalOpen(true);
+  };
+
+  const handleImportEquipment = async (data: any[], booleanValues: Record<string, boolean>) => {
+    const isReplace = importMode === "replace";
+
+    const _isFixedCost = isReplace ? booleanValues.is_fixed_cost : isFixedCost;
+    const _isFixedInst = isReplace ? booleanValues.is_fixed_installation_cost : isFixedInstallationCost;
+    const _isExactKw = isReplace ? booleanValues.is_exact_kw : isExactKw;
+    const _isPriceIncluded = isReplace ? booleanValues.is_price_included : isPriceIncluded;
+    const _isRequired = isReplace ? booleanValues.is_required_product : isRequired;
+
+    const newItems = data.map((row) => ({
+      id: `temp-${Date.now()}-${Math.random()}`,
+      product_category: currentCategoryEnum,
+      
+      name: row.name || "",
+      brand: row.brand || "",
+      unit: row.unit || "",
+      
+      is_fixed_cost: _isFixedCost,
+      cost_fixed: _isFixedCost ? (parseFloat(row.cost) || 0) : null,
+      cost_percentage: !_isFixedCost ? (parseFloat(row.cost) || 0) : null,
+
+      is_fixed_installation_cost: _isFixedInst,
+      fixed_installation_cost: _isFixedInst ? (parseFloat(row.install_cost) || 0) : null,
+      installation_cost_percentage: !_isFixedInst ? (parseFloat(row.install_cost) || 0) : null,
+
+      is_exact_kw: _isExactKw,
+      min_kw: parseFloat(row.min_kw) || 0,
+      max_kw: !_isExactKw ? (parseFloat(row.max_kw) || 0) : null,
+
+      is_price_included: _isPriceIncluded,
+      is_required_product: _isRequired,
+      electrical_phase: isInverter ? (row.phase === "3" || row.phase === "3Ph" ? "three_phase" : "single_phase") : null,
+    }));
+
+    if (isReplace) {
+      const hasRealItems = products.some(p => !p.id.startsWith("temp-"));
+      if (hasRealItems) {
+         const { error } = await supabase
+            .from("products")
+            .delete()
+            .eq("product_category", currentCategoryEnum);
+         
+         if (error) {
+             toast({ title: "เกิดข้อผิดพลาด", description: "ไม่สามารถลบข้อมูลเก่าได้", variant: "destructive" });
+             return;
+         }
+      }
+
+      setProducts(newItems);
+      setIsFixedCost(_isFixedCost);
+      setIsFixedInstallationCost(_isFixedInst);
+      setIsExactKw(_isExactKw);
+      setIsPriceIncluded(_isPriceIncluded);
+      setIsRequired(_isRequired);
+
+      toast({ title: "แทนที่ตารางสำเร็จ", description: `นำเข้าข้อมูลใหม่ ${newItems.length} รายการ` });
+    } else {
+      setProducts((prev) => [...prev, ...newItems]);
+      toast({ title: "เพิ่มตารางสำเร็จ", description: `เพิ่มข้อมูล ${newItems.length} รายการ` });
+    }
+  };
+
   const handleAddItem = () => {
     const newProduct: Product = {
       id: `temp-${Date.now()}`,
@@ -142,10 +195,10 @@ export const EquipmentCategoryDetail = ({
       unit: "",
       cost_fixed: null,
       cost_percentage: null,
-      is_fixed_cost: isFixedCost, // Use category setting
+      is_fixed_cost: isFixedCost,
       fixed_installation_cost: null,
       installation_cost_percentage: null,
-      is_fixed_installation_cost: isFixedInstallationCost, // Use category setting
+      is_fixed_installation_cost: isFixedInstallationCost,
       min_kw: null,
       max_kw: null,
       is_exact_kw: isExactKw,
@@ -162,175 +215,105 @@ export const EquipmentCategoryDetail = ({
       setProducts(products.filter((p) => p.id !== id));
       return;
     }
-
     try {
       const { error } = await supabase.from("products").delete().eq("id", id);
       if (error) throw error;
-
       setProducts(products.filter((p) => p.id !== id));
-      toast({
-        title: "ลบสำเร็จ",
-        description: "ลบรายการอุปกรณ์เรียบร้อยแล้ว",
-      });
+      toast({ title: "ลบสำเร็จ" });
     } catch (error) {
-      console.error("Error deleting product:", error);
-      toast({
-        title: "เกิดข้อผิดพลาด",
-        description: "ไม่สามารถลบรายการได้",
-        variant: "destructive",
-      });
+      toast({ title: "เกิดข้อผิดพลาด", variant: "destructive" });
     }
   };
 
   const handleUpdateProduct = (id: string, field: string, value: any) => {
-    setProducts(
-      products.map((p) => (p.id === id ? { ...p, [field]: value } : p))
-    );
+    setProducts(products.map((p) => (p.id === id ? { ...p, [field]: value } : p)));
   };
 
-  // --- Bulk Update Handlers ---
-
+  // Bulk Handlers
   const handlePriceIncludedChange = (checked: boolean) => {
     setIsPriceIncluded(checked);
     setProducts(products.map((p) => ({ ...p, is_price_included: checked })));
   };
-
   const handleRequiredChange = (checked: boolean) => {
     setIsRequired(checked);
     setProducts(products.map((p) => ({ ...p, is_required_product: checked })));
   };
-
   const handleFixedCostChange = (isFixed: boolean) => {
     setIsFixedCost(isFixed);
-    setProducts(
-      products.map((p) => ({
-        ...p,
-        is_fixed_cost: isFixed,
-        // Optional: clear the irrelevant field to avoid confusion
-        cost_fixed: isFixed ? p.cost_fixed : null,
-        cost_percentage: isFixed ? null : p.cost_percentage,
-      }))
-    );
+    setProducts(products.map((p) => ({
+        ...p, is_fixed_cost: isFixed, cost_fixed: isFixed ? p.cost_fixed : null, cost_percentage: isFixed ? null : p.cost_percentage,
+    })));
   };
-
   const handleFixedInstallationCostChange = (isFixed: boolean) => {
     setIsFixedInstallationCost(isFixed);
-    setProducts(
-      products.map((p) => ({
-        ...p,
-        is_fixed_installation_cost: isFixed,
-        fixed_installation_cost: isFixed ? p.fixed_installation_cost : null,
-        installation_cost_percentage: isFixed ? null : p.installation_cost_percentage,
-      }))
-    );
+    setProducts(products.map((p) => ({
+        ...p, is_fixed_installation_cost: isFixed, fixed_installation_cost: isFixed ? p.fixed_installation_cost : null, installation_cost_percentage: isFixed ? null : p.installation_cost_percentage,
+    })));
   };
-
   const handleExactKwChange = (isExact: boolean) => {
     setIsExactKw(isExact);
-    setProducts(
-      products.map((p) => ({
-        ...p,
-        is_exact_kw: isExact,
-        min_kw: p.min_kw,
-        // ถ้าเปลี่ยนเป็น Exact ให้ clear max_kw เพื่อไม่ให้สับสน (หรือจะเก็บไว้ก็ได้)
-        max_kw: isExact ? null : p.max_kw, 
-      }))
-    );
+    setProducts(products.map((p) => ({
+        ...p, is_exact_kw: isExact, min_kw: p.min_kw, max_kw: isExact ? null : p.max_kw,
+    })));
   };
-
-  // ---------------------------
 
   const handleSaveAll = async () => {
     try {
       for (const product of products) {
         if (product.id.startsWith("temp-")) {
           const { id, ...productData } = product;
-          const { error } = await supabase
-            .from("products")
-            .insert([productData]);
+          const { error } = await supabase.from("products").insert([productData]);
           if (error) throw error;
         } else {
           const { id, ...updateData } = product;
-          const { error } = await supabase
-            .from("products")
-            .update(updateData)
-            .eq("id", id);
+          const { error } = await supabase.from("products").update(updateData).eq("id", id);
           if (error) throw error;
         }
       }
-
       await fetchProducts();
       setIsEditMode(false);
-      toast({
-        title: "บันทึกสำเร็จ",
-        description: "บันทึกข้อมูลอุปกรณ์เรียบร้อยแล้ว",
-      });
+      toast({ title: "บันทึกสำเร็จ", description: "บันทึกข้อมูลอุปกรณ์เรียบร้อยแล้ว" });
     } catch (error) {
       console.error("Error saving products:", error);
-      toast({
-        title: "เกิดข้อผิดพลาด",
-        description: "ไม่สามารถบันทึกข้อมูลได้",
-        variant: "destructive",
-      });
+      toast({ title: "เกิดข้อผิดพลาด", variant: "destructive" });
     }
   };
 
   const formatCost = (product: Product, type: "equipment" | "installation") => {
     if (type === "equipment") {
-      if (product.is_fixed_cost) {
-        return product.cost_fixed?.toLocaleString() || "-";
-      } else {
-        const percentage = product.cost_percentage || 0;
-        return `${percentage.toLocaleString()}%`;
-      }
+      if (product.is_fixed_cost) return product.cost_fixed?.toLocaleString() || "-";
+      return `${product.cost_percentage?.toLocaleString() || 0}%`;
     } else {
-      if (product.is_fixed_installation_cost) {
-        return product.fixed_installation_cost?.toLocaleString() || "-";
-      } else {
-        const percentage = product.installation_cost_percentage || 0;
-        return `${percentage.toLocaleString()}%`;
-      }
+      if (product.is_fixed_installation_cost) return product.fixed_installation_cost?.toLocaleString() || "-";
+      return `${product.installation_cost_percentage?.toLocaleString() || 0}%`;
     }
   };
 
   const formatSize = (product: Product) => {
-    if (product.is_exact_kw) {
-      return product.min_kw?.toLocaleString() || "-";
-    } else {
-      return `${product.min_kw?.toLocaleString() || 0} - ${
-        product.max_kw?.toLocaleString() || 0
-      }`;
-    }
+    if (product.is_exact_kw) return product.min_kw?.toLocaleString() || "-";
+    return `${product.min_kw?.toLocaleString() || 0} - ${product.max_kw?.toLocaleString() || 0}`;
   };
 
-  if (loading) {
-    return <div className="p-4">กำลังโหลด...</div>;
-  }
+  if (loading) return <div className="p-4">กำลังโหลด...</div>;
 
   return (
     <div className="space-y-4">
       {/* Header Controls */}
       <div className="flex items-center justify-between p-4 bg-card border border-border rounded-md">
         <div className="flex items-center gap-4">
+          {/* ✅ เพิ่มปุ่มลูกศรย้อนกลับตรงนี้ */}
+          <Button variant="ghost" onClick={onBack}>←</Button> 
           <h2 className="text-lg font-semibold text-foreground">
             {enumToDisplayName[currentCategoryEnum] || categoryName}
           </h2>
           {isEditMode && (
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
-                <Checkbox
-                  checked={isPriceIncluded}
-                  onCheckedChange={(checked) =>
-                    handlePriceIncludedChange(!!checked)
-                  }
-                />
+                <Checkbox checked={isPriceIncluded} onCheckedChange={(c) => handlePriceIncludedChange(!!c)} />
                 <label className="text-sm text-foreground">รวมในราคาขาย</label>
               </div>
               <div className="flex items-center gap-2">
-                <Checkbox
-                  checked={isRequired}
-                  onCheckedChange={(checked) => handleRequiredChange(!!checked)}
-                />
+                <Checkbox checked={isRequired} onCheckedChange={(c) => handleRequiredChange(!!c)} />
                 <label className="text-sm text-foreground">Required</label>
               </div>
             </div>
@@ -339,31 +322,15 @@ export const EquipmentCategoryDetail = ({
         <div className="flex items-center gap-2">
           {isEditMode && (
             <>
-              <Button variant="outline" size="sm">
-                <Copy className="h-4 w-4 mr-2" />
-                คัดลอกตาราง
+              <Button variant="outline" size="sm" onClick={() => openImportModal("append")}>
+                <PlusCircle className="h-4 w-4 mr-2" /> เพิ่มตาราง
               </Button>
-              <Button variant="outline" size="sm">
-                <Upload className="h-4 w-4 mr-2" />
-                แทนที่ตาราง
-              </Button>
-              <Button variant="outline" size="sm">
-                <PlusCircle className="h-4 w-4 mr-2" />
-                เพิ่มตาราง
+              <Button variant="outline" size="sm" onClick={() => openImportModal("replace")}>
+                <Upload className="h-4 w-4 mr-2" /> แทนที่ตาราง
               </Button>
             </>
           )}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              if (isEditMode) {
-                handleSaveAll();
-              } else {
-                setIsEditMode(true);
-              }
-            }}
-          >
+          <Button variant="outline" size="sm" onClick={() => { if (isEditMode) handleSaveAll(); else setIsEditMode(true); }}>
             {isEditMode ? "เสร็จสิ้น" : "แก้ไข"}
           </Button>
         </div>
@@ -371,106 +338,63 @@ export const EquipmentCategoryDetail = ({
 
       {/* Table */}
       <div className="border border-border rounded-md overflow-hidden">
-  <table className="w-full">
-    <thead className="bg-muted">
-      <tr>
-        {isEditMode && (
-          <th className="p-3 text-left text-sm font-medium text-foreground w-10"></th>
-        )}
-        <th className="p-3 text-left text-sm font-medium text-foreground">
-          ชื่ออุปกรณ์
-        </th>
-        {isInverter && (
-          <th className="p-3 text-left text-sm font-medium text-foreground">
-            ระบบไฟ (Phase)
-          </th>
-        )}
-        <th className="p-3 text-left text-sm font-medium text-foreground">
-          Brand
-        </th>
-        <th className="p-3 text-left text-sm font-medium text-foreground">
-          หน่วย
-        </th>
+        <table className="w-full">
+          <thead className="bg-muted">
+            <tr>
+              {isEditMode && <th className="p-3 w-10"></th>}
+              <th className="p-3 text-left text-sm font-medium">ชื่ออุปกรณ์</th>
+              {isInverter && <th className="p-3 text-left text-sm font-medium">ระบบไฟ (Phase)</th>}
+              <th className="p-3 text-left text-sm font-medium">Brand</th>
+              <th className="p-3 text-left text-sm font-medium">หน่วย</th>
 
-        {/* ✅ [1] แก้ไข Header: ราคาทุนอุปกรณ์ */}
-        <th className="p-3 text-left text-sm font-medium text-foreground min-w-[150px]">
-          <div className="flex items-center gap-2">
-            ราคาทุนอุปกรณ์
-            {isEditMode && (
-              <Select
-                value={isFixedCost ? "exact" : "percent"}
-                onValueChange={(value) => handleFixedCostChange(value === "exact")}
-              >
-                {/* ทำปุ่มเป็นวงกลม และแสดง icon ตรงกลาง */}
-                <SelectTrigger className="w-7 h-7 rounded-full p-0 border-none bg-primary/10 text-primary hover:bg-primary/20 focus:ring-0 focus:ring-offset-0 [&>svg]:hidden">
-                  <div className="flex items-center justify-center w-full h-full text-xs font-bold">
-                    {isFixedCost ? "฿" : "%"}
-                  </div>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="exact">
-                    <span className="font-bold mr-2">฿</span> Fixed Price
-                  </SelectItem>
-                  <SelectItem value="percent">
-                    <span className="font-bold mr-2">%</span> Percentage
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            )}
-          </div>
-        </th>
+              {/* Header: ราคาทุนอุปกรณ์ */}
+              <th className="p-3 text-left text-sm font-medium min-w-[150px]">
+                <div className="flex items-center gap-2">
+                  ราคาทุนอุปกรณ์
+                  {isEditMode && (
+                    <Select value={isFixedCost ? "exact" : "percent"} onValueChange={(v) => handleFixedCostChange(v === "exact")}>
+                      <SelectTrigger className="w-7 h-7 rounded-full p-0 border-none bg-primary/10 text-primary hover:bg-primary/20 focus:ring-0 focus:ring-offset-0 [&>svg]:hidden">
+                        <div className="flex items-center justify-center w-full h-full text-xs font-bold">{isFixedCost ? "฿" : "%"}</div>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="exact"><span className="font-bold mr-2">฿</span> Fixed Price</SelectItem>
+                        <SelectItem value="percent"><span className="font-bold mr-2">%</span> Percentage</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+              </th>
 
-        {/* ✅ [2] แก้ไข Header: ราคาทุนติดตั้ง */}
-        <th className="p-3 text-left text-sm font-medium text-foreground min-w-[150px]">
-          <div className="flex items-center gap-2">
-            ราคาทุนติดตั้ง
-            {isEditMode && (
-              <Select
-                value={isFixedInstallationCost ? "exact" : "percent"}
-                onValueChange={(value) =>
-                  handleFixedInstallationCostChange(value === "exact")
-                }
-              >
-                {/* ทำปุ่มเป็นวงกลม และแสดง icon ตรงกลาง */}
-                <SelectTrigger className="w-7 h-7 rounded-full p-0 border-none bg-primary/10 text-primary hover:bg-primary/20 focus:ring-0 focus:ring-offset-0 [&>svg]:hidden">
-                  <div className="flex items-center justify-center w-full h-full text-xs font-bold">
-                    {isFixedInstallationCost ? "฿" : "%"}
-                  </div>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="exact">
-                    <span className="font-bold mr-2">฿</span> Fixed Price
-                  </SelectItem>
-                  <SelectItem value="percent">
-                    <span className="font-bold mr-2">%</span> Percentage
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            )}
-          </div>
-        </th>
+              {/* Header: ราคาทุนติดตั้ง */}
+              <th className="p-3 text-left text-sm font-medium min-w-[150px]">
+                <div className="flex items-center gap-2">
+                  ราคาทุนติดตั้ง
+                  {isEditMode && (
+                    <Select value={isFixedInstallationCost ? "exact" : "percent"} onValueChange={(v) => handleFixedInstallationCostChange(v === "exact")}>
+                      <SelectTrigger className="w-7 h-7 rounded-full p-0 border-none bg-primary/10 text-primary hover:bg-primary/20 focus:ring-0 focus:ring-offset-0 [&>svg]:hidden">
+                        <div className="flex items-center justify-center w-full h-full text-xs font-bold">{isFixedInstallationCost ? "฿" : "%"}</div>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="exact"><span className="font-bold mr-2">฿</span> Fixed Price</SelectItem>
+                        <SelectItem value="percent"><span className="font-bold mr-2">%</span> Percentage</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+              </th>
 
-        <th className="p-3 text-left text-sm font-medium text-foreground min-w-[150px]">
+              {/* Header: ขนาด */}
+              <th className="p-3 text-left text-sm font-medium min-w-[150px]">
                 <div className="flex items-center gap-2">
                   ขนาด (Watt)
                   {isEditMode && (
-                    <Select
-                      value={isExactKw ? "exact" : "range"}
-                      onValueChange={(value) => handleExactKwChange(value === "exact")}
-                    >
+                    <Select value={isExactKw ? "exact" : "range"} onValueChange={(v) => handleExactKwChange(v === "exact")}>
                       <SelectTrigger className="w-7 h-7 rounded-full p-0 border-none bg-primary/10 text-primary hover:bg-primary/20 focus:ring-0 focus:ring-offset-0 [&>svg]:hidden">
-                        <div className="flex items-center justify-center w-full h-full text-xs font-bold pb-0.5">
-                          {/* ปรับสัญลักษณ์ให้ดูดี */}
-                          {isExactKw ? "=" : "↔"}
-                        </div>
+                        <div className="flex items-center justify-center w-full h-full text-xs font-bold pb-0.5">{isExactKw ? "=" : "↔"}</div>
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="exact">
-                          <span className="font-bold mr-2">=</span> Exact
-                        </SelectItem>
-                        <SelectItem value="range">
-                          <span className="font-bold mr-2">↔</span> Range
-                        </SelectItem>
+                        <SelectItem value="exact"><span className="font-bold mr-2">=</span> Exact</SelectItem>
+                        <SelectItem value="range"><span className="font-bold mr-2">↔</span> Range</SelectItem>
                       </SelectContent>
                     </Select>
                   )}
@@ -478,238 +402,93 @@ export const EquipmentCategoryDetail = ({
               </th>
             </tr>
           </thead>
-    <tbody>
+          <tbody>
             {products.map((product) => (
-              <tr
-                key={product.id}
-                className="border-t border-border hover:bg-accent/50"
-              >
+              <tr key={product.id} className="border-t border-border hover:bg-accent/50">
                 {isEditMode && (
                   <td className="p-3">
-                    <button
-                      onClick={() => handleDeleteItem(product.id)}
-                      className="text-destructive hover:text-destructive/80"
-                    >
+                    <button onClick={() => handleDeleteItem(product.id)} className="text-destructive hover:text-destructive/80">
                       <Minus className="h-4 w-4" />
                     </button>
                   </td>
                 )}
-                {/* Product Name */}
                 <td className="p-3">
                   {isEditMode ? (
-                    <Input
-                      value={product.name}
-                      onChange={(e) =>
-                        handleUpdateProduct(product.id, "name", e.target.value)
-                      }
-                      className="h-8"
-                    />
-                  ) : (
-                    <span className="text-sm text-foreground">
-                      {product.name}
-                    </span>
-                  )}
+                    <Input value={product.name} onChange={(e) => handleUpdateProduct(product.id, "name", e.target.value)} className="h-8" />
+                  ) : (<span className="text-sm">{product.name}</span>)}
                 </td>
 
-                {/* Phase (Inverter only) */}
                 {isInverter && (
                   <td className="p-3">
                     {isEditMode ? (
-                      <Select
-                        value={product.electrical_phase || ""}
-                        onValueChange={(val) =>
-                          handleUpdateProduct(
-                            product.id,
-                            "electrical_phase",
-                            val
-                          )
-                        }
-                      >
-                        <SelectTrigger className="h-8 w-28">
-                          <SelectValue placeholder="เลือก Phase" />
-                        </SelectTrigger>
+                      <Select value={product.electrical_phase || ""} onValueChange={(v) => handleUpdateProduct(product.id, "electrical_phase", v)}>
+                        <SelectTrigger className="h-8 w-28"><SelectValue placeholder="เลือก Phase" /></SelectTrigger>
                         <SelectContent>
                           <SelectItem value="single_phase">1 Phase</SelectItem>
                           <SelectItem value="three_phase">3 Phase</SelectItem>
                         </SelectContent>
                       </Select>
-                    ) : (
-                      <span className="text-sm text-foreground">
-                        {product.electrical_phase === "single_phase"
-                          ? "1 Phase"
-                          : product.electrical_phase === "three_phase"
-                          ? "3 Phase"
-                          : "-"}
-                      </span>
-                    )}
+                    ) : (<span className="text-sm">{product.electrical_phase === "single_phase" ? "1 Phase" : product.electrical_phase === "three_phase" ? "3 Phase" : "-"}</span>)}
                   </td>
                 )}
 
-                {/* Brand */}
                 <td className="p-3">
                   {isEditMode ? (
-                    <Input
-                      value={product.brand || ""}
-                      onChange={(e) =>
-                        handleUpdateProduct(product.id, "brand", e.target.value)
-                      }
-                      className="h-8"
-                    />
-                  ) : (
-                    <span className="text-sm text-foreground">
-                      {product.brand || "-"}
-                    </span>
-                  )}
+                    <Input value={product.brand || ""} onChange={(e) => handleUpdateProduct(product.id, "brand", e.target.value)} className="h-8" />
+                  ) : (<span className="text-sm">{product.brand || "-"}</span>)}
                 </td>
 
-                {/* Unit */}
                 <td className="p-3">
                   {isEditMode ? (
-                    <Input
-                      value={product.unit || ""}
-                      onChange={(e) =>
-                        handleUpdateProduct(product.id, "unit", e.target.value)
-                      }
-                      className="h-8"
-                    />
-                  ) : (
-                    <span className="text-sm text-foreground">
-                      {product.unit || "-"}
-                    </span>
-                  )}
+                    <Input value={product.unit || ""} onChange={(e) => handleUpdateProduct(product.id, "unit", e.target.value)} className="h-8" />
+                  ) : (<span className="text-sm">{product.unit || "-"}</span>)}
                 </td>
 
-                {/* Cost (Equipment) */}
+                {/* Cost Eq */}
                 <td className="p-3">
                   {isEditMode ? (
-                    <Input
-                      type="number"
-                      step="any"
-                      // Use the product's internal field that matches the global setting
-                      value={
-                        product.is_fixed_cost
-                          ? product.cost_fixed || ""
-                          : product.cost_percentage || ""
-                      }
-                      onChange={(e) =>
-                        handleUpdateProduct(
-                          product.id,
-                          product.is_fixed_cost ? "cost_fixed" : "cost_percentage",
-                          parseFloat(e.target.value) || 0
-                        )
-                      }
-                      className="h-8"
-                      placeholder={product.is_fixed_cost ? "ระบุราคา (บาท)" : "ระบุ %"}
+                    <Input type="number" step="any"
+                      value={product.is_fixed_cost ? product.cost_fixed || "" : product.cost_percentage || ""}
+                      onChange={(e) => handleUpdateProduct(product.id, product.is_fixed_cost ? "cost_fixed" : "cost_percentage", parseFloat(e.target.value) || 0)}
+                      className="h-8" placeholder={product.is_fixed_cost ? "บาท" : "%"}
                     />
-                  ) : (
-                    <span className="text-sm text-foreground">
-                      {formatCost(product, "equipment")}
-                    </span>
-                  )}
+                  ) : (<span className="text-sm">{formatCost(product, "equipment")}</span>)}
                 </td>
 
-                {/* Cost (Installation) */}
+                {/* Cost Inst */}
                 <td className="p-3">
                   {isEditMode ? (
-                    <Input
-                      type="number"
-                      step="any"
-                      value={
-                        product.is_fixed_installation_cost
-                          ? product.fixed_installation_cost || ""
-                          : product.installation_cost_percentage || ""
-                      }
-                      onChange={(e) =>
-                        handleUpdateProduct(
-                          product.id,
-                          product.is_fixed_installation_cost
-                            ? "fixed_installation_cost"
-                            : "installation_cost_percentage",
-                          parseFloat(e.target.value) || 0
-                        )
-                      }
-                      className="h-8"
-                      placeholder={product.is_fixed_installation_cost ? "ระบุราคา (บาท)" : "ระบุ %"}
+                    <Input type="number" step="any"
+                      value={product.is_fixed_installation_cost ? product.fixed_installation_cost || "" : product.installation_cost_percentage || ""}
+                      onChange={(e) => handleUpdateProduct(product.id, product.is_fixed_installation_cost ? "fixed_installation_cost" : "installation_cost_percentage", parseFloat(e.target.value) || 0)}
+                      className="h-8" placeholder={product.is_fixed_installation_cost ? "บาท" : "%"}
                     />
-                  ) : (
-                    <span className="text-sm text-foreground">
-                      {formatCost(product, "installation")}
-                    </span>
-                  )}
+                  ) : (<span className="text-sm">{formatCost(product, "installation")}</span>)}
                 </td>
 
-                {/* Size (kW) */}
+                {/* Size */}
                 <td className="p-3">
                   {isEditMode ? (
                     <div className="flex gap-2 items-center">
-                      {/* กรณี Exact: แสดงช่องเดียว */}
                       {product.is_exact_kw ? (
-                        <Input
-                          type="number"
-                          step="any"
-                          value={product.min_kw || ""}
-                          onChange={(e) =>
-                            handleUpdateProduct(
-                              product.id,
-                              "min_kw",
-                              parseFloat(e.target.value) || 0
-                            )
-                          }
-                          className="h-8"
-                          placeholder="Watt"
-                        />
+                        <Input type="number" step="any" value={product.min_kw || ""} onChange={(e) => handleUpdateProduct(product.id, "min_kw", parseFloat(e.target.value) || 0)} className="h-8" placeholder="Watt" />
                       ) : (
-                        /* กรณี Range: แสดง 2 ช่อง (Min - Max) */
                         <>
-                          <Input
-                            type="number"
-                            step="any"
-                            value={product.min_kw || ""}
-                            onChange={(e) =>
-                              handleUpdateProduct(
-                                product.id,
-                                "min_kw",
-                                parseFloat(e.target.value) || 0
-                              )
-                            }
-                            className="h-8 min-w-[70px]"
-                            placeholder="Min"
-                          />
+                          <Input type="number" step="any" value={product.min_kw || ""} onChange={(e) => handleUpdateProduct(product.id, "min_kw", parseFloat(e.target.value) || 0)} className="h-8 min-w-[70px]" placeholder="Min" />
                           <span className="text-muted-foreground">-</span>
-                          <Input
-                            type="number"
-                            step="any"
-                            value={product.max_kw || ""}
-                            onChange={(e) =>
-                              handleUpdateProduct(
-                                product.id,
-                                "max_kw",
-                                parseFloat(e.target.value) || 0
-                              )
-                            }
-                            className="h-8 min-w-[70px]"
-                            placeholder="Max"
-                          />
+                          <Input type="number" step="any" value={product.max_kw || ""} onChange={(e) => handleUpdateProduct(product.id, "max_kw", parseFloat(e.target.value) || 0)} className="h-8 min-w-[70px]" placeholder="Max" />
                         </>
                       )}
                     </div>
-                  ) : (
-                    <span className="text-sm text-foreground">
-                      {formatSize(product)}
-                    </span>
-                  )}
+                  ) : (<span className="text-sm">{formatSize(product)}</span>)}
                 </td>
               </tr>
             ))}
             {isEditMode && (
               <tr className="border-t border-border">
                 <td colSpan={isInverter ? 8 : 7} className="p-3">
-                  <button
-                    onClick={handleAddItem}
-                    className="flex items-center gap-2 text-sm text-primary hover:text-primary/80"
-                  >
-                    <Plus className="h-4 w-4" />
-                    Add Items
+                  <button onClick={handleAddItem} className="flex items-center gap-2 text-sm text-primary hover:text-primary/80">
+                    <Plus className="h-4 w-4" /> Add Items
                   </button>
                 </td>
               </tr>
@@ -718,9 +497,34 @@ export const EquipmentCategoryDetail = ({
         </table>
       </div>
 
-      <Button variant="outline" onClick={onBack}>
-        กลับ
-      </Button>
+      {/* Modal Import */}
+      <ExcelImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        title={importMode === "replace" ? `แทนที่ข้อมูล ${categoryName}` : `เพิ่มข้อมูล ${categoryName}`}
+        fields={[
+            { key: "name", label: "ชื่ออุปกรณ์" },
+            { key: "brand", label: "ยี่ห้อ (Brand)" },
+            { key: "unit", label: "หน่วย" },
+            { key: "cost", label: "ราคา/ต้นทุน (ใส่ตัวเลข)" },
+            { key: "install_cost", label: "ค่าติดตั้ง (ใส่ตัวเลข)" },
+            { key: "min_kw", label: "ขนาด (Min/Exact) Watt" },
+            { key: "max_kw", label: "ขนาดสูงสุด (Max) Watt" },
+            ...(isInverter ? [{ key: "phase", label: "Phase (ใส่ 1 หรือ 3)" }] : [])
+        ]}
+        booleanFields={
+            importMode === "replace" 
+            ? [
+                { key: "is_fixed_cost", label: "ราคาทุนแบบคงที่ (Fixed)", defaultValue: isFixedCost },
+                { key: "is_fixed_installation_cost", label: "ค่าติดตั้งแบบคงที่ (Fixed)", defaultValue: isFixedInstallationCost },
+                { key: "is_exact_kw", label: "ขนาดแบบค่าเดียว (Exact)", defaultValue: isExactKw },
+                { key: "is_price_included", label: "รวมในราคาขาย", defaultValue: isPriceIncluded },
+                { key: "is_required_product", label: "Required Item", defaultValue: isRequired },
+            ]
+            : []
+        }
+        onImport={handleImportEquipment}
+      />
     </div>
   );
 };
