@@ -42,6 +42,7 @@ export const SalesProgramDetail = ({
   programId,
   onBack,
 }: SalesProgramDetailProps) => {
+  const [dbBrandOptions, setDbBrandOptions] = useState<{ value: string; label: string }[]>([]);
   const [isEditMode, setIsEditMode] = useState(false);
   const [prices, setPrices] = useState<SalePackagePrice[]>([]);
   const [loading, setLoading] = useState(true);
@@ -68,6 +69,38 @@ export const SalesProgramDetail = ({
   const [tempPaymentTerms, setTempPaymentTerms] = useState("");
   const [tempWarrantyTerms, setTempWarrantyTerms] = useState("");
   const [tempNote, setTempNote] = useState("");
+
+  useEffect(() => {
+    fetchBrandEnums();
+  }, []);
+
+  const fetchBrandEnums = async () => {
+    try {
+      // เรียกใช้ RPC function ที่เราเพิ่งสร้างใน SQL
+      const { data, error } = await supabase.rpc("get_enum_values" as any, {
+        enum_name: "inverter_brand",
+      });
+
+      if (error) throw error;
+
+      if (data) {
+        // แปลงค่าที่ได้เป็น Format { value, label }
+        const typedData = data as { enum_value: string }[];
+        const options = typedData.map((item) => {
+          const val = item.enum_value;
+          const label = val
+            .split("_")
+            .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+            .join(" ");
+          
+          return { value: val, label: label };
+        });
+        setDbBrandOptions(options);
+      }
+    } catch (error) {
+      console.error("Error fetching brand enums:", error);
+    }
+  };
 
   // Initial Fetch
   useEffect(() => {
@@ -315,14 +348,38 @@ export const SalesProgramDetail = ({
 
   // Formatting helpers
   const formatBrandName = (brand: string) => brand.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
-  const brandNames: Partial<Record<InverterBrand, string>> = { huawei: "Huawei", solaredge: "SolarEdge" };
+  const brandNames: Partial<Record<InverterBrand, string>> = { 
+    huawei: "Huawei", 
+    solaredge: "SolarEdge" };
   const getBrandDisplayName = (brand: string) => customBrandNames[brand] || brandNames[brand as InverterBrand] || formatBrandName(brand);
   const allBrandOptions = React.useMemo(() => {
-     // ... same as before
-     const options = Object.entries(brandNames).map(([value, label]) => ({ value, label }));
-     const customOptions = Object.entries(customBrandNames).map(([value, label]) => ({ value, label }));
-     return [...options, ...customOptions.filter(opt => !brandNames[opt.value as InverterBrand])];
-  }, [customBrandNames]);
+    // 1. เอาค่าจาก DB มาเป็นตัวตั้ง
+    const options = dbBrandOptions.map(opt => ({
+        value: opt.value,
+        // ถ้ามีชื่อพิเศษใน specialBrandNames ให้ใช้ ถ้าไม่มีใช้ชื่อ Auto
+        label: opt.value 
+    }));
+
+    // 2. ผสมกับ Custom Brand ที่เพิ่งเพิ่ม (ยังไม่ได้รีเฟรชหน้าจอ)
+    const customOptions = Object.entries(customBrandNames).map(([value, label]) => ({
+       value, 
+       label 
+    }));
+    
+    // 3. รวมร่างและตัดตัวซ้ำ
+    const combined = [...options, ...customOptions];
+    const uniqueOptions = Array.from(new Map(combined.map(item => [item.value, item])).values());
+    
+    const otherOption = uniqueOptions.find(o => o.value.toLowerCase() === 'others');
+    const restOptions = uniqueOptions.filter(o => o.value.toLowerCase() !== 'others');
+
+    if (otherOption) {
+        return [...restOptions, otherOption]; // เอาตัวอื่นๆ มาก่อน แล้วตามด้วย Other
+    }
+    // 4. จัดเรียงตามลำดับ
+    const sortedOptions = uniqueOptions.sort((a, b) => a.value.localeCompare(b.value));
+    return sortedOptions;
+  }, [dbBrandOptions, customBrandNames]);
   const phaseNames: Record<ElectronicPhase, string> = { single_phase: "1Ph", three_phase: "3Ph" };
 
 
