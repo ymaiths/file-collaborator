@@ -21,6 +21,7 @@ interface ListManagementViewProps {
     isRequired: boolean
   ) => Promise<void>;
   onDeleteItem?: (id: string) => Promise<void>;
+  onDuplicateItem?: (id: string) => Promise<void>;
 }
 
 export const ListManagementView = ({
@@ -32,6 +33,7 @@ export const ListManagementView = ({
   onItemClick,
   onCreateNew,
   onDeleteItem,
+  onDuplicateItem,
 }: ListManagementViewProps) => {
   const [items, setItems] = useState(initialItems);
 
@@ -47,16 +49,26 @@ export const ListManagementView = ({
     });
   };
 
-  const handleDuplicate = (id: string, name: string) => {
-    const newItem = {
-      id: `${id}-copy-${Date.now()}`,
-      name: `${name} (Copy)`,
-    };
-    setItems([...items, newItem]);
-    toast({
-      title: "Duplicated",
-      description: `Created a copy of ${name}`,
-    });
+  const handleDuplicate = async (id: string, name: string) => {
+    if (onDuplicateItem) {
+      try {
+        await onDuplicateItem(id);
+        // ไม่ต้อง setItems เอง เพราะเดี๋ยว Parent จะ fetch ข้อมูลใหม่มาให้ผ่าน useEffect
+      } catch (error) {
+        console.error("Duplicate failed", error);
+      }
+    } else {
+      // Fallback (ทำงานแบบ Local ถ้าไม่มี Handler)
+      const newItem = {
+        id: `${id}-copy-${Date.now()}`,
+        name: `${name} (Copy)`,
+      };
+      setItems([...items, newItem]);
+      toast({
+        title: "Duplicated",
+        description: `Created a copy of ${name}`,
+      });
+    }
   };
 
   const handleDelete = async (id: string, name: string) => {

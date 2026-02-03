@@ -138,7 +138,6 @@ export const DatabaseTabContent = () => {
     if (activeSubTab === "equipment") fetchEquipmentCategories();
   };
 
-  // [NEW] Delete Handler for Sales Program
   const handleDeleteSalesProgram = async (id: string) => {
     try {
       const { error } = await supabase.from("sale_packages").delete().eq("id", id);
@@ -159,11 +158,8 @@ export const DatabaseTabContent = () => {
     }
   };
 
-  // [NEW] Delete Handler for Equipment Category
   const handleDeleteCategory = async (id: string) => {
     try {
-      // Warning: This deletes ALL products in this category because the category list 
-      // is derived from existing products.
       const { error } = await supabase
         .from("products")
         .delete()
@@ -182,6 +178,126 @@ export const DatabaseTabContent = () => {
         description: "ไม่สามารถลบหมวดหมู่ได้",
         variant: "destructive",
       });
+    }
+  };
+  const handleDuplicateSalesProgram = async (id: string) => {
+    try {
+      setLoading(true);
+      
+      // 1.1 ดึงข้อมูล Package แม่
+      const { data: originalPkg, error: pkgError } = await supabase
+        .from("sale_packages")
+        .select("*")
+        .eq("id", id)
+        .single();
+      
+      if (pkgError) throw pkgError;
+
+      // 1.2 ดึงข้อมูล Prices ลูก
+      const { data: originalPrices, error: priceError } = await supabase
+        .from("sale_package_prices")
+        .select("*")
+        .eq("sale_package_id", id);
+
+      if (priceError) throw priceError;
+
+      // 1.3 สร้าง Package ใหม่ (เพิ่มคำว่า Copy)
+      const newName = `${originalPkg.sale_name} (Copy)`;
+      const { data: newPkg, error: createError } = await supabase
+        .from("sale_packages")
+        .insert([{
+           sale_name: newName as any, // Type assertion
+           payment_terms: originalPkg.payment_terms,
+           warranty_terms: originalPkg.warranty_terms,
+           note: originalPkg.note
+        }])
+        .select()
+        .single();
+
+      if (createError) throw createError;
+
+      // 1.4 สร้าง Prices ใหม่ ผูกกับ Package ใหม่
+      if (originalPrices && originalPrices.length > 0) {
+         const newPrices = originalPrices.map(p => {
+           // ตัด field ระบบออก
+           const { id, created_at, updated_at, sale_package_id, ...rest } = p;
+           return {
+             ...rest,
+             sale_package_id: newPkg.id
+           };
+         });
+
+         const { error: insertPriceError } = await supabase
+           .from("sale_package_prices")
+           .insert(newPrices as any);
+           
+         if (insertPriceError) throw insertPriceError;
+      }
+
+      toast({ title: "ทำสำเนาสำเร็จ", description: `สร้าง ${newName} เรียบร้อยแล้ว` });
+      await fetchSalesPrograms();
+
+    } catch (error) {
+      console.error("Duplicate Sales Error:", error);
+      toast({ title: "เกิดข้อผิดพลาด", description: "ไม่สามารถทำสำเนาได้", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ✅ 2. ฟังก์ชัน Duplicate Equipment Category
+  const handleDuplicateCategory = async (id: string) => {
+    try {
+      setLoading(true);
+      
+      // 2.1 เตรียมชื่อใหม่ (ดึงชื่อเดิมจาก enumToDisplayName หรือใช้ id ถ้าไม่มี)
+      const originalName = enumToDisplayName[id] || id;
+      const newName = `${originalName} (Copy)`;
+
+      // 2.2 สร้าง Enum ใหม่ (หมวดหมู่ใหม่) ผ่าน Edge Function
+      const { data: enumData, error: enumError } = await supabase.functions.invoke("add-product-category", {
+          body: { categoryName: newName }
+      });
+
+      if (enumError) throw enumError;
+      if (!enumData.success) throw new Error(enumData.error || "Failed to create category");
+
+      const newCategoryEnum = enumData.enumValue;
+
+      // 2.3 ดึงสินค้าทั้งหมดในหมวดเดิม
+      const { data: oldProducts, error: prodError } = await supabase
+          .from("products")
+          .select("*")
+          .eq("product_category", id as any);
+      
+      if (prodError) throw prodError;
+
+      // 2.4 Duplicate สินค้าไปหมวดใหม่
+      if (oldProducts && oldProducts.length > 0) {
+          const newProducts = oldProducts.map(p => {
+              const { id, created_at, updated_at, product_category, ...rest } = p;
+              return {
+                  ...rest,
+                  product_category: newCategoryEnum // เปลี่ยนหมวดเป็นอันใหม่
+              };
+          });
+
+          const { error: insertError } = await supabase.from("products").insert(newProducts);
+          if (insertError) throw insertError;
+      }
+
+      toast({ title: "ทำสำเนาสำเร็จ", description: `สร้างหมวดหมู่ ${newName} เรียบร้อยแล้ว` });
+      await fetchEquipmentCategories();
+
+    } catch (error) {
+      console.error("Duplicate Category Error:", error);
+      toast({ 
+        title: "เกิดข้อผิดพลาด", 
+        description: error instanceof Error ? error.message : "ไม่สามารถทำสำเนาหมวดหมู่ได้", 
+        variant: "destructive" 
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -318,7 +434,8 @@ export const DatabaseTabContent = () => {
               newItemPlaceholder="Name Sales Program"
               onItemClick={handleSalesProgramClick}
               onCreateNew={handleCreateSalesProgram}
-              onDeleteItem={handleDeleteSalesProgram} //  [NEW] Connected delete handler
+              onDeleteItem={handleDeleteSalesProgram}
+              onDuplicateItem={handleDuplicateSalesProgram}
             />
           )}
         </>
@@ -344,7 +461,8 @@ export const DatabaseTabContent = () => {
               newItemPlaceholder="Name Category"
               onItemClick={handleCategoryClick}
               onCreateNew={handleCreateEquipmentCategory}
-              onDeleteItem={handleDeleteCategory} // [NEW] Connected delete handler
+              onDeleteItem={handleDeleteCategory}
+              onDuplicateItem={handleDuplicateCategory}
             />
           )}
         </>
