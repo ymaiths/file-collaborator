@@ -8,7 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Minus, Plus, Copy, Upload, PlusCircle } from "lucide-react";
+import { Minus, Plus, Upload, PlusCircle } from "lucide-react"; // ตัด Copy ออกเพราะไม่ได้ใช้
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import type { Database } from "@/integrations/supabase/types";
@@ -24,9 +24,9 @@ interface SalePackagePrice {
   kw_min: number;
   kw_max: number | null;
   is_exact_kw: boolean;
-  price: number; // UI use mainly
+  price: number;
   is_exact_price: boolean;
-  price_percentage: number | null; // Note: In sales context, this usually means Price/Watt or similar logic
+  price_percentage: number | null;
   price_exact: number | null;
   sale_package_id?: string;
 }
@@ -52,17 +52,16 @@ export const SalesProgramDetail = ({
   const [warrantyTerms, setWarrantyTerms] = useState("");
   const [note, setNote] = useState("");
 
-  // ✅ 1. Global State สำหรับควบคุม Column (เหมือน Equipment)
+  // Global State Control
   const [isExactKw, setIsExactKw] = useState(true);
   const [isExactPrice, setIsExactPrice] = useState(true);
 
   // Helper States
   const [newBrandInput, setNewBrandInput] = useState("");
-  const [showBrandSuggestions, setShowBrandSuggestions] = useState(false);
-  const [customBrandNames, setCustomBrandNames] = useState<Record<string, string>>({});
+  const [isManualAdd, setIsManualAdd] = useState(false); 
+  const [customBrandNames, setCustomBrandNames] = useState<Record<string, string>>({}); // เก็บไว้เผื่อใช้
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
-  const containerRef = useRef<HTMLDivElement>(null);
-
+  
   // Import States
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importMode, setImportMode] = useState<"append" | "replace">("append");
@@ -76,7 +75,6 @@ export const SalesProgramDetail = ({
 
   const fetchBrandEnums = async () => {
     try {
-      // เรียกใช้ RPC function ที่เราเพิ่งสร้างใน SQL
       const { data, error } = await supabase.rpc("get_enum_values" as any, {
         enum_name: "inverter_brand",
       });
@@ -84,10 +82,10 @@ export const SalesProgramDetail = ({
       if (error) throw error;
 
       if (data) {
-        // แปลงค่าที่ได้เป็น Format { value, label }
         const typedData = data as { enum_value: string }[];
         const options = typedData.map((item) => {
           const val = item.enum_value;
+          // Format ชื่อ: huawei_optimizer -> Huawei Optimizer
           const label = val
             .split("_")
             .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
@@ -112,24 +110,13 @@ export const SalesProgramDetail = ({
     fetchData();
   }, [programId]);
 
-  // ✅ 2. Sync Global State เมื่อโหลดข้อมูลเสร็จ (เหมือน Equipment)
+  // Sync Global State
   useEffect(() => {
     if (prices.length > 0) {
       setIsExactKw(prices[0].is_exact_kw ?? true);
       setIsExactPrice(prices[0].is_exact_price ?? true);
     }
   }, [prices.length]);
-
-  // Handle Click Outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setShowBrandSuggestions(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
 
   const fetchPackageDetails = async () => {
     try {
@@ -157,10 +144,9 @@ export const SalesProgramDetail = ({
         .order("kw_min");
       if (error) throw error;
       
-      // Map data to ensure price field exists for UI (though we use exact/percentage logic)
       const mappedData = (data || []).map(p => ({
           ...p,
-          price: p.is_exact_price ? (p.price_exact || 0) : (p.price_percentage || 0) // Default for UI
+          price: p.is_exact_price ? (p.price_exact || 0) : (p.price_percentage || 0)
       }));
       setPrices(mappedData as SalePackagePrice[]);
     } catch (error) {
@@ -168,30 +154,32 @@ export const SalesProgramDetail = ({
     }
   };
 
-  // ✅ 3. Bulk Handlers (เปลี่ยนค่าทั้งตารางเมื่อ Header เปลี่ยน)
+  // Bulk Handlers
   const handleExactKwChange = (isExact: boolean) => {
     setIsExactKw(isExact);
     setPrices(prices.map(p => ({
         ...p,
         is_exact_kw: isExact,
         kw_min: p.kw_min,
-        kw_max: isExact ? null : p.kw_max // Clear max if exact
+        kw_max: isExact ? null : p.kw_max
     })));
   };
 
   const handleExactPriceChange = (isExact: boolean) => {
     setIsExactPrice(isExact);
-    setPrices(prices.map(p => ({
-        ...p,
-        is_exact_price: isExact,
-        // Reset or Move values logic if needed, but keeping them is safer
-        price_exact: isExact ? p.price_exact : null,
-        price_percentage: isExact ? null : p.price_percentage
-    })));
+    setPrices(prices.map(p => {
+        const currentValue = p.is_exact_price ? p.price_exact : p.price_percentage;
+        return {
+            ...p,
+            is_exact_price: isExact,
+            price_exact: isExact ? (currentValue || 0) : null,
+            price_percentage: !isExact ? (currentValue || 0) : null,
+            price: currentValue || 0
+        };
+    }));
   };
 
-
-  // ✅ 4. Import Logic (Updated)
+  // Import Logic
   const openImportModal = (mode: "append" | "replace") => {
     setTempPaymentTerms(paymentTerms);
     setTempWarrantyTerms(warrantyTerms);
@@ -201,42 +189,39 @@ export const SalesProgramDetail = ({
   };
 
   const handleImportSales = async (data: any[], booleanValues: Record<string, boolean>) => {
-    const isReplace = importMode === "replace";
+    const isTableEmpty = prices.length === 0;
+    const isConfigMode = importMode === "replace" || isTableEmpty;
 
-    // Logic: ถ้า Replace ใช้ค่าจาก Modal, ถ้า Append ใช้ค่าปัจจุบันของหน้าจอ
-    const _isExactKw = isReplace ? booleanValues.is_exact_kw : isExactKw;
-    const _isExactPrice = isReplace ? booleanValues.is_exact_price : isExactPrice;
+    const _isExactKw = isConfigMode ? booleanValues.is_exact_kw : isExactKw;
+    const _isExactPrice = isConfigMode ? booleanValues.is_exact_price : isExactPrice;
 
     const newItems = data.map((row) => ({
       id: `temp-${Date.now()}-${Math.random()}`,
-      inverter_brand: (row.brand ? String(row.brand).toLowerCase().trim().replace(/\s+/g, '_') : "other") as InverterBrand,
+      inverter_brand: row.brand as InverterBrand,
       electronic_phase: (row.phase && (String(row.phase).includes("3"))) ? "three_phase" : "single_phase" as ElectronicPhase,
       
-      // Size
       is_exact_kw: _isExactKw,
       kw_min: parseFloat(row.kw_min) || 0,
       kw_max: !_isExactKw ? (parseFloat(row.kw_max) || 0) : null,
-      
-      // Price (Input from Excel usually comes as 'price')
-      price: parseFloat(row.price) || 0, // For UI temp
+
+      price: parseFloat(row.price) || 0,
       is_exact_price: _isExactPrice,
       price_exact: _isExactPrice ? (parseFloat(row.price) || 0) : null,
       price_percentage: !_isExactPrice ? (parseFloat(row.price) || 0) : null,
     }));
 
-    if (isReplace) {
-        const hasRealItems = prices.some(p => !p.id.startsWith("temp-"));
-        if (hasRealItems) {
-            const { error } = await supabase.from("sale_package_prices").delete().eq("sale_package_id", programId);
-            if (error) { toast({ title: "Error", description: "ลบข้อมูลเก่าไม่สำเร็จ", variant: "destructive" }); return; }
+    if (isConfigMode) {
+        if (importMode === "replace") {
+            const hasRealItems = prices.some(p => !p.id.startsWith("temp-"));
+            if (hasRealItems) {
+                const { error } = await supabase.from("sale_package_prices").delete().eq("sale_package_id", programId);
+                if (error) { toast({ title: "Error", description: "ลบข้อมูลเก่าไม่สำเร็จ", variant: "destructive" }); return; }
+            }
         }
-        
         setPrices(newItems as any);
-        // Update Global State
         setIsExactKw(_isExactKw);
         setIsExactPrice(_isExactPrice);
-        
-        toast({ title: "แทนที่สำเร็จ", description: `นำเข้า ${newItems.length} รายการ` });
+        toast({ title: "นำเข้าสำเร็จ", description: `นำเข้า ${newItems.length} รายการ` });
     } else {
         setPrices((prev) => [...prev, ...newItems] as any);
         toast({ title: "เพิ่มสำเร็จ", description: `เพิ่ม ${newItems.length} รายการ` });
@@ -261,7 +246,6 @@ export const SalesProgramDetail = ({
 
         const recordsToUpsert = prices.map((item) => {
             const isNew = item.id.startsWith("temp-");
-            // ❌ Filter 'price' out, keep only DB columns
             const { id, price: _unused, ...rest } = item; 
             return {
                 ...(isNew ? {} : { id }),
@@ -286,13 +270,9 @@ export const SalesProgramDetail = ({
     } finally { setLoading(false); }
   };
 
-  // Helper Functions
   const handleAddBrand = async (brandValue?: string) => {
-     // ... (Same Logic as before, just ensure new item uses Global State)
-     let brandToUse: InverterBrand = "huawei";
-     // ... (Brand fetch/create logic) ...
+     let brandToUse: InverterBrand = (brandValue as InverterBrand) || "others"; // Default to others if blank
      
-     // Note: Use global state here
      const newPrice: SalePackagePrice = {
         id: `temp-${Date.now()}`,
         inverter_brand: brandToUse,
@@ -315,13 +295,12 @@ export const SalesProgramDetail = ({
         electronic_phase: "single_phase",
         kw_min: 0,
         kw_max: null,
-        is_exact_kw: isExactKw, // Use Global
+        is_exact_kw: isExactKw,
         price: 0,
-        is_exact_price: isExactPrice, // Use Global
+        is_exact_price: isExactPrice,
         price_percentage: null,
         price_exact: 0,
     };
-    // Insert after last item of this brand
     const brandPrices = prices.filter(p => p.inverter_brand === brand);
     const lastItem = brandPrices[brandPrices.length - 1];
     const index = lastItem ? prices.indexOf(lastItem) : prices.length - 1;
@@ -346,42 +325,36 @@ export const SalesProgramDetail = ({
     return acc;
   }, {} as Record<InverterBrand, SalePackagePrice[]>);
 
-  // Formatting helpers
   const formatBrandName = (brand: string) => brand.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
-  const brandNames: Partial<Record<InverterBrand, string>> = { 
-    huawei: "Huawei", 
-    solaredge: "SolarEdge" };
-  const getBrandDisplayName = (brand: string) => customBrandNames[brand] || brandNames[brand as InverterBrand] || formatBrandName(brand);
+  const getBrandDisplayName = (brand: string) => customBrandNames[brand] || formatBrandName(brand);
+
+  // ✅ Logic จัดการตัวเลือก Brand ทั้งหมด + เรียง others ไว้ล่างสุด
   const allBrandOptions = React.useMemo(() => {
-    // 1. เอาค่าจาก DB มาเป็นตัวตั้ง
     const options = dbBrandOptions.map(opt => ({
         value: opt.value,
-        // ถ้ามีชื่อพิเศษใน specialBrandNames ให้ใช้ ถ้าไม่มีใช้ชื่อ Auto
-        label: opt.value 
+        label: opt.label 
     }));
 
-    // 2. ผสมกับ Custom Brand ที่เพิ่งเพิ่ม (ยังไม่ได้รีเฟรชหน้าจอ)
     const customOptions = Object.entries(customBrandNames).map(([value, label]) => ({
        value, 
        label 
     }));
     
-    // 3. รวมร่างและตัดตัวซ้ำ
     const combined = [...options, ...customOptions];
     const uniqueOptions = Array.from(new Map(combined.map(item => [item.value, item])).values());
     
+    // ✅ แก้ไข: หา 'others' (มี s) ตามที่คุณแจ้ง
     const otherOption = uniqueOptions.find(o => o.value.toLowerCase() === 'others');
     const restOptions = uniqueOptions.filter(o => o.value.toLowerCase() !== 'others');
 
+    // เรียง others ไว้ล่างสุด
     if (otherOption) {
-        return [...restOptions, otherOption]; // เอาตัวอื่นๆ มาก่อน แล้วตามด้วย Other
+        return [...restOptions, otherOption];
     }
-    // 4. จัดเรียงตามลำดับ
-    const sortedOptions = uniqueOptions.sort((a, b) => a.value.localeCompare(b.value));
-    return sortedOptions;
+    return restOptions;
   }, [dbBrandOptions, customBrandNames]);
-  const phaseNames: Record<ElectronicPhase, string> = { single_phase: "1Ph", three_phase: "3Ph" };
 
+  const phaseNames: Record<ElectronicPhase, string> = { single_phase: "1Ph", three_phase: "3Ph" };
 
   if (loading) return <div className="p-4">Loading...</div>;
 
@@ -415,8 +388,6 @@ export const SalesProgramDetail = ({
               <thead className="bg-muted">
                 <tr>
                   <th className="px-2 py-1.5 text-left text-sm font-medium">Inverter Brand</th>
-                  
-                  {/* ✅ Header Size with Toggle */}
                   <th className="px-2 py-1.5 text-left text-sm font-medium min-w-[140px]">
                     <div className="flex items-center gap-2">
                        ขนาดติดตั้ง
@@ -433,10 +404,7 @@ export const SalesProgramDetail = ({
                        )}
                     </div>
                   </th>
-
                   <th className="px-2 py-1.5 text-left text-sm font-medium">Phase</th>
-                  
-                  {/* ✅ Header Price with Toggle */}
                   <th className="px-2 py-1.5 text-left text-sm font-medium min-w-[140px]">
                     <div className="flex items-center gap-2">
                        ราคาโครงการ
@@ -535,16 +503,84 @@ export const SalesProgramDetail = ({
                         )}
                     </React.Fragment>
                 ))}
+                
+                {/* ✅ ส่วนเพิ่มข้อมูลใหม่ (New Brand Row) */}
                 {isEditMode && (
-                    <tr className="border-t">
-                        <td className="px-2 py-1.5">
-                           <div className="relative" ref={containerRef}>
-                              <div className="flex items-center gap-2">
-                                 <Input value={newBrandInput} onChange={(e) => setNewBrandInput(e.target.value)} onFocus={() => setShowBrandSuggestions(true)} placeholder="Add Brand..." className="h-8" />
-                                 <button onClick={() => handleAddBrand(newBrandInput)} disabled={!newBrandInput} className="text-primary"><Plus className="h-4 w-4" /></button>
-                              </div>
-                              {/* Suggestions Logic ... */}
-                           </div>
+                    <tr className="border-t bg-muted/20">
+                        <td className="px-2 py-2">
+                            <div className="flex items-center gap-2">
+                                {isManualAdd ? (
+                                    <div className="flex items-center gap-2 w-full">
+                                        <Input
+                                            value={newBrandInput}
+                                            onChange={(e) => setNewBrandInput(e.target.value)}
+                                            placeholder="ระบุชื่อยี่ห้อใหม่..."
+                                            className="h-8 bg-background"
+                                            autoFocus
+                                        />
+                                        <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            onClick={() => {
+                                                setIsManualAdd(false);
+                                                setNewBrandInput("");
+                                            }}
+                                            className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                                            title="ยกเลิก"
+                                        >
+                                            <span className="text-lg">×</span>
+                                        </Button>
+                                    </div>
+                                ) : (
+                                    <Select
+                                        value={newBrandInput}
+                                        onValueChange={(val) => {
+                                            if (val === "__NEW_BRAND__") {
+                                                setIsManualAdd(true);
+                                                setNewBrandInput("");
+                                            } else {
+                                                setNewBrandInput(val);
+                                            }
+                                        }}
+                                    >
+                                        <SelectTrigger className="h-8 w-full bg-background border-dashed">
+                                            <SelectValue placeholder="+ เพิ่มยี่ห้อ..." />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {allBrandOptions
+                                                // กรองตัวที่มีแล้วในตารางออก
+                                                .filter(opt => !Object.keys(groupedPrices).includes(opt.value))
+                                                .map((opt) => (
+                                                    <SelectItem key={opt.value} value={opt.value}>
+                                                        {opt.label}
+                                                    </SelectItem>
+                                            ))}
+                                            <div className="h-px bg-muted my-1" />
+                                            <SelectItem value="__NEW_BRAND__" className="text-primary font-medium focus:bg-primary/10">
+                                                <div className="flex items-center gap-2">
+                                                    <PlusCircle className="h-4 w-4" />
+                                                    <span>เพิ่มใหม่ (พิมพ์เอง)...</span>
+                                                </div>
+                                            </SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                )}
+
+                                <Button
+                                    size="sm"
+                                    onClick={() => {
+                                        if (newBrandInput) {
+                                            handleAddBrand(newBrandInput);
+                                            setNewBrandInput("");
+                                            setIsManualAdd(false);
+                                        }
+                                    }}
+                                    disabled={!newBrandInput}
+                                    className="h-8 px-3 whitespace-nowrap"
+                                >
+                                    <Plus className="h-4 w-4 mr-1" /> เพิ่ม
+                                </Button>
+                            </div>
                         </td>
                         <td colSpan={3}></td>
                     </tr>
@@ -575,7 +611,7 @@ export const SalesProgramDetail = ({
             { key: "kw_max", label: "ขนาดสูงสุด (Max) kW" },
             { key: "price", label: "ราคา" },
         ]}
-        booleanFields={importMode === "replace" ? [
+        booleanFields={(importMode === "replace" || prices.length === 0) ? [
             { key: "is_exact_kw", label: "ขนาดแบบค่าเดียว (Exact)", defaultValue: isExactKw },
             { key: "is_exact_price", label: "ราคาแบบ Fix (บาท)", defaultValue: isExactPrice },
         ] : []}

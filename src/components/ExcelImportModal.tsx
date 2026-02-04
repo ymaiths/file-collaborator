@@ -82,9 +82,20 @@ export const ExcelImportModal = ({
     const exact = options.find(opt => opt.value.toLowerCase() === normalized || opt.label.toLowerCase() === excelVal.toLowerCase());
     if (exact) return exact.value;
 
-    // 2. หาที่มีคำคล้ายกัน (Contains)
-    const partial = options.find(opt => normalized.includes(opt.value.toLowerCase()) || opt.label.toLowerCase().includes(normalized));
-    if (partial) return partial.value;
+    // ✅ 2. หาที่มีคำคล้ายกัน (Contains) แต่เลือกตัวที่ "ยาวที่สุด" (Longest Match)
+    // เพื่อป้องกันกรณีเลือก 'huawei' แทนที่จะเป็น 'huawei_optimizer'
+    const partialMatches = options.filter(opt => 
+        normalized.includes(opt.value.toLowerCase()) || 
+        opt.label.toLowerCase().includes(normalized) ||
+        normalized.includes(opt.label.toLowerCase().replace(/[^a-z0-9]/g, "")) // เช็ค Label แบบตัดอักขระด้วย
+    );
+
+    if (partialMatches.length > 0) {
+        // เรียงลำดับตามความยาวของ value (จากยาวไปสั้น) แล้วเอาตัวแรก
+        // เช่น ['huawei', 'huawei_optimizer'] -> เรียงเป็น ['huawei_optimizer', 'huawei'] -> เลือกตัวแรก
+        partialMatches.sort((a, b) => b.value.length - a.value.length);
+        return partialMatches[0].value;
+    }
 
     return "other"; // Default fallback
   };
