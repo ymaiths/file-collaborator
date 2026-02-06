@@ -593,9 +593,9 @@ export const SalesProgramDetail = ({
         <div className="border rounded-lg p-4 h-fit">
           <h3 className="text-lg font-semibold mb-4">ข้อกำหนด</h3>
           <div className="space-y-4">
-             <div><label className="text-sm font-medium">เงื่อนไขชำระเงิน</label>{isEditMode ? <Input value={paymentTerms} onChange={e=>setPaymentTerms(e.target.value)}/> : <p className="text-sm text-muted">{paymentTerms || "-"}</p>}</div>
-             <div><label className="text-sm font-medium">เงื่อนไขรับประกัน</label>{isEditMode ? <Input value={warrantyTerms} onChange={e=>setWarrantyTerms(e.target.value)}/> : <p className="text-sm text-muted">{warrantyTerms || "-"}</p>}</div>
-             <div><label className="text-sm font-medium">หมายเหตุ</label>{isEditMode ? <Input value={note} onChange={e=>setNote(e.target.value)}/> : <p className="text-sm text-muted">{note || "-"}</p>}</div>
+             <div><label className="text-sm font-semibold">เงื่อนไขชำระเงิน</label>{isEditMode ? <Input value={paymentTerms} onChange={e=>setPaymentTerms(e.target.value)}/> : <p className="text-sm">{paymentTerms || "-"}</p>}</div>
+             <div><label className="text-sm font-semibold">เงื่อนไขรับประกัน</label>{isEditMode ? <Input value={warrantyTerms} onChange={e=>setWarrantyTerms(e.target.value)}/> : <p className="text-sm">{warrantyTerms || "-"}</p>}</div>
+             <div><label className="text-sm font-semibold">หมายเหตุ</label>{isEditMode ? <Input value={note} onChange={e=>setNote(e.target.value)}/> : <p className="text-sm">{note || "-"}</p>}</div>
           </div>
         </div>
       </div>

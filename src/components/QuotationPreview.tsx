@@ -4,7 +4,7 @@ import { ProductSelector, SelectedProduct } from "./ProductSelector";
 
 // Helper จัดรูปแบบเงิน
 const formatCurrency = (num: number | undefined | null) => {
-  if (num === undefined || num === null || isNaN(num)) return ""; // เอา num === 0 ออกเพื่อให้แสดง 0.00 ได้ถ้าต้องการ หรือใส่กลับถ้าต้องการซ่อน
+  if (num === undefined || num === null || isNaN(num)) return ""; 
   return num.toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -48,7 +48,7 @@ export const QuotationPreview = ({ data, isEditMode, onUpdateItem, onUpdateTerms
   const itemsB = data.items.filter((i) => i.category === "B");
 
   // การคำนวณราคา
-  const totalAmount = data.items.reduce((sum, i) => sum + i.total, 0); // นี่คือ Net Total (ยอดรวมสินค้า)
+  const totalAmount = data.items.reduce((sum, i) => sum + i.total, 0); 
   const discount = data.discount || 0;
   const totalAfterDiscount = totalAmount - discount;
   const vatAmount = totalAfterDiscount * data.vatRate;
@@ -67,8 +67,8 @@ export const QuotationPreview = ({ data, isEditMode, onUpdateItem, onUpdateTerms
   // Helper เลือกค่า Original หรือ Edited
   const getVal = (item: any, field: string) => {
       return item[`edited_${field}`] !== null && item[`edited_${field}`] !== undefined && item[`edited_${field}`] !== "" 
-             ? item[`edited_${field}`] 
-             : item[field];
+              ? item[`edited_${field}`] 
+              : item[field];
   };
   
   return (
@@ -286,52 +286,76 @@ export const QuotationPreview = ({ data, isEditMode, onUpdateItem, onUpdateTerms
         {/* --- FOOTER STRUCTURE --- */}
         <tfoot>
           <tr>
-            <td colSpan={7} className="border border-gray-400 p-0 align-top h-full">
-                <div className="flex h-full min-h-[160px]">
-                    <div className="w-1/2 flex flex-col border-r border-gray-400">
-                        {/* เงื่อนไขการชำระเงิน */}
-                        <div className="flex-1 p-2 border-b border-gray-400">
-                             <h4 className="font-bold text-gray-800 underline mb-1 text-xs">เงื่อนไขการชำระเงิน</h4>
-                             <EditableCell
-                                isEditMode={isEditMode}
-                                type="textarea"
-                                value={data.paymentTerms.join("\n")}
-                                onSave={(val) => onUpdateTerms("edited_payment_terms", val)}
-                                className="text-[10px] text-gray-600"
-                             />
-                        </div>
-                        {/* หมายเหตุ */}
-                        <div className="flex-1 p-2 bg-gray-50">
-                             <h4 className="font-bold text-gray-800 underline mb-1 text-xs">หมายเหตุ</h4>
-                             <EditableCell
-                                isEditMode={isEditMode}
-                                type="textarea"
-                                value={data.remarks}
-                                onSave={(val) => onUpdateTerms("edited_note", val)}
-                                className="text-[10px] text-gray-600"
-                             />
-                        </div>
+            {/* ✅ เทคนิค: ใส่ h-[1px] ที่ td เพื่อบังคับให้ cell ยึดความสูงตามเพื่อนร่วมแถว 
+                และยอมให้ลูก (div) ใช้ h-full ได้อย่างถูกต้อง 
+            */}
+            
+            {/* --- LEFT BLOCK (Terms) --- */}
+            <td colSpan={7} className="border border-gray-400 p-0 align-top h-[1px]">
+                <div className="flex flex-col h-full min-h-[160px] p-3 border-r border-gray-400"> {/* ใช้ h-full */}
+                    
+                    {/* 1. Payment Terms */}
+                    <div className="mb-3">
+                      <h4 className="font-bold mb-1 underline decoration-gray-400 underline-offset-2 text-xs">เงื่อนไขการชำระเงิน</h4>
+                      {data.paymentTerms && data.paymentTerms.length > 0 ? (
+                        data.paymentTerms.length === 1 ? (
+                          <p className="text-xs text-gray-700">{data.paymentTerms[0]}</p>
+                        ) : (
+                          <ol className="list-decimal list-inside text-xs space-y-0.5">
+                            {data.paymentTerms.map((term, index) => (
+                              <li key={index} className="text-gray-700">{term}</li>
+                            ))}
+                          </ol>
+                        )
+                      ) : (
+                        <p className="text-xs text-gray-500">-</p>
+                      )}
                     </div>
 
-                    <div className="w-1/2 p-2">
-                        {/* เงื่อนไขการรับประกัน */}
-                        <h4 className="font-bold text-gray-800 underline mb-1 text-xs">เงื่อนไขการรับประกัน</h4>
-                        <EditableCell
-                            isEditMode={isEditMode}
-                            type="textarea"
-                            value={data.warrantyTerms.join("\n")}
-                            onSave={(val) => onUpdateTerms("edited_warranty_terms", val)}
-                            className="text-[10px] text-gray-600"
-                        />
+                    {/* 2. Warranty Terms */}
+                    <div className="mb-3">
+                      <h4 className="font-bold mb-1 underline decoration-gray-400 underline-offset-2 text-xs">เงื่อนไขการรับประกัน</h4>
+                      {data.warrantyTerms && data.warrantyTerms.length > 0 ? (
+                        data.warrantyTerms.length === 1 ? (
+                          <p className="text-xs text-gray-700">{data.warrantyTerms[0]}</p>
+                        ) : (
+                          <ol className="list-decimal list-inside text-xs space-y-0.5">
+                            {data.warrantyTerms.map((term, index) => (
+                              <li key={index} className="text-gray-700">{term}</li>
+                            ))}
+                          </ol>
+                        )
+                      ) : (
+                        <p className="text-xs text-gray-500">-</p>
+                      )}
                     </div>
+
+                    {/* 3. Remarks (ใช้ flex-1 เพื่อดันให้เต็มพื้นที่ถ้าจำเป็น หรือปล่อยตามธรรมชาติ) */}
+                    <div className="mb-2 flex-1">
+                      <h4 className="font-bold mb-1 underline decoration-gray-400 underline-offset-2 text-xs">หมายเหตุ</h4>
+                      {(() => {
+                        const remarkLines = data.remarks ? data.remarks.split('\n').filter(line => line.trim() !== '') : [];
+                        if (remarkLines.length === 0) return <p className="text-xs text-gray-500">-</p>;
+                        if (remarkLines.length === 1) return <p className="text-xs text-gray-700 whitespace-pre-line leading-relaxed">{remarkLines[0]}</p>;
+                        return (
+                          <ol className="list-decimal list-inside text-xs space-y-0.5">
+                            {remarkLines.map((line, index) => (
+                              <li key={index} className="text-gray-700 whitespace-pre-line">{line}</li>
+                            ))}
+                          </ol>
+                        );
+                      })()}
+                    </div>
+
                 </div>
             </td>
 
-            {/* 2. RIGHT BLOCK (Totals) */}
-            <td colSpan={3} className="border border-gray-400 p-0 align-top">
+            {/* --- RIGHT BLOCK (Totals) --- */}
+            <td colSpan={3} className="border border-gray-400 p-0 align-top h-[1px]">
+                {/* ใช้ h-full เพื่อยืดเต็มความสูง td */}
                 <div className="flex flex-col h-full text-xs">
                     
-                    {/* ✅ 1. รวม (Net Total) - แก้ไขให้เป็น EditableCell */}
+                    {/* รวม (Net Total) */}
                     <div className="flex border-b border-gray-400">
                         <div className="w-1/2 p-1 text-right font-bold bg-gray-100 border-r border-gray-400 flex items-center justify-end">รวม (Total)</div>
                         <div className="w-1/2 p-1 text-right flex items-center justify-end font-medium">
@@ -342,9 +366,7 @@ export const QuotationPreview = ({ data, isEditMode, onUpdateItem, onUpdateTerms
                                 value={formatCurrency(totalAmount)}
                                 onSave={(val) => {
                                     const cleanVal = parseFloat(val.replace(/,/g, ''));
-                                    if (!isNaN(cleanVal) && onUpdateTotalOverride) {
-                                        onUpdateTotalOverride('net', cleanVal);
-                                    }
+                                    if (!isNaN(cleanVal) && onUpdateTotalOverride) onUpdateTotalOverride('net', cleanVal);
                                 }}
                             />
                         </div>
@@ -358,22 +380,24 @@ export const QuotationPreview = ({ data, isEditMode, onUpdateItem, onUpdateTerms
                         </div>
                     </div>
                     
-                    {/* หลังหักส่วนลด (Read Only) */}
+                    {/* หลังหักส่วนลด */}
                     <div className="flex border-b border-gray-400">
                         <div className="w-1/2 p-1 text-right font-bold bg-gray-100 border-r border-gray-400 flex items-center justify-end">รวม (Total)</div>
                         <div className="w-1/2 p-1 text-right flex items-center justify-end font-medium">{formatCurrency(totalAfterDiscount)}</div>
                     </div>
                     
-                    {/* VAT (Read Only) */}
+                    {/* VAT */}
                     <div className="flex border-b border-gray-400">
                         <div className="w-1/2 p-1 text-right text-gray-600 bg-gray-100 border-r border-gray-400 flex items-center justify-end">ภาษีมูลค่าเพิ่ม (VAT 7%)</div>
                         <div className="w-1/2 p-1 text-right text-gray-600 flex items-center justify-end">{formatCurrency(vatAmount)}</div>
                     </div>
                     
-                    {/* ✅ 2. รวมเงินทั้งสิ้น (Grand Total) - แก้ไขให้เป็น EditableCell */}
+                    {/* ✅ Grand Total: ใช้ flex-1 เพื่อดันให้ยืดเต็มพื้นที่ที่เหลือจนสุดขอบล่าง */}
                     <div className="flex flex-1">
-                        <div className="w-1/2 p-1 text-right font-bold text-primary bg-blue-50 border-r border-gray-400 flex items-center justify-end">รวมเงินทั้งสิ้น<br/>(Grand Total)</div>
-                        <div className="w-1/2 p-1 text-right font-bold text-primary text-sm flex items-center justify-end">
+                        <div className="w-1/2 p-1 text-right font-bold text-primary bg-blue-50 border-r border-gray-400 flex items-center justify-end">
+                            รวมเงินทั้งสิ้น<br/>(Grand Total)
+                        </div>
+                        <div className="w-1/2 p-1 text-right font-bold text-primary text-sm flex items-center justify-end bg-white">
                              <EditableCell 
                                 isEditMode={isEditMode}
                                 type="text"
@@ -381,9 +405,7 @@ export const QuotationPreview = ({ data, isEditMode, onUpdateItem, onUpdateTerms
                                 value={formatCurrency(grandTotal)}
                                 onSave={(val) => {
                                     const cleanVal = parseFloat(val.replace(/,/g, ''));
-                                    if (!isNaN(cleanVal) && onUpdateTotalOverride) {
-                                        onUpdateTotalOverride('grand', cleanVal);
-                                    }
+                                    if (!isNaN(cleanVal) && onUpdateTotalOverride) onUpdateTotalOverride('grand', cleanVal);
                                 }}
                             />
                         </div>

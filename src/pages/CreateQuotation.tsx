@@ -45,22 +45,15 @@ const parseTerms = (text: string | null) => {
   } 
   // 2. ถ้าเป็น Text ยาวๆ ที่มีเลขข้อ (เช่น "1. xxx 2. xxx") ให้ตัดด้วย Regex
   else {
-    // ตัด string โดยมองหา Pattern "ตัวเลข+จุด+เว้นวรรค" (Positive Lookahead)
+    // ตัด string โดยมองหา Pattern "ตัวเลข+จุด+เว้นวรรค"
     items = text.split(/(?=\d+\.\s)/);
   }
 
-  // Clean ข้อมูล (Trim ช่องว่าง)
-  const cleanedItems = items
-    .map((t) => t.trim())
-    .filter((t) => t !== "");
-
-  // 3. Logic: ถ้ามีแค่ข้อเดียว ให้ลบเลขข้อข้างหน้าออก (เช่น "1. รับประกัน..." -> "รับประกัน...")
-  if (cleanedItems.length === 1) {
-    return [cleanedItems[0].replace(/^\d+\.\s*/, "")];
-  }
-
-  // ถ้ามีหลายข้อ ให้ส่งกลับไปทั้งแบบนั้นเลย (จะมีเลข 1., 2. ติดไปด้วย ซึ่งตรงกับที่คุณต้องการ)
-  return cleanedItems;
+  // Clean ข้อมูล
+  return items
+    .map((t) => t.trim())       // ตัดช่องว่างหน้าหลัง
+    .filter((t) => t !== "")    // กรองบรรทัดว่างทิ้ง
+    .map((t) => t.replace(/^\d+\.\s*/, "")); // ✅ เพิ่มบรรทัดนี้: ลบ "1. ", "2. " ออกจากข้อความเสมอ
 };
 
 const CreateQuotation = () => {
@@ -276,26 +269,51 @@ const CreateQuotation = () => {
           };
       });
 
-const sectionAOrder = [
-  "solar_panel", "Solar Panel", // รองรับทั้งคู่
-  "pv_mounting_structure", "PV Mounting Structure",
-  "inverter", "Inverter",
-  "optimizer", "Optimizer",
-  "zero_export_smart_logger", "Zero Export & Smart Logger",
-  "ac_box", "AC Box",
-  "dc_box", "DC Box",
-  "cable", "Cable & Connector",
-  "service", "Service",
-  "support_inverter", "Support Inverter",
-  "electrical_management", "Electrical Management",
-  "others", "Others"
-];
+      const sectionAOrder = [
+        "solar_panel", "Solar Panel",
+        "pv_mounting_structure", "PV Mounting Structure",
+        "inverter", "Inverter",
+        "optimizer", "Optimizer",
+        "zero_export_smart_logger", "Zero Export & Smart Logger",
+        "ac_box", "AC Box",
+        "dc_box", "DC Box",
+        "cable", "Cable & Connector",
+        "service", "Service",
+        "support_inverter", "Support Inverter",
+        "electrical_management", "Electrical Management",
+        "others", "Others"
+      ];
 
-const itemsA = mappedItems.filter(i => i.category === "A").sort((a, b) => {
-         const idxA = sectionAOrder.indexOf(a._rawCategory); const idxB = sectionAOrder.indexOf(b._rawCategory);
-         return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);
-      });
-      const itemsB = mappedItems.filter(i => i.category === "B");
+      const sectionBOrder = [
+        "Electrical drawing, Facility system, layout and schematic",
+        "Common Temporary Facilities, Construction Facilities",
+        "Safety Operation",
+        "Comissioning Test",
+        "Commissioning Test",
+        "Tempolary Utility Expense",
+        "ดำเนินการยื่นเอกสารขออนุญาตการไฟฟ้า/กกพ."
+      ];
+
+      const itemsA = mappedItems
+        .filter(i => i.category === "A")
+        .sort((a, b) => {
+           const idxA = sectionAOrder.indexOf(a._rawCategory); 
+           const idxB = sectionAOrder.indexOf(b._rawCategory);
+           return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);
+        });
+
+      const itemsB = mappedItems
+        .filter(i => i.category === "B")
+        .sort((a, b) => {
+           const getOrderIndex = (name: string) => {
+             const index = sectionBOrder.findIndex(key => 
+               name.toLowerCase().includes(key.toLowerCase())
+             );
+             return index === -1 ? 999 : index;
+           };
+
+           return getOrderIndex(a.name) - getOrderIndex(b.name);
+        });
 
       setPreviewData({
          customerName: formData.customerName,
@@ -303,7 +321,7 @@ const itemsA = mappedItems.filter(i => i.category === "A").sort((a, b) => {
          docNumber: quoteData.document_num || "DRAFT",
          date: new Date().toLocaleDateString("th-TH"),
          quotationId: quoteData.id,
-         items: [...itemsA, ...itemsB],
+         items: [...itemsA, ...itemsB], 
          paymentTerms: parseTerms(rawPayment),
          warrantyTerms: parseTerms(rawWarranty),
          remarks: rawNote,
@@ -312,7 +330,6 @@ const itemsA = mappedItems.filter(i => i.category === "A").sort((a, b) => {
       });
     } catch (e) { console.error("Preview Error", e); }
   };
-
   // ------------------------------------------------------------------
   // Export Excel
   // ------------------------------------------------------------------
@@ -369,8 +386,26 @@ const itemsA = mappedItems.filter(i => i.category === "A").sort((a, b) => {
         const indexA = sectionAOrder.indexOf(a._rawCategory); const indexB = sectionAOrder.indexOf(b._rawCategory);
         return (indexA === -1 ? 999 : indexA) - (indexB === -1 ? 999 : indexB);
       });
-      const itemsB = mappedItems.filter((i) => i.category === "B"); 
-
+      const sectionBOrder = [
+        "Electrical drawing, Facility system, layout and schematic",
+        "Common Temporary Facilities, Construction Facilities",
+        "Safety Operation",
+        "Comissioning Test",
+        "Commissioning Test",
+        "Tempolary Utility Expense",
+        "ดำเนินการยื่นเอกสารขออนุญาตการไฟฟ้า/กกพ."
+      ];
+      const itemsB = mappedItems  
+        .filter((i) => i.category === "B")
+        .sort((a, b) => {
+          const getOrderIndex = (name: string) => {
+      const index = sectionBOrder.findIndex(key => 
+        name.toLowerCase().includes(key.toLowerCase())
+      );
+      return index === -1 ? 999 : index;
+    };
+    return getOrderIndex(a.name) - getOrderIndex(b.name);
+  });
       const exportData = {
         companyName: companyData?.name || "Company Name",
         companyAddress: companyData?.address || "-",
