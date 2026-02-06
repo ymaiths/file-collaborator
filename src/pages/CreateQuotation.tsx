@@ -276,8 +276,22 @@ const CreateQuotation = () => {
           };
       });
 
-      const sectionAOrder = ["solar_panel", "pv_mounting_structure", "inverter", "optimizer", "zero_export_smart_logger", "ac_box", "dc_box", "cable", "service", "support_inverter", "electrical_management", "other"];
-      const itemsA = mappedItems.filter(i => i.category === "A").sort((a, b) => {
+const sectionAOrder = [
+  "solar_panel", "Solar Panel", // รองรับทั้งคู่
+  "pv_mounting_structure", "PV Mounting Structure",
+  "inverter", "Inverter",
+  "optimizer", "Optimizer",
+  "zero_export_smart_logger", "Zero Export & Smart Logger",
+  "ac_box", "AC Box",
+  "dc_box", "DC Box",
+  "cable", "Cable & Connector",
+  "service", "Service",
+  "support_inverter", "Support Inverter",
+  "electrical_management", "Electrical Management",
+  "others", "Others"
+];
+
+const itemsA = mappedItems.filter(i => i.category === "A").sort((a, b) => {
          const idxA = sectionAOrder.indexOf(a._rawCategory); const idxB = sectionAOrder.indexOf(b._rawCategory);
          return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);
       });
@@ -326,7 +340,8 @@ const CreateQuotation = () => {
       const mappedItems = lineItems?.map((item, index) => {
           const product = item.products;
           const categoryRaw = (product?.product_category || "") as string;
-          const isSectionB = categoryRaw === "operation";
+          // เช็คทั้ง key เก่า ('operation') และชื่อใหม่ ('Operation & Maintenance')
+          const isSectionB = categoryRaw === "operation" || categoryRaw === "Operation & Maintenance";
           const finalName = item.edited_name || product?.name || "Unknown";
           const finalBrand = item.edited_brand || product?.brand || "-";
           const qty = item.quantity || 0;
@@ -431,10 +446,18 @@ const CreateQuotation = () => {
   useEffect(() => {
     const fetchPanelSizes = async () => {
       try {
-        const { data, error } = await supabase.from("products").select("min_kw").eq("product_category", "solar_panel").not("min_kw", "is", null);
+        const { data, error } = await supabase
+          .from("products")
+          .select("min_kw, product_category")
+          // ✅ เปลี่ยนเป็น .in() เพื่อหาทั้งชื่อเก่าและชื่อใหม่
+          .in("product_category", ["solar_panel", "Solar Panel"]) 
+          .not("min_kw", "is", null);
+
         if (error) throw error;
         if (data) {
-          const sizes = Array.from(new Set(data.map((p) => p.min_kw))).filter((size): size is number => size !== null).sort((a, b) => a - b);
+          const sizes = Array.from(new Set(data.map((p) => p.min_kw)))
+            .filter((size): size is number => size !== null)
+            .sort((a, b) => a - b);
           setAvailablePanelSizes(sizes);
         }
       } catch (error) { console.error("Error fetching panel sizes:", error); }

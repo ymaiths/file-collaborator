@@ -9,17 +9,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Minus, Plus, Copy, Upload, PlusCircle } from "lucide-react";
+import { Minus, Plus, Upload, PlusCircle } from "lucide-react"; // เอา Copy ออกถ้าไม่ได้ใช้
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import type { Database } from "@/integrations/supabase/types";
 import { ExcelImportModal } from "./ExcelImportModal";
 
-type ProductCategory = Database["public"]["Enums"]["product_category"];
+// ✅ 1. เปลี่ยน Type จาก Enum เป็น string
+type ProductCategory = string; 
 
-// Mapping สำหรับแสดงผล
-const enumToDisplayName: Partial<Record<ProductCategory, string>> &
-  Record<string, string> = {
+// Mapping สำหรับแสดงผล (รองรับ Legacy Key)
+const enumToDisplayName: Record<string, string> = {
   solar_panel: "Solar Panel",
   inverter: "Inverter",
   ac_box: "AC Box",
@@ -81,8 +81,11 @@ export const EquipmentCategoryDetail = ({
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importMode, setImportMode] = useState<"append" | "replace">("append");
 
-  const currentCategoryEnum = categoryId as ProductCategory;
-  const isInverter = currentCategoryEnum === "inverter";
+  // ✅ 2. ใช้ string โดยตรง (ไม่ต้อง cast เป็น Enum)
+  const currentCategory = categoryId; 
+  
+  // ✅ 3. เช็คเผื่อทั้ง key เก่าและชื่อใหม่ (Case Insensitive check)
+  const isInverter = currentCategory.toLowerCase() === "inverter"; 
 
   useEffect(() => {
     if (products.length > 0) {
@@ -96,7 +99,7 @@ export const EquipmentCategoryDetail = ({
 
   useEffect(() => {
     fetchProducts();
-  }, [currentCategoryEnum]);
+  }, [currentCategory]);
 
   const fetchProducts = async () => {
     try {
@@ -104,7 +107,7 @@ export const EquipmentCategoryDetail = ({
       const { data, error } = await supabase
         .from("products")
         .select("*")
-        .eq("product_category", currentCategoryEnum);
+        .eq("product_category", currentCategory); // ใช้ string
 
       if (error) throw error;
       setProducts((data as unknown as Product[]) || []);
@@ -136,7 +139,7 @@ export const EquipmentCategoryDetail = ({
 
     const newItems = data.map((row) => ({
       id: `temp-${Date.now()}-${Math.random()}`,
-      product_category: currentCategoryEnum,
+      product_category: currentCategory, // ใช้ตัวแปรใหม่
       
       name: row.name || "",
       brand: row.brand || "",
@@ -165,7 +168,7 @@ export const EquipmentCategoryDetail = ({
          const { error } = await supabase
             .from("products")
             .delete()
-            .eq("product_category", currentCategoryEnum);
+            .eq("product_category", currentCategory);
          
          if (error) {
              toast({ title: "เกิดข้อผิดพลาด", description: "ไม่สามารถลบข้อมูลเก่าได้", variant: "destructive" });
@@ -204,7 +207,7 @@ export const EquipmentCategoryDetail = ({
       is_exact_kw: isExactKw,
       is_price_included: isPriceIncluded,
       is_required_product: isRequired,
-      product_category: currentCategoryEnum,
+      product_category: currentCategory, // ใช้ตัวแปรใหม่
       electrical_phase: null,
     };
     setProducts([...products, newProduct]);
@@ -229,7 +232,7 @@ export const EquipmentCategoryDetail = ({
     setProducts(products.map((p) => (p.id === id ? { ...p, [field]: value } : p)));
   };
 
-  // Bulk Handlers
+  // Bulk Handlers (เหมือนเดิม)
   const handlePriceIncludedChange = (checked: boolean) => {
     setIsPriceIncluded(checked);
     setProducts(products.map((p) => ({ ...p, is_price_included: checked })));
@@ -301,10 +304,10 @@ export const EquipmentCategoryDetail = ({
       {/* Header Controls */}
       <div className="flex items-center justify-between p-4 bg-card border border-border rounded-md">
         <div className="flex items-center gap-4">
-          {/* ✅ เพิ่มปุ่มลูกศรย้อนกลับตรงนี้ */}
           <Button variant="ghost" onClick={onBack}>←</Button> 
           <h2 className="text-lg font-semibold text-foreground">
-            {enumToDisplayName[currentCategoryEnum] || categoryName}
+            {/* แสดงชื่อหมวดหมู่ ถ้ามีใน Legacy Map ก็ใช้ ถ้าไม่มีก็ใช้ชื่อที่ส่งมาตรงๆ */}
+            {enumToDisplayName[currentCategory] || categoryName}
           </h2>
           {isEditMode && (
             <div className="flex items-center gap-4">

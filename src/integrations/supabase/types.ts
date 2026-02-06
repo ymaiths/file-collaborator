@@ -155,7 +155,7 @@ export type Database = {
           max_kw: number | null;
           min_kw: number | null;
           name: string;
-          product_category: Database["public"]["Enums"]["product_category"];
+          product_category: string; // ✅ Correct: เป็น string แล้ว
           unit: string | null;
           updated_at: string | null;
         };
@@ -176,7 +176,7 @@ export type Database = {
           max_kw?: number | null;
           min_kw?: number | null;
           name: string;
-          product_category: Database["public"]["Enums"]["product_category"];
+          product_category: string; // ✅ Correct
           unit?: string | null;
           updated_at?: string | null;
         };
@@ -197,7 +197,7 @@ export type Database = {
           max_kw?: number | null;
           min_kw?: number | null;
           name?: string;
-          product_category?: Database["public"]["Enums"]["product_category"];
+          product_category?: string; // ✅ Correct
           unit?: string | null;
           updated_at?: string | null;
         };
@@ -220,7 +220,6 @@ export type Database = {
           note: string | null;
           sale_package_id: string | null;
           updated_at: string | null;
-          // ✅ Added these 3 lines
           edited_payment_terms: string | null;
           edited_warranty_terms: string | null;
           edited_note: string | null;
@@ -241,7 +240,6 @@ export type Database = {
           note?: string | null;
           sale_package_id?: string | null;
           updated_at?: string | null;
-          // ✅ Added these 3 lines
           edited_payment_terms?: string | null;
           edited_warranty_terms?: string | null;
           edited_note?: string | null;
@@ -262,7 +260,6 @@ export type Database = {
           note?: string | null;
           sale_package_id?: string | null;
           updated_at?: string | null;
-          // ✅ Added these 3 lines
           edited_payment_terms?: string | null;
           edited_warranty_terms?: string | null;
           edited_note?: string | null;
@@ -414,20 +411,7 @@ export type Database = {
     };
     Enums: {
       electronic_phase: "single_phase" | "three_phase";
-      inverter_brand: "huawei" | "huawei_optimizer" | "solaredge" | "hoymiles"|"others";
-      product_category:
-        | "solar_panel"
-        | "inverter"
-        | "optimizer"
-        | "support_inverter"
-        | "ac_box"
-        | "dc_box"
-        | "service"
-        | "pv_mounting_structure"
-        | "cable"
-        | "operation"
-        | "electrical_management"
-        | "others";
+      inverter_brand: "huawei" | "huawei_optimizer" | "solaredge" | "hoymiles" | "others";
     };
     CompositeTypes: {
       [_ in never]: never;
@@ -555,6 +539,7 @@ export type CompositeTypes<
   ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
   : never;
 
+// ✅ Constants ไม่รวม product_category แล้ว
 export const Constants = {
   public: {
     Enums: {
@@ -565,19 +550,6 @@ export const Constants = {
         "huawei_optimizer",
         "solaredge",
         "hoymiles",
-      ],
-      product_category: [
-        "solar_panel",
-        "inverter",
-        "optimizer",
-        "ac_box",
-        "dc_box",
-        "service",
-        "support_inverter",
-        "pv_mounting_structure",
-        "cable",
-        "electrical_management",
-        "others"
       ],
     },
   },

@@ -1,12 +1,17 @@
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
-// อย่าลืมตรวจสอบว่า path ของ 2 ไฟล์นี้ถูกต้อง
 import {
   selectInverters,
   selectInverterAccessories,
 } from "@/utils/equipment-logic";
 import { calculateSystemSpecs } from "@/utils/kwpcalculations";
+
+// Helper สำหรับเช็คหมวดหมู่ (รองรับทั้ง Key เก่า และชื่อใหม่)
+const isCategory = (productCat: string | null, keys: string[]) => {
+  if (!productCat) return false;
+  return keys.includes(productCat);
+};
 
 export const useAutoGenerateLineItems = () => {
   const [isGenerating, setIsGenerating] = useState(false);
@@ -23,7 +28,6 @@ export const useAutoGenerateLineItems = () => {
 
       if (quoteError || !quote) throw new Error("Quotation not found");
 
-      // เตรียมตัวแปรหลัก (ค่าใน DB เป็น Watt ตามที่คุณระบุ)
       const projectSizeWatt = quote.kw_size || 0;
       const panelSizeWatt = quote.kw_panel || 0;
       const projectPhase = quote.electrical_phase || "single_phase";
@@ -44,11 +48,12 @@ export const useAutoGenerateLineItems = () => {
       // ====================================================
       const solarPanel = allProducts.find(
         (p) =>
-          p.product_category === "solar_panel" && p.min_kw === panelSizeWatt
+          // ✅ แก้ไข: เช็คทั้ง solar_panel และ Solar Panel
+          isCategory(p.product_category, ["solar_panel", "Solar Panel"]) && 
+          p.min_kw === panelSizeWatt
       );
 
       if (solarPanel) {
-        // คำนวณจำนวนแผง
         const { numberOfPanels } = calculateSystemSpecs(
           projectSizeWatt,
           panelSizeWatt
@@ -68,19 +73,17 @@ export const useAutoGenerateLineItems = () => {
       // 2. อินเวอร์เตอร์ (Inverter)
       // ====================================================
       let targetBrand = brand?.toLowerCase().trim() || "";
-
-      // ถ้ามีคำว่า huawei (เช่น 'huawei optimizer', 'huawei_optimizer') ให้หา 'huawei'
       if (targetBrand.includes("huawei")) {
         targetBrand = "huawei";
       }
 
       const availableInverters = allProducts.filter(
         (p) =>
-          p.product_category === "inverter" &&
+          // ✅ แก้ไข: เช็คทั้ง inverter และ Inverter
+          isCategory(p.product_category, ["inverter", "Inverter"]) &&
           p.brand?.toLowerCase().trim() === targetBrand
       );
 
-      // เรียกใช้ Algorithm เลือก Inverter
       const selectedInverters = selectInverters(
         availableInverters,
         projectSizeWatt,
@@ -104,13 +107,13 @@ export const useAutoGenerateLineItems = () => {
       // 3. โครงสร้างติดตั้ง (PV Mounting Structure)
       // ====================================================
       const mounting = allProducts.find(
-        (p) => p.product_category === "pv_mounting_structure"
+        (p) => isCategory(p.product_category, ["pv_mounting_structure", "PV Mounting Structure"])
       );
       if (mounting) {
         lineItemsToInsert.push({
           quotation_id: quotationId,
           product_id: mounting.id,
-          quantity: projectSizeWatt, // จำนวนเท่ากับขนาดโครงการ (Watt)
+          quantity: projectSizeWatt,
           is_edited_product_price: false,
           is_edited_installation_price: false,
           is_edited_quantity: false,
@@ -122,8 +125,8 @@ export const useAutoGenerateLineItems = () => {
       // ====================================================
       const potentialAccessories = allProducts.filter(
         (p) =>
-          p.product_category === "inverter" ||
-          p.product_category === "zero_export_smart_logger"
+          isCategory(p.product_category, ["inverter", "Inverter"]) ||
+          isCategory(p.product_category, ["zero_export_smart_logger", "Zero Export & Smart Logger"])
       );
 
       const accessoryResult = selectInverterAccessories(
@@ -146,10 +149,9 @@ export const useAutoGenerateLineItems = () => {
       // ====================================================
       // 5. ตู้ AC/DC (AC Box, DC Box)
       // ====================================================
-      // AC Box
       const acBox = allProducts.find(
         (p) =>
-          p.product_category === "ac_box" &&
+          isCategory(p.product_category, ["ac_box", "AC Box"]) &&
           (p.min_kw || 0) <= projectSizeWatt &&
           (p.max_kw === null || (p.max_kw || 0) >= projectSizeWatt)
       );
@@ -163,10 +165,9 @@ export const useAutoGenerateLineItems = () => {
           is_edited_quantity: false,
         });
 
-      // DC Box
       const dcBox = allProducts.find(
         (p) =>
-          p.product_category === "dc_box" &&
+          isCategory(p.product_category, ["dc_box", "DC Box"]) &&
           (p.min_kw || 0) <= projectSizeWatt &&
           (p.max_kw === null || (p.max_kw || 0) >= projectSizeWatt)
       );
@@ -183,8 +184,7 @@ export const useAutoGenerateLineItems = () => {
       // ====================================================
       // 6. สายไฟ (Cabling & Conduit Set)
       // ====================================================
-      // เลือก 3 รายการจากหมวด cable
-      const cables = allProducts.filter((p) => p.product_category === "cable");
+      const cables = allProducts.filter((p) => isCategory(p.product_category, ["cable", "Cable & Connector"]));
 
       cables.slice(0, 3).forEach((cable) => {
         lineItemsToInsert.push({
@@ -201,15 +201,13 @@ export const useAutoGenerateLineItems = () => {
       // 7. การดำเนินการ (Operation)
       // ====================================================
       const operations = allProducts
-        .filter((p) => p.product_category === "operation")
+        .filter((p) => isCategory(p.product_category, ["operation", "Operation & Maintenance"]))
         .filter(
           (p) =>
-            // ตรวจสอบช่วง Watt (min <= project <= max)
             (p.min_kw || 0) <= projectSizeWatt &&
             (p.max_kw === null || (p.max_kw || 0) >= projectSizeWatt)
         );
 
-      // เลือกมา 6 รายการ
       operations.slice(0, 6).forEach((op) => {
         lineItemsToInsert.push({
           quotation_id: quotationId,
@@ -225,13 +223,11 @@ export const useAutoGenerateLineItems = () => {
       // FINAL: บันทึกลง Database
       // ====================================================
       if (lineItemsToInsert.length > 0) {
-        // ลบข้อมูลเก่าของ Quotation นี้ทิ้งก่อน (เพื่อไม่ให้ซ้ำซ้อน)
         await supabase
           .from("product_line_items")
           .delete()
           .eq("quotation_id", quotationId);
 
-        // Insert ข้อมูลชุดใหม่
         const { error: insertError } = await supabase
           .from("product_line_items")
           .insert(lineItemsToInsert);

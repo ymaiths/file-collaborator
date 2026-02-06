@@ -6,13 +6,18 @@ import {
   calculateOptimizerQty,
 } from "@/utils/additional-equipment-logic";
 
+// Helper สำหรับเช็คหมวดหมู่
+const isCategory = (productCat: string | null, keys: string[]) => {
+  if (!productCat) return false;
+  return keys.includes(productCat);
+};
+
 export const useAutoGenerateAdditionalItems = () => {
   const [isGeneratingAdditional, setIsGeneratingAdditional] = useState(false);
 
   const generateAdditionalEquipment = async (quotationId: string) => {
     setIsGeneratingAdditional(true);
     try {
-      // 1. ดึงข้อมูล Quotation
       const { data: quote, error: quoteError } = await supabase
         .from("quotations")
         .select("*")
@@ -24,8 +29,6 @@ export const useAutoGenerateAdditionalItems = () => {
       const projectSizeWatt = quote.kw_size || 0;
       const brand = quote.inverter_brand?.toLowerCase() || "";
 
-      // 2. ดึงรายการสินค้าที่บันทึกไปแล้ว (Main Equipment)
-      // เพื่อหา ขนาดแผง และ ขนาด Inverter ที่ถูกเลือกไป
       const { data: existingItems, error: itemsError } = await supabase
         .from("product_line_items")
         .select(
@@ -44,23 +47,21 @@ export const useAutoGenerateAdditionalItems = () => {
 
       if (itemsError) throw itemsError;
 
-      // หาแผงโซลาร์ที่ถูกเลือกไป
+      // ✅ แก้ไข: หา Solar Panel จากรายการที่มีอยู่ (เช็คทั้งเก่าและใหม่)
       const selectedPanelItem = existingItems?.find(
-        (item) => item.products?.product_category === "solar_panel"
+        (item) => isCategory(item.products?.product_category || "", ["solar_panel", "Solar Panel"])
       );
       const panelWatt = selectedPanelItem?.products?.min_kw || 0;
       const totalPanels = selectedPanelItem?.quantity || 0;
 
-      // หา Inverter ที่ถูกเลือกไป (เอาตัวแรกที่เจอที่เป็น Inverter หลัก)
+      // ✅ แก้ไข: หา Inverter (เช็คทั้งเก่าและใหม่)
       const selectedInverterItem = existingItems?.find(
         (item) =>
-          item.products?.product_category === "inverter" &&
-          (item.products?.min_kw || 0) > 0 // ไม่เอา accessories
+          isCategory(item.products?.product_category || "", ["inverter", "Inverter"]) &&
+          (item.products?.min_kw || 0) > 0
       );
-      // แปลง Watt เป็น kW (เช่น 5000 -> 5)
       const inverterKw = (selectedInverterItem?.products?.min_kw || 0) / 1000;
 
-      // 3. ดึง Products ทั้งหมดมาเตรียมเลือก
       const { data: allProducts, error: prodError } = await supabase
         .from("products")
         .select("*");
@@ -74,20 +75,14 @@ export const useAutoGenerateAdditionalItems = () => {
       // 1. Optimizer
       // =========================================================
       if (brand.includes("optimizer")) {
-        // คำนวณขนาดที่ต้องการ
         const targetOptSize = determineOptimizerSize(inverterKw, panelWatt);
 
         if (targetOptSize) {
-          // หา Product ใน Database ที่ตรงกับขนาดนี้
-          // (สมมติว่า product_category ของ optimizer คือ 'inverter' หรือ 'optimizer' ก็ได้ แล้วแต่คุณตั้ง
-          // แต่ในโจทย์ไม่ได้ระบุหมวดมาชัดเจน ผมจะสมมติว่ามันชื่อ 'optimizer' หรืออยู่ใน 'inverter' ที่ชื่อมีคำว่า optimizer)
           const optimizerProduct = allProducts.find(
             (p) =>
-              // เช็คขนาด (min_kw)
               p.min_kw === targetOptSize &&
-              // เช็คว่าเป็น optimizer (ดูจากชื่อหรือหมวด)
-              (p.name.toLowerCase().includes("optimizer") ||
-                (p.product_category as any) === "optimizer")
+              // ✅ แก้ไข: เช็คหมวด Optimizer
+              isCategory(p.product_category, ["optimizer", "Optimizer"])
           );
 
           if (optimizerProduct) {
@@ -110,7 +105,8 @@ export const useAutoGenerateAdditionalItems = () => {
       if (projectSizeWatt >= 30000) {
         const supportInv = allProducts.find(
           (p) =>
-            (p.product_category as any) === "support_inverter" &&
+            // ✅ แก้ไข: เช็คหมวด Support Inverter
+            isCategory(p.product_category, ["support_inverter", "Support Inverter"]) &&
             (p.min_kw || 0) <= projectSizeWatt &&
             (p.max_kw === null || (p.max_kw || 0) >= projectSizeWatt)
         );
@@ -133,7 +129,7 @@ export const useAutoGenerateAdditionalItems = () => {
         // Water service
         const waterService = allProducts.find(
           (p) =>
-            (p.product_category as any) === "service" &&
+            isCategory(p.product_category, ["service", "Service"]) &&
             p.name.toLowerCase().includes("water service")
         );
         if (waterService) {
@@ -150,8 +146,8 @@ export const useAutoGenerateAdditionalItems = () => {
         // Walk way
         const walkway = allProducts.find(
           (p) =>
-            (p.product_category as any) === "service" &&
-            p.name.toLowerCase().includes("walk way") // แก้คำสะกดตาม Database จริงของคุณ
+            isCategory(p.product_category, ["service", "Service"]) &&
+            p.name.toLowerCase().includes("walk way")
         );
         if (walkway) {
           additionalItemsToInsert.push({
@@ -171,7 +167,7 @@ export const useAutoGenerateAdditionalItems = () => {
       if (projectSizeWatt >= 200000 && brand.includes("huawei")) {
         const rapidShutdown = allProducts.find(
           (p) =>
-            (p.product_category as any) === "electrical_management" &&
+            isCategory(p.product_category, ["electrical_management", "Electrical Management"]) &&
             p.name.toLowerCase().includes("rapid shutdown") &&
             p.min_kw === 2
         );
@@ -193,7 +189,7 @@ export const useAutoGenerateAdditionalItems = () => {
       if (projectSizeWatt >= 250000) {
         const pqm = allProducts.find(
           (p) =>
-            (p.product_category as any) === "electrical_management" &&
+            isCategory(p.product_category, ["electrical_management", "Electrical Management"]) &&
             p.name.toLowerCase().includes("pqm512 pro")
         );
         if (pqm) {
@@ -208,14 +204,7 @@ export const useAutoGenerateAdditionalItems = () => {
         }
       }
 
-      // =========================================================
-      // บันทึกลง Database
-      // =========================================================
       if (additionalItemsToInsert.length > 0) {
-        // ใช้การ Insert เพิ่มเข้าไป (ไม่ได้ลบของเก่าทั้งหมด เพราะเดี๋ยว Main Equipment หาย)
-        // **แต่ต้องระวังซ้ำ** ถ้ากดปุ่มสร้างซ้ำๆ อาจจะต้องมี logic เช็คหรือลบเฉพาะหมวด additional ทิ้งก่อน
-        // ในที่นี้สมมติว่าให้ Insert เพิ่มเข้าไปเลย
-
         const { error: insertError } = await supabase
           .from("product_line_items")
           .insert(additionalItemsToInsert);

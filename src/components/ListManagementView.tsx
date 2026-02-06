@@ -6,6 +6,7 @@ import { toast } from "@/hooks/use-toast";
 interface Item {
   id: string;
   name: string;
+  isSystem?: boolean; // ✅ 1. เพิ่ม Optional Prop นี้
 }
 
 interface ListManagementViewProps {
@@ -37,7 +38,6 @@ export const ListManagementView = ({
 }: ListManagementViewProps) => {
   const [items, setItems] = useState(initialItems);
 
-  // [Fix] ซิงค์ข้อมูลเมื่อ Props เปลี่ยน (เช่น โหลดข้อมูลเสร็จแล้ว หรือมีการเพิ่มรายการใหม่)
   useEffect(() => {
     setItems(initialItems);
   }, [initialItems]);
@@ -53,12 +53,10 @@ export const ListManagementView = ({
     if (onDuplicateItem) {
       try {
         await onDuplicateItem(id);
-        // ไม่ต้อง setItems เอง เพราะเดี๋ยว Parent จะ fetch ข้อมูลใหม่มาให้ผ่าน useEffect
       } catch (error) {
         console.error("Duplicate failed", error);
       }
     } else {
-      // Fallback (ทำงานแบบ Local ถ้าไม่มี Handler)
       const newItem = {
         id: `${id}-copy-${Date.now()}`,
         name: `${name} (Copy)`,
@@ -75,12 +73,10 @@ export const ListManagementView = ({
     if (onDeleteItem) {
       try {
         await onDeleteItem(id);
-        // ไม่ต้อง setItems เอง เพราะ Parent จะส่ง props ใหม่มาและ useEffect จะทำงาน
       } catch (error) {
         console.error("Delete failed", error);
       }
     } else {
-      // Fallback กรณีไม่มี Parent Handler (ทำงานแบบ Local)
       setItems(items.filter((item) => item.id !== id));
       toast({
         title: "Deleted",
@@ -97,7 +93,6 @@ export const ListManagementView = ({
   ) => {
     if (onCreateNew) {
       await onCreateNew(name, includeInPrice, isRequired);
-      // ไม่ต้อง setItems เอง เพราะ useEffect ด้านบนจะทำงานเมื่อ parent ส่ง data ใหม่มา
     } else {
       const newItem = {
         id: `new-${Date.now()}`,
@@ -130,7 +125,14 @@ export const ListManagementView = ({
           name={item.name}
           onRename={() => handleRename(item.id)}
           onDuplicate={() => handleDuplicate(item.id, item.name)}
-          onDelete={() => handleDelete(item.id, item.name)}
+          
+          // ✅ 2. เช็ค isSystem: ถ้าเป็น System Category ให้ส่ง undefined เพื่อซ่อน/Disable ปุ่มลบ
+          // (หมายเหตุ: คุณต้องไปแก้ ListItemRow ให้รองรับการรับค่า undefined หรือรับ prop isLocked เพิ่ม ถ้าต้องการแสดงแม่กุญแจ)
+          onDelete={item.isSystem ? undefined : () => handleDelete(item.id, item.name)}
+          
+          // หรือถ้า ListItemRow รับ prop 'isLocked' หรือ 'readOnly' ให้ส่งไปแบบนี้:
+          // isLocked={item.isSystem} 
+          
           onClick={() => handleItemClick(item.id, item.name)}
         />
       ))}
