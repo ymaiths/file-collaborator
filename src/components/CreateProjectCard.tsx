@@ -14,7 +14,7 @@ export const CreateProjectCard = () => {
         <Plus className="w-12 h-12 text-foreground" />
       </div>
       <h3 className="text-lg font-semibold text-center">
-        Created
+        Create
         <br />
         New Project
       </h3>
