@@ -200,12 +200,158 @@ export const DatabaseTabContent = () => {
     }
   };
 
-  // ... (ฟังก์ชัน Duplicate / Create ยังคงเดิม ไม่ต้องแก้) ...
-  const handleDuplicateSalesProgram = async (id: string) => { /* Code เดิม */ };
-  const handleDuplicateCategory = async (id: string) => { /* Code เดิม */ };
-  const handleCreateEquipmentCategory = async (name: string, includeInPrice: boolean, isRequired: boolean) => { /* Code เดิม */ };
-  const handleCreateSalesProgram = async (name: string) => { /* Code เดิม */ };
+  // ------------------------------------------------------------------
+  // 1. ฟังก์ชันสร้างโปรแกรมการขายใหม่
+  // ------------------------------------------------------------------
+  const handleCreateSalesProgram = async (name: string) => {
+    try {
+      const { error } = await supabase
+        .from("sale_packages")
+        .insert({ sale_name: name });
 
+      if (error) throw error;
+
+      toast({
+        title: "สร้างสำเร็จ",
+        description: `สร้างโปรแกรมการขาย "${name}" เรียบร้อยแล้ว`,
+      });
+      fetchSalesPrograms();
+    } catch (error) {
+      console.error("Error creating sales program:", error);
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: "ไม่สามารถสร้างรายการได้",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // ------------------------------------------------------------------
+  // 2. ฟังก์ชันสร้างหมวดหมู่อุปกรณ์ใหม่
+  // ------------------------------------------------------------------
+  const handleCreateEquipmentCategory = async (
+    name: string,
+    includeInPrice: boolean,
+    isRequired: boolean
+  ) => {
+    try {
+      // เนื่องจาก Category อิงจาก column 'product_category' ในตาราง products
+      // เราจึงต้องสร้าง "สินค้าเริ่มต้น" 1 ชิ้น เพื่อให้หมวดหมู่นี้ปรากฏขึ้นมา
+      const { error } = await supabase.from("products").insert({
+        name: "Standard Item", // ชื่อสินค้าเริ่มต้น
+        product_category: name,
+        unit: "Unit",
+        cost_fixed: 0,
+        // คุณอาจต้องเพิ่ม field อื่นๆ ตามที่ database require
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "สร้างสำเร็จ",
+        description: `สร้างหมวดหมู่ "${name}" เรียบร้อยแล้ว`,
+      });
+      fetchEquipmentCategories();
+    } catch (error) {
+      console.error("Error creating category:", error);
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: "ไม่สามารถสร้างหมวดหมู่ได้",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // ------------------------------------------------------------------
+  // 3. ฟังก์ชัน Duplicate โปรแกรมการขาย
+  // ------------------------------------------------------------------
+  const handleDuplicateSalesProgram = async (id: string) => {
+    try {
+      // 3.1 ดึงข้อมูลต้นฉบับ
+      const { data: original, error: fetchError } = await supabase
+        .from("sale_packages")
+        .select("*")
+        .eq("id", id)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      // 3.2 สร้างใหม่โดยต่อท้ายชื่อด้วย (Copy)
+      const { id: _, created_at, updated_at, ...rest } = original;
+      const { data: newPkg, error: insertError } = await supabase
+        .from("sale_packages")
+        .insert({
+          ...rest,
+          sale_name: `${original.sale_name} (Copy)`,
+        })
+        .select()
+        .single();
+
+      if (insertError) throw insertError;
+
+      // (Optional) ถ้าต้องการ Copy ราคาใน sale_package_prices ด้วย ต้องเขียนเพิ่มตรงนี้
+
+      toast({
+        title: "คัดลอกสำเร็จ",
+        description: "สร้างสำเนาโปรแกรมการขายเรียบร้อยแล้ว",
+      });
+      fetchSalesPrograms();
+    } catch (error) {
+      console.error("Error duplicating sales program:", error);
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: "ไม่สามารถคัดลอกรายการได้",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // ------------------------------------------------------------------
+  // 4. ฟังก์ชัน Duplicate หมวดหมู่อุปกรณ์
+  // ------------------------------------------------------------------
+  const handleDuplicateCategory = async (id: string) => {
+    try {
+      // 4.1 ดึงสินค้าทั้งหมดในหมวดเดิม
+      const { data: products, error: fetchError } = await supabase
+        .from("products")
+        .select("*")
+        .eq("product_category", id);
+
+      if (fetchError) throw fetchError;
+      if (!products || products.length === 0) return;
+
+      // 4.2 เตรียมข้อมูลใหม่ โดยเปลี่ยนชื่อหมวดหมู่
+      const newCategoryName = `${id} (Copy)`;
+      
+      const newProducts = products.map((product) => {
+        const { id: _, created_at, updated_at, ...rest } = product;
+        return {
+          ...rest,
+          product_category: newCategoryName,
+        };
+      });
+
+      // 4.3 Insert ข้อมูลชุดใหม่
+      const { error: insertError } = await supabase
+        .from("products")
+        .insert(newProducts);
+
+      if (insertError) throw insertError;
+
+      toast({
+        title: "คัดลอกสำเร็จ",
+        description: `สร้างหมวดหมู่ "${newCategoryName}" เรียบร้อยแล้ว`,
+      });
+      fetchEquipmentCategories();
+    } catch (error) {
+      console.error("Error duplicating category:", error);
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: "ไม่สามารถคัดลอกหมวดหมู่ได้",
+        variant: "destructive",
+      });
+    }
+  };
   return (
     <div>
       <div className="flex gap-2 mb-6">

@@ -9,9 +9,9 @@ import { Button } from "@/components/ui/button";
 
 interface ListItemRowProps {
   name: string;
-  onRename: () => void;
+  onRename?: () => void;
   onDuplicate: () => void;
-  onDelete: () => void;
+  onDelete?: () => void; 
   onClick?: () => void;
 }
 
@@ -37,11 +37,17 @@ export const ListItemRow = ({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={onRename}>Rename</DropdownMenuItem>
+          {onRename && (
+            <DropdownMenuItem onClick={onRename}>Rename</DropdownMenuItem>
+          )}
+          
           <DropdownMenuItem onClick={onDuplicate}>Duplicated</DropdownMenuItem>
-          <DropdownMenuItem onClick={onDelete} className="text-destructive">
-            Deleted
-          </DropdownMenuItem>
+
+          {onDelete && (
+            <DropdownMenuItem onClick={onDelete} className="text-destructive">
+              Delete
+            </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

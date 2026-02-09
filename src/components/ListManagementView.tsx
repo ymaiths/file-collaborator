@@ -123,7 +123,7 @@ export const ListManagementView = ({
         <ListItemRow
           key={item.id}
           name={item.name}
-          onRename={() => handleRename(item.id)}
+          onRename={item.isSystem ? undefined : () => handleRename(item.id)}
           onDuplicate={() => handleDuplicate(item.id, item.name)}
           
           // ✅ 2. เช็ค isSystem: ถ้าเป็น System Category ให้ส่ง undefined เพื่อซ่อน/Disable ปุ่มลบ
