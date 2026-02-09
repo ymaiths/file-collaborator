@@ -223,6 +223,7 @@ export type Database = {
           edited_payment_terms: string | null;
           edited_warranty_terms: string | null;
           edited_note: string | null;
+          edited_discount: number | null;
         };
         Insert: {
           created_at?: string | null;
@@ -243,6 +244,7 @@ export type Database = {
           edited_payment_terms?: string | null;
           edited_warranty_terms?: string | null;
           edited_note?: string | null;
+          edited_discount?: number | null;
         };
         Update: {
           created_at?: string | null;
@@ -263,6 +265,7 @@ export type Database = {
           edited_payment_terms?: string | null;
           edited_warranty_terms?: string | null;
           edited_note?: string | null;
+          edited_discount?: number | null;
         };
         Relationships: [
           {
@@ -352,10 +355,6 @@ export type Database = {
       sale_packages: {
         Row: {
           created_at: string | null;
-          edited_discount: number | null;
-          edited_note: string | null;
-          edited_payment_terms: string | null;
-          edited_warranty_terms: string | null;
           payment_terms: string | null;
           warranty_terms: string | null;
           note: string | null;
@@ -366,10 +365,6 @@ export type Database = {
         };
         Insert: {
           created_at?: string | null;
-          edited_discount?: number | null;
-          edited_note?: string | null;
-          edited_payment_terms?: string | null;
-          edited_warranty_terms?: string | null;
           payment_terms?: string | null;
           warranty_terms?: string | null;
           note?: string | null;
@@ -380,10 +375,6 @@ export type Database = {
         };
         Update: {
           created_at?: string | null;
-          edited_discount?: number | null;
-          edited_note?: string | null;
-          edited_payment_terms?: string | null;
-          edited_warranty_terms?: string | null;
           payment_terms?: string | null;
           warranty_terms?: string | null;
           note?: string | null;

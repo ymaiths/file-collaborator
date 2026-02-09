@@ -233,100 +233,114 @@ const CreateQuotation = () => {
     }
   };
 
+  // ------------------------------------------------------------------
+  // ✅ เพิ่มฟังก์ชันนี้: handleUpdateDiscount
+  // ------------------------------------------------------------------
+  const handleUpdateDiscount = async (value: number) => {
+    if (!currentQuotationId) return;
+    try {
+      const { error } = await supabase
+        .from("quotations")
+        .update({ edited_discount: value })
+        .eq("id", currentQuotationId);
+
+      if (error) throw error;
+      await loadPreviewData(currentQuotationId);
+    } catch (err) {
+      console.error("Update Discount Error:", err);
+      toast({ title: "Error", description: "Failed to update discount", variant: "destructive" });
+    }
+  };
+
+  // ------------------------------------------------------------------
+  // ✅ แก้ไขฟังก์ชัน: loadPreviewData
+  // ------------------------------------------------------------------
   const loadPreviewData = async (quotationId: string) => {
     try {
       const { data: quoteData } = await supabase.from("quotations").select("*").eq("id", quotationId).single();
       const { data: lineItems } = await supabase.from("product_line_items").select(`*, products(*)`).eq("quotation_id", quotationId);
       if (!quoteData || !lineItems) return;
 
-      let rawPayment = "-"; let rawWarranty = "-"; let rawNote = "-";
+      // 1. ดึงค่า Default จาก Sale Package
+      let defaultPayment = "-"; 
+      let defaultWarranty = "-"; 
+      let defaultNote = "-";
+      
       if (quoteData.sale_package_id) {
           const { data: pkgData } = await supabase.from("sale_packages").select("payment_terms, warranty_terms, note").eq("id", quoteData.sale_package_id).maybeSingle();
-          if (pkgData) { rawPayment = pkgData.payment_terms || "-"; rawWarranty = pkgData.warranty_terms || "-"; rawNote = pkgData.note || "-"; }
+          if (pkgData) { 
+            defaultPayment = pkgData.payment_terms || "-"; 
+            defaultWarranty = pkgData.warranty_terms || "-"; 
+            defaultNote = pkgData.note || "-"; 
+          }
       }
-      if (quoteData.edited_payment_terms) rawPayment = quoteData.edited_payment_terms;
-      if (quoteData.edited_warranty_terms) rawWarranty = quoteData.edited_warranty_terms;
-      if (quoteData.edited_note) rawNote = quoteData.edited_note;
 
+      // 2. ✅ ประกาศตัวแปร final... ตรงนี้เลย (เพื่อให้ใช้ข้างล่างได้)
+      // Logic: ถ้าใน quotation มีค่า (ไม่เป็น null) ให้ใช้ค่าที่แก้แล้ว ถ้าไม่มีให้ใช้ default
+      const finalPayment = quoteData.edited_payment_terms !== null ? quoteData.edited_payment_terms : defaultPayment;
+      const finalWarranty = quoteData.edited_warranty_terms !== null ? quoteData.edited_warranty_terms : defaultWarranty;
+      const finalNote = quoteData.edited_note !== null ? quoteData.edited_note : defaultNote;
+      const finalDiscount = quoteData.edited_discount || 0;
+
+      // 3. จัดการ Items A / B (Logic เดิม)
       const mappedItems = lineItems.map((item) => {
           const product = item.products;
           const categoryRaw = product?.product_category || "";
-          const isSectionB = categoryRaw === "operation"; 
+          // เช็ค Section B (ทั้งชื่อเก่าและใหม่)
+          const isSectionB = categoryRaw === "operation" || categoryRaw === "Operation & Maintenance"; 
           return {
              id: item.id,
-             name: product?.name || "Unknown",
-             brand: product?.brand || "-",
+             name: item.edited_name || product?.name || "Unknown",
+             brand: item.edited_brand || product?.brand || "-",
              edited_name: item.edited_name,
              edited_brand: item.edited_brand,
              edited_unit: item.edited_unit,
              category: isSectionB ? "B" : "A",
              _rawCategory: categoryRaw,
              qty: item.quantity || 0,
-             unit: product?.unit || "Unit",
+             unit: item.edited_unit || product?.unit || "Unit",
              matUnit: item.product_price, 
              labUnit: item.installation_price,
              total: (item.product_price || 0) + (item.installation_price || 0)
           };
       });
 
-      const sectionAOrder = [
-        "solar_panel", "Solar Panel",
-        "pv_mounting_structure", "PV Mounting Structure",
-        "inverter", "Inverter",
-        "optimizer", "Optimizer",
-        "zero_export_smart_logger", "Zero Export & Smart Logger",
-        "ac_box", "AC Box",
-        "dc_box", "DC Box",
-        "cable", "Cable & Connector",
-        "service", "Service",
-        "support_inverter", "Support Inverter",
-        "electrical_management", "Electrical Management",
-        "others", "Others"
-      ];
+      // 4. เรียงลำดับ (Logic เดิม)
+      const sectionAOrder = ["solar_panel", "Solar Panel", "pv_mounting_structure", "PV Mounting Structure", "inverter", "Inverter", "optimizer", "Optimizer", "zero_export_smart_logger", "Zero Export & Smart Logger", "ac_box", "AC Box", "dc_box", "DC Box", "cable", "Cable & Connector", "service", "Service", "support_inverter", "Support Inverter", "electrical_management", "Electrical Management", "others", "Others"];
+      
+      const sectionBOrder = ["Electrical drawing, Facility system, layout and schematic", "Common Temporary Facilities, Construction Facilities", "Safety Operation", "Comissioning Test", "Commissioning Test", "Tempolary Utility Expense", "ดำเนินการยื่นเอกสารขออนุญาตการไฟฟ้า/กกพ."];
 
-      const sectionBOrder = [
-        "Electrical drawing, Facility system, layout and schematic",
-        "Common Temporary Facilities, Construction Facilities",
-        "Safety Operation",
-        "Comissioning Test",
-        "Commissioning Test",
-        "Tempolary Utility Expense",
-        "ดำเนินการยื่นเอกสารขออนุญาตการไฟฟ้า/กกพ."
-      ];
+      const itemsA = mappedItems.filter(i => i.category === "A").sort((a, b) => {
+          const idxA = sectionAOrder.indexOf(a._rawCategory); const idxB = sectionAOrder.indexOf(b._rawCategory);
+          return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);
+      });
 
-      const itemsA = mappedItems
-        .filter(i => i.category === "A")
-        .sort((a, b) => {
-           const idxA = sectionAOrder.indexOf(a._rawCategory); 
-           const idxB = sectionAOrder.indexOf(b._rawCategory);
-           return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);
-        });
-
-      const itemsB = mappedItems
-        .filter(i => i.category === "B")
-        .sort((a, b) => {
-           const getOrderIndex = (name: string) => {
-             const index = sectionBOrder.findIndex(key => 
-               name.toLowerCase().includes(key.toLowerCase())
-             );
+      const itemsB = mappedItems.filter(i => i.category === "B").sort((a, b) => {
+          const getOrderIndex = (name: string) => {
+             const index = sectionBOrder.findIndex(key => name.toLowerCase().includes(key.toLowerCase()));
              return index === -1 ? 999 : index;
-           };
+          };
+          return getOrderIndex(a.name) - getOrderIndex(b.name);
+      });
 
-           return getOrderIndex(a.name) - getOrderIndex(b.name);
-        });
-
+      // 5. ✅ Set Data (ตอนนี้รู้จักตัวแปร final... แล้ว)
       setPreviewData({
          customerName: formData.customerName,
          projectName: `โซลาร์เซลล์ ${((quoteData.kw_size||0)/1000)} kW`,
          docNumber: quoteData.document_num || "DRAFT",
          date: new Date().toLocaleDateString("th-TH"),
          quotationId: quoteData.id,
-         items: [...itemsA, ...itemsB], 
-         paymentTerms: parseTerms(rawPayment),
-         warrantyTerms: parseTerms(rawWarranty),
-         remarks: rawNote,
+         items: [...itemsA, ...itemsB],
+         
+         paymentTerms: parseTerms(finalPayment), // ใช้ตัวแปรที่ประกาศไว้ข้างบน
+         warrantyTerms: parseTerms(finalWarranty),
+         remarks: finalNote || "",
+         
+         rawPaymentTerms: finalPayment || "",
+         rawWarrantyTerms: finalWarranty || "",
+         
          vatRate: 0.07,
-         discount: 0 
+         discount: finalDiscount
       });
     } catch (e) { console.error("Preview Error", e); }
   };
@@ -836,6 +850,7 @@ const CreateQuotation = () => {
                         onUpdateTerms={handleUpdateTerms}
                         onUpdateTotalOverride={handleUpdateTotalOverride}
                         onAddItem={handleAddItem}
+                        onUpdateDiscount={handleUpdateDiscount}
                     />
                   </div>
                 ) : (
