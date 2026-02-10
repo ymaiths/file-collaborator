@@ -559,7 +559,7 @@ export const SalesProgramDetail = ({
                                             <SelectItem value="__NEW_BRAND__" className="text-primary font-medium focus:bg-primary/10">
                                                 <div className="flex items-center gap-2">
                                                     <PlusCircle className="h-4 w-4" />
-                                                    <span>เพิ่มใหม่ (พิมพ์เอง)...</span>
+                                                    <span>เพิ่มยี่ห้ออื่นๆ</span>
                                                 </div>
                                             </SelectItem>
                                         </SelectContent>

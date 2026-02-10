@@ -21,8 +21,19 @@ import { useAutoGenerateAdditionalItems } from "@/hooks/useAutoGenerateAdditiona
 import { useCalculatePricing } from "@/hooks/useCalculatePricing";
 import { generateQuotationExcel } from "@/utils/ExportExcel";
 import { QuotationPreview, PreviewData } from "@/components/QuotationPreview";
-import { SelectedProduct } from "@/components/ProductSelector";
 import { calculateDefaultLineItem } from "@/utils/pricing-logic";
+
+// เพิ่ม imports เหล่านี้เข้าไป
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 // Helper function: Brand formatting
 const formatBrandName = (brand: string) => {
@@ -91,6 +102,8 @@ const CreateQuotation = () => {
   });
 
   const [previewData, setPreviewData] = useState<PreviewData | null>(null);
+  const [showRenameDialog, setShowRenameDialog] = useState(false);
+  const [conflictData, setConflictData] = useState<{ id: string; oldName: string; newName: string } | null>(null);
   // ------------------------------------------------------------------
   // Handlers for In-Place Editing & Updates
   // ------------------------------------------------------------------
@@ -448,8 +461,92 @@ const CreateQuotation = () => {
     } finally { setIsLoading(false); }
   };
 
-  const handleExportPDF = () => {
-    toast({ title: "Coming Soon", description: "Feature under development." });
+  // ------------------------------------------------------------------
+  // ✅ 1. Auto-fill: พิมพ์ชื่อเสร็จ -> ดึง Tax ID
+  // ------------------------------------------------------------------
+  const handleNameBlur = async () => {
+    const name = formData.customerName.trim();
+    if (!name) return;
+
+    // ถ้า Tax ID มีอยู่แล้ว ไม่ต้องดึง (เดี๋ยวจะไปตีกันตอน Save แทน)
+    if (formData.customerTaxId) return; 
+
+    try {
+      const { data } = await supabase
+        .from("customers")
+        .select("id, id_tax")
+        .eq("customer_name", name)
+        .maybeSingle();
+
+      if (data && data.id_tax) {
+        setFormData((prev) => ({ ...prev, customerTaxId: data.id_tax || "" }));
+        setCurrentCustomerId(data.id);
+        toast({ title: "Found Customer", description: "Auto-filled Tax ID from database." });
+      }
+    } catch (error) {
+      console.error("Auto-fill error:", error);
+    }
+  };
+
+  // ------------------------------------------------------------------
+  // ✅ 2. Auto-fill: พิมพ์ Tax ID เสร็จ -> ดึงชื่อ
+  // ------------------------------------------------------------------
+  const handleTaxBlur = async () => {
+    const taxId = formData.customerTaxId.trim();
+    if (!taxId) return;
+
+    // ถ้าชื่อมีอยู่แล้ว ไม่ต้องดึง (ให้ Priority ชื่อที่พิมพ์มา)
+    if (formData.customerName) return;
+
+    try {
+      const { data } = await supabase
+        .from("customers")
+        .select("id, customer_name")
+        .eq("id_tax", taxId)
+        .maybeSingle();
+
+      if (data && data.customer_name) {
+        setFormData((prev) => ({ ...prev, customerName: data.customer_name }));
+        setCurrentCustomerId(data.id);
+        toast({ title: "Found Customer", description: "Auto-filled Name from database." });
+      }
+    } catch (error) {
+      console.error("Auto-fill error:", error);
+    }
+  };
+
+  // ------------------------------------------------------------------
+  // ✅ 3. Action เมื่อกด "ตกลง" ใน Popup เปลี่ยนชื่อ
+  // ------------------------------------------------------------------
+  const handleConfirmRename = async () => {
+    if (!conflictData) return;
+    
+    try {
+      setIsLoading(true);
+      // อัปเดตชื่อลูกค้าใน DB
+      const { error } = await supabase
+        .from("customers")
+        .update({ customer_name: conflictData.newName })
+        .eq("id", conflictData.id);
+
+      if (error) throw error;
+
+      toast({ title: "Updated", description: "Customer name updated successfully." });
+      
+      // ปิด Dialog
+      setShowRenameDialog(false);
+      setConflictData(null);
+      setCurrentCustomerId(conflictData.id);
+
+      // เรียก Save อีกครั้ง (คราวนี้จะผ่านฉลุยเพราะชื่อตรงแล้ว)
+      // *หมายเหตุ: ต้องแก้ handleCreateQuotation ให้รับ parameter skipCheck ได้ หรือเรียกซ้ำได้เลย*
+      handleCreateQuotation(true); 
+
+    } catch (error) {
+      console.error("Rename error:", error);
+      toast({ title: "Error", description: "Failed to rename customer.", variant: "destructive" });
+      setIsLoading(false);
+    }
   };
 
   // ------------------------------------------------------------------
@@ -554,12 +651,67 @@ const CreateQuotation = () => {
   // ------------------------------------------------------------------
   // ✅ CREATE / SAVE QUOTATION (With Tax ID Priority Logic)
   // ------------------------------------------------------------------
-  const handleCreateQuotation = async () => {
+  const handleCreateQuotation = async (skipCheck = false) => {
     // 1. Validation
     if (!formData.projectSize || !formData.salesProgram || !formData.brand || !formData.solarPanelSize) {
       toast({ title: "Required", description: "Please fill all required fields (*)", variant: "destructive" });
       return;
     }
+
+    // ---------------------------------------------------------
+    // 🟢 ตรวจสอบความขัดแย้งก่อน Save
+    // ---------------------------------------------------------
+    // ถ้าไม่ใช่การข้าม (คือการกด Save ปกติ ไม่ใช่กดจาก Popup)
+    if (!skipCheck) {
+        const inputName = formData.customerName.trim();
+        const inputTaxId = formData.customerTaxId ? formData.customerTaxId.trim() : "";
+
+        if (inputTaxId) {
+            // 🔍 A. ค้นหาจาก Tax ID ก่อน
+            const { data: taxMatch } = await supabase
+                .from("customers")
+                .select("*")
+                .eq("id_tax", inputTaxId)
+                .maybeSingle();
+
+            if (taxMatch) {
+                // เจอ Tax ID นี้ในระบบ
+                // เปรียบเทียบชื่อ (ตัดช่องว่างซ้ายขวาออกทั้งคู่)
+                if (taxMatch.customer_name.trim() !== inputName) {
+                    // ⚠️ ชื่อไม่ตรง! (Rebranding Case) -> เปิด Popup ถาม
+                    setConflictData({
+                        id: taxMatch.id,
+                        oldName: taxMatch.customer_name,
+                        newName: inputName
+                    });
+                    setShowRenameDialog(true);
+                    return; // ⛔️ หยุดการทำงาน รอ User ตัดสินใจ
+                } 
+                // ถ้าชื่อตรงกันเป๊ะ -> ผ่าน (ไป Save ต่อข้างล่าง)
+            } else {
+                // ไม่เจอ Tax ID นี้ -> แต่ถ้าชื่อไปซ้ำกับคนอื่นที่มี Tax ID ต่างกัน?
+                 const { data: nameMatch } = await supabase
+                    .from("customers")
+                    .select("*")
+                    .eq("customer_name", inputName)
+                    .maybeSingle();
+                 
+                 if (nameMatch && nameMatch.id_tax && nameMatch.id_tax !== inputTaxId) {
+                     // ❌ ชื่อซ้ำ แต่ Tax ID ไม่ตรง -> ห้ามบันทึก
+                     toast({ 
+                        title: "ชื่อลูกค้าซ้ำ!", 
+                        description: `ชื่อ "${inputName}" มีอยู่ในระบบแล้ว (Tax ID: ${nameMatch.id_tax}) กรุณาเปลี่ยนชื่อ`,
+                        variant: "destructive" 
+                    });
+                    return;
+                 }
+            }
+        }
+    }
+
+    // ---------------------------------------------------------
+    // 💾 เริ่มกระบวนการบันทึกจริง
+    // ---------------------------------------------------------
     setIsLoading(true);
 
     try {
@@ -570,87 +722,33 @@ const CreateQuotation = () => {
       let finalName = inputName;
       let finalTaxId = inputTaxId;
 
-      // ---------------------------------------------------------
-      // 🟢 CUSTOMER LOGIC: STRICT NAME UNIQUE
-      // ---------------------------------------------------------
       if (inputName) {
-        
-        // ถ้าอยู่ใน Edit Mode และมี ID แล้ว ให้ข้ามการเช็คซ้ำไปได้เลย (ถือว่าแก้คนเดิม)
-        // แต่ถ้า ID ยังไม่มี (หรือเป็น Quotation ใหม่) ต้องเช็ค
         if (!finalCustomerId) {
-            
-            // 🔍 1. เช็คชื่อซ้ำก่อน (Check Name Conflict)
-            const { data: nameMatch } = await supabase
-                .from("customers")
-                .select("*")
-                .eq("customer_name", inputName)
-                .maybeSingle();
-
-            if (nameMatch) {
-                // ⚠️ เจอชื่อซ้ำ! ต้องเช็ค Tax ID
-                const dbTaxId = nameMatch.id_tax;
-
-                // Condition: ชื่อซ้ำ และ (ใน DB มี Tax ID และ Input ก็มี Tax ID และ ค่าไม่ตรงกัน)
-                if (dbTaxId && inputTaxId && dbTaxId !== inputTaxId) {
-                    setIsLoading(false);
-                    // ❌ BLOCK: แจ้งเตือนผู้ใช้
-                    toast({ 
-                        title: "กรุณาเปลี่ยนชื่อลูกค้าใหม่", 
-                        description: (
-                            <div className="flex flex-col gap-1 mt-2">
-                                <span>ชื่อลูกค้าตรงกับหมายเลขประจำตัวผู้เสียภาษีอื่น</span>
-                                <span>"{inputName}" ในระบบมี Tax ID: {dbTaxId} กรุณาเปลี่ยนชื่อลูกค้าใหม่อีกครั้ง</span>
-                            </div>
-                        ),
-                        variant: "destructive" 
-                    });
-                    return; // ⛔️ หยุดการทำงานทันที
-                }
-
-                // ✅ SAFE: ชื่อซ้ำ แต่ Tax ID ตรงกัน หรือ ใน DB ยังไม่มี Tax ID
-                // ถือว่าเป็นคนเดียวกัน -> Link เลย
-                finalCustomerId = nameMatch.id;
-            
+            // ถ้ายังไม่มี ID (และผ่านด่าน skipCheck มาแล้ว)
+            // ลองหาจาก Tax ID อีกรอบเพื่อความชัวร์ หรือหาจากชื่อ
+            let match = null;
+            if (inputTaxId) {
+                const { data } = await supabase.from("customers").select("*").eq("id_tax", inputTaxId).maybeSingle();
+                match = data;
             } else {
-                // 🔍 2. ชื่อไม่ซ้ำ -> ลองเช็ค Tax ID (เผื่อกรณีเปลี่ยนชื่อบริษัท)
-                if (inputTaxId) {
-                    const { data: taxMatch } = await supabase
-                        .from("customers")
-                        .select("*")
-                        .eq("id_tax", inputTaxId)
-                        .maybeSingle();
-                    
-                    if (taxMatch) {
-                        // เจอ Tax ID เดิม (แต่ชื่อใหม่) -> ถือว่าเปลี่ยนชื่อ
-                        finalCustomerId = taxMatch.id;
-                    }
-                }
+                const { data } = await supabase.from("customers").select("*").eq("customer_name", inputName).maybeSingle();
+                match = data;
+            }
+
+            if (match) {
+                finalCustomerId = match.id;
             }
         }
 
-        // ---------------------------------------------------------
-        // 💾 SAVE / UPDATE CUSTOMER
-        // ---------------------------------------------------------
+        // SAVE / UPDATE CUSTOMER
         if (finalCustomerId) {
-            // ✅ เจอตัวตน (Update / Merge)
-            
-            // ดึงข้อมูลล่าสุดมาก่อน เพื่อทำ Auto-fill ในส่วนที่เป็น Null
-            const { data: currentDbData } = await supabase.from("customers").select("*").eq("id", finalCustomerId).single();
-            
-            if (currentDbData) {
-                 // Logic: ยึด Input เป็นหลัก, ถ้า Input ว่างให้ใช้ DB
-                 if (!finalName) finalName = currentDbData.customer_name;
-                 if (!finalTaxId) finalTaxId = currentDbData.id_tax || "";
-            }
-
-            // Update DB
+            // Update
             await supabase.from("customers").update({ 
                 customer_name: finalName,
                 id_tax: finalTaxId || null
             }).eq("id", finalCustomerId);
-
         } else {
-            // 🆕 สร้างลูกค้าใหม่ (New)
+            // New Insert
             const { data: newCustomer, error: createError } = await supabase
               .from("customers")
               .insert({ 
@@ -668,6 +766,7 @@ const CreateQuotation = () => {
         setFormData(prev => ({ ...prev, customerName: finalName, customerTaxId: finalTaxId }));
         setCurrentCustomerId(finalCustomerId);
       }
+
       // Sale Package & KW Logic
       let salePackageId = null;
       if (formData.salesProgram) {
@@ -716,6 +815,7 @@ const CreateQuotation = () => {
         await loadPreviewData(targetId);
       }
       setShowQuotation(true);
+
     } catch (error) {
       console.error("Error creating/updating quotation:", error);
       toast({ title: "Error", description: "Failed to save quotation.", variant: "destructive" });
@@ -723,7 +823,6 @@ const CreateQuotation = () => {
       setIsLoading(false);
     }
   };
-
   const handleEditQuotation = async () => {
     if (!isEditMode) {
       setIsEditMode(true);
@@ -759,11 +858,11 @@ const CreateQuotation = () => {
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-1">
                 <Label className="text-xs text-muted-foreground">Customer</Label>
-                <Input className="h-9 mt-1" placeholder="Name" value={formData.customerName} onChange={(e) => handleInputChange("customerName", e.target.value)} />
+                <Input className="h-9 mt-1" placeholder="Name" value={formData.customerName} onChange={(e) => handleInputChange("customerName", e.target.value)} onBlur={handleNameBlur} />
               </div>
               <div className="col-span-1">
                 <Label className="text-xs text-muted-foreground">Tax ID</Label>
-                <Input className="h-9 mt-1" placeholder="Tax ID" value={formData.customerTaxId} onChange={(e) => handleInputChange("customerTaxId", e.target.value)} />
+                <Input className="h-9 mt-1" placeholder="Tax ID" value={formData.customerTaxId} onChange={(e) => handleInputChange("customerTaxId", e.target.value)} onBlur={handleNameBlur} />
               </div>
 
               <div className="col-span-1">
@@ -824,7 +923,7 @@ const CreateQuotation = () => {
             </div>
 
             <div className="mt-4 pt-2 border-t">
-              <Button onClick={handleCreateQuotation} size="sm" disabled={isLoading} className="w-full h-10">
+              <Button onClick={() => handleCreateQuotation(false)} size="sm" disabled={isLoading} className="w-full h-10">
                 {isLoading ? "Saving..." : (currentQuotationId ? "Save Changes" : "Create Quotation")}
               </Button>
             </div>
@@ -837,7 +936,6 @@ const CreateQuotation = () => {
             <div className="bg-card rounded-lg shadow-sm p-4 relative border border-border animate-in fade-in">
               <div className="absolute top-3 right-3 flex gap-2 z-10">
                 <Button variant="outline" size="sm" onClick={handleEditQuotation}>{isEditMode ? "Done" : "Edit"}</Button>
-                <Button variant="outline" size="sm" onClick={handleExportPDF}>PDF</Button>
                 <Button variant="outline" size="sm" onClick={handleExportExcel}>EXCEL</Button>
               </div>
               <div className="flex flex-col items-center justify-center min-h-[400px] overflow-auto mt-12">
@@ -861,6 +959,22 @@ const CreateQuotation = () => {
           </div>
         )}
       </div>
+      <AlertDialog open={showRenameDialog} onOpenChange={setShowRenameDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>ยืนยันการเปลี่ยนชื่อลูกค้า</AlertDialogTitle>
+            <AlertDialogDescription>
+              หมายเลขผู้เสียภาษี <b>{formData.customerTaxId}</b><br/>
+              เดิมชื่อ: <b className="text-destructive">{conflictData?.oldName}</b><br/><br/>
+              ต้องการเปลี่ยนชื่อเป็น: <b className="text-green-600">{conflictData?.newName}</b> หรือไม่?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConflictData(null)}>ยกเลิก</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmRename}>ตกลง</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
