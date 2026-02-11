@@ -224,27 +224,25 @@ const CreateQuotation = () => {
     }
   };
 
-  const handleUpdateTotalOverride = async (type: 'net' | 'grand', value: number) => {
+const handleUpdateTotalOverride = async (type: 'net' | 'grand', value: number) => {
      if (!currentQuotationId) return;
      try {
-        let newNetTotal = 0;
-        const currentDiscount = previewData?.discount || 0; 
+        // ✅ ส่งค่าให้ถูก Key แล้วปล่อยให้ Hook คำนวณเอง
         if (type === 'net') {
-            newNetTotal = value;
+            // กรณีแก้ Net Total (ค่าของ)
+            await calculateAndSavePricing(currentQuotationId, { manualNetTotal: value });
         } else {
-            const totalAfterVatRemoved = value / 1.07;
-            newNetTotal = totalAfterVatRemoved + currentDiscount;
-            newNetTotal = Math.round((newNetTotal + Number.EPSILON) * 100) / 100;
+            // กรณีแก้ Grand Total (ยอดสุทธิ)
+            await calculateAndSavePricing(currentQuotationId, { manualGrandTotal: value });
         }
-        await calculateAndSavePricing(currentQuotationId, newNetTotal);
+        
         await loadPreviewData(currentQuotationId);
-        toast({ title: "Pricing Updated", description: "Re-calculated based on new total." });
+        toast({ title: "Pricing Updated", description: "Re-calculated successfully." });
      } catch (error) {
         console.error("Total Override Error:", error);
         toast({ title: "Error", description: "Failed to update total.", variant: "destructive" });
      }
   };
-
   const handleUpdateTerms = async (field: string, value: string) => {
     try {
        const { error } = await supabase.from("quotations").update({ [field]: value }).eq("id", currentQuotationId);
@@ -262,19 +260,15 @@ const CreateQuotation = () => {
   const handleUpdateDiscount = async (value: number) => {
     if (!currentQuotationId) return;
     try {
-      const { error } = await supabase
-        .from("quotations")
-        .update({ edited_discount: value })
-        .eq("id", currentQuotationId);
+      // ✅ ใช้ Hook เพื่อให้มันคำนวณ Grand Total ใหม่ (Net - Discount + VAT)
+      await calculateAndSavePricing(currentQuotationId, { manualDiscount: value });
 
-      if (error) throw error;
       await loadPreviewData(currentQuotationId);
     } catch (err) {
       console.error("Update Discount Error:", err);
       toast({ title: "Error", description: "Failed to update discount", variant: "destructive" });
     }
   };
-
   // ------------------------------------------------------------------
   // ✅ แก้ไขฟังก์ชัน: loadPreviewData
   // ------------------------------------------------------------------
@@ -908,24 +902,20 @@ const CreateQuotation = () => {
     }
   };
 
-  // ------------------------------------------------------------------
-  // ✅ 1. ฟังก์ชันสำหรับปุ่ม Reset (ล้างไพ่ เริ่มใบเสนอราคาใหม่)
-  // ------------------------------------------------------------------
-  // ------------------------------------------------------------------
-  // ✅ ฟังก์ชันปุ่ม Reset (คืนค่า Default โดยใช้ Input เดิม)
+// ------------------------------------------------------------------
+  // ✅ ฟังก์ชันปุ่ม Reset (คืนค่า Default และล้างค่า Edited ทั้งหมด)
   // ------------------------------------------------------------------
   const handleReset = async () => {
     if (!currentQuotationId) return;
 
     // ถามยืนยันก่อน เพราะค่าที่แก้ไว้จะหายหมด
-    if (!window.confirm("คุณต้องการรีเซ็ตรายการสินค้าทั้งหมดกลับเป็นค่าเริ่มต้นหรือไม่? \n(ค่าที่คุณแก้ไขราคาหรือชื่อไว้จะหายไป)")) {
+    if (!window.confirm("คุณต้องการรีเซ็ตรายการสินค้าทั้งหมดกลับเป็นค่าเริ่มต้นหรือไม่? \n(ราคาที่แก้ไข, ส่วนลด, และรายการที่เพิ่มเอง จะหายไปทั้งหมด)")) {
       return;
     }
 
     setIsLoading(true);
     try {
-      // 1. อัปเดต Header ให้ตรงกับหน้าจอปัจจุบันล่าสุด
-      // (เผื่อมีการแก้ Project Size แล้วกด Reset เลย โดยยังไม่กด Save)
+      // 1. เตรียมข้อมูล Header ปัจจุบัน
       const projectSizeVal = formData.projectSize ? parseFloat(formData.projectSize) : 0;
       const panelSizeVal = formData.solarPanelSize ? parseFloat(formData.solarPanelSize) : 0;
       const { kwPeak } = calculateSystemSpecs(projectSizeVal, panelSizeVal);
@@ -936,6 +926,7 @@ const CreateQuotation = () => {
         if (selectedProgram) salePackageId = selectedProgram.id;
       }
 
+      // 2. อัปเดต Header และ ✅ ล้างค่า Edited กลับเป็น 0
       await supabase.from("quotations").update({
         kw_size: projectSizeVal,
         kw_panel: panelSizeVal,
@@ -943,24 +934,29 @@ const CreateQuotation = () => {
         inverter_brand: formData.brand,
         electrical_phase: formData.electricalPhase,
         sale_package_id: salePackageId,
+        
+        // 🗑️ ล้างค่าที่เคย Manual ไว้
+        edited_price: 0,        // ล้างราคาที่เคยแก้ (เพื่อให้กลับไปใช้ราคา Standard)
+        edited_discount: 0,     // ล้างส่วนลด (ถ้าใน DB ใช้ชื่อ discount_price ให้แก้ตรงนี้เป็น discount_price: 0)
+        
         updated_at: new Date().toISOString()
       }).eq("id", currentQuotationId);
 
-      // 2. สั่ง Generate ใหม่ทันที (โดยไม่มีขั้นตอน Snapshot/Restore)
-      // ฟังก์ชันนี้จะลบรายการเก่าทิ้ง และสร้างใหม่ตามสูตรมาตรฐาน
+      // 3. สั่ง Generate ใหม่ (ลบของเก่า -> สร้างของใหม่)
       console.log("🔄 Resetting to defaults...");
       await generateMainEquipment(currentQuotationId);
       await generateAdditionalEquipment(currentQuotationId);
 
-      // 3. คำนวณราคาใหม่
+      // 4. คำนวณราคาใหม่ 
+      // (พอ edited_price เป็น 0 ระบบจะไปดึงราคา Standard จาก Sale Package มาใช้เอง)
       await calculateAndSavePricing(currentQuotationId);
       
-      // 4. โหลดหน้า Preview ใหม่
+      // 5. โหลดหน้า Preview ใหม่
       await loadPreviewData(currentQuotationId);
 
       toast({
         title: "Reset Successful",
-        description: "คืนค่ารายการสินค้าเป็นค่ามาตรฐานเรียบร้อย",
+        description: "คืนค่ารายการสินค้าและราคาเป็นค่ามาตรฐานเรียบร้อย",
       });
 
     } catch (error) {
