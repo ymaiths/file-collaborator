@@ -90,9 +90,7 @@ export function ProductSelector({ onSelect, section }: ProductSelectorProps) {
             </CommandEmpty>
             <CommandGroup>
               {products.map((product) => {
-                // ✅ 1. กรองขนาด Watt < 10
-                const showWatt = product.min_kw && product.min_kw >= 10;
-                
+                const showWatt = (product.min_kw || 0) >= 10;
                 // ✅ 2. สร้าง Search Key สำหรับกรอง Name, Brand, Category, Spec
                 const searchKey = `${product.name} ${product.product_category || ""} ${product.brand || ""} ${product.min_kw || ""}`;
                 
