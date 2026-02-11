@@ -29,7 +29,7 @@ export const useCalculatePricing = () => {
   const calculateAndSavePricing = async (quotationId: string, manualTargetPrice?: number) => {
     setIsLoading(true);
     // console.clear();
-    console.group("🚀 PRICING: 3-ROUND LOGIC + TARGET OVERRIDE");
+    console.group("🚀 PRICING: DB-BASED TARGET OVERRIDE");
 
     try {
       // 1. Fetch Data
@@ -43,13 +43,28 @@ export const useCalculatePricing = () => {
       const projectSizeWatt = quote.kw_size || 0;
       let TOTAL_PROJECT_PRICE = 0;
 
+      // ตัวแปรเช็คว่าต้องอัปเดตค่า edited_price ลง DB ไหม
+      let shouldUpdateEditedPrice = false;
+      let newEditedPriceVal = quote.edited_price || 0;
+
       // =========================================================
-      // 2. Determine Target Price (DB vs Manual)
+      // 2. Determine Target Price (Priority: Manual Arg > DB Edited > Standard)
       // =========================================================
+      
+      // ✅ CASE A: มีการส่งค่ามาใหม่ (User พิมพ์แก้ Net Total) -> ให้ใช้ค่านั้น และเตรียมบันทึก
       if (manualTargetPrice !== undefined && manualTargetPrice !== null) {
           TOTAL_PROJECT_PRICE = manualTargetPrice;
+          shouldUpdateEditedPrice = true;       // สั่งให้บันทึกลง DB ด้วย
+          newEditedPriceVal = manualTargetPrice; 
           console.log(`🎯 MANUAL TARGET OVERRIDE: ${TOTAL_PROJECT_PRICE.toLocaleString()}`);
-      } else {
+      } 
+      // ✅ CASE B: ไม่ได้ส่งค่ามา แต่ใน DB มีค่าที่เคยแก้ไว้ (Edited Price) -> ให้ใช้ค่าเดิมจาก DB
+      else if (quote.edited_price && quote.edited_price > 0) {
+          TOTAL_PROJECT_PRICE = quote.edited_price;
+          console.log(`🎯 TARGET FROM DB (SAVED): ${TOTAL_PROJECT_PRICE.toLocaleString()}`);
+      } 
+      // ✅ CASE C: ไม่เคยแก้อะไรเลย -> ใช้ราคา Standard
+      else {
           const brand = quote.inverter_brand || "";
           const phase = quote.electrical_phase || "single_phase";
           const salePackageId = quote.sale_package_id;
@@ -76,7 +91,7 @@ export const useCalculatePricing = () => {
                 TOTAL_PROJECT_PRICE = Math.round((priceData.price_percentage || 0) * projectSizeWatt);
               }
           }
-          console.log(`💰 DB TARGET PRICE: ${TOTAL_PROJECT_PRICE.toLocaleString()}`);
+          console.log(`💰 DB STANDARD TARGET: ${TOTAL_PROJECT_PRICE.toLocaleString()}`);
       }
 
       // 3. Line Items
@@ -133,21 +148,11 @@ export const useCalculatePricing = () => {
 
       items = items.map(item => {
           // ✅ CHECK POINT 1: Excluded OR Additional Item -> Fixed Price (Lock)
-          // ถ้าเป็นของไม่รวมในแพ็ค หรือ เป็นของ User เพิ่มเอง -> ล็อคราคาเลย
           if (!item.isIncluded || item.is_additional_item) {
               const finalEq = item.is_edited_product_price ? item.finalPriceEq : item.costEq;
               const finalInst = item.is_edited_installation_price ? item.finalPriceInst : item.costInst;
               
-              // บวกเข้า Fixed Price (คือราคาที่ต้องจ่ายแน่ๆ ไม่อยู่ในงบเหมา)
-              // ⚠️ แต่เดี๋ยวก่อน! ถ้าเป็น Additional Item ราคาของมันคือ "ส่วนเพิ่ม" 
-              // ดังนั้นมันไม่ควรไปกินเนื้อ "งบเหมา (Target Price)" ของ Standard Items
-              // ถ้า Target Price คือราคารวมของทั้งโครงการ (รวม Add-on ด้วย) -> ก็ต้องบวกเข้าไป
-              // แต่ถ้า Target Price คือราคาแพ็คเกจเพียวๆ -> ต้องระวัง
-              
-              // สมมติ: TOTAL_PROJECT_PRICE คือราคาขายสุดท้ายที่ User อยากเห็น
-              // ดังนั้น Add-on ก็เป็นส่วนหนึ่งของราคานั้น -> บวกเข้าไปใน totalFixedPrice ถูกแล้ว
               totalFixedPrice += finalEq + finalInst;
-              
               return { ...item, finalPriceEq: finalEq, finalPriceInst: finalInst };
           }
           return item;
@@ -295,13 +300,9 @@ export const useCalculatePricing = () => {
               (item.products?.product_category === "cable" || (item.products?.name || "").includes("สายไฟ"))
           );
           
-          // ... (ส่วน Logic การเกลี่ยเศษ Wire Dump ของเดิมใช้ได้เลย เพราะเรากรอง Add-on ออกแล้ว) ...
-          
           if (wireIndex !== -1) {
               const item = items[wireIndex];
-              const before = item.finalPriceEq;
-              // ... code เดิม
-               if (diff2 < 0 && (item.finalPriceEq + diff2) < 0) {
+              if (diff2 < 0 && (item.finalPriceEq + diff2) < 0) {
                     const deductable = item.finalPriceEq;
                     item.finalPriceEq = 0;
                     const remainingDiff = diff2 + deductable;
@@ -336,7 +337,7 @@ export const useCalculatePricing = () => {
       console.groupEnd();
 
       // =========================================================
-      // Save
+      // 4. Save Updates
       // =========================================================
       const finalUpdates = items.map((item) => ({
             id: item.id,
@@ -350,7 +351,17 @@ export const useCalculatePricing = () => {
         )
       );
 
-      await supabase.from("quotations").update({ updated_at: new Date().toISOString() }).eq("id", quotationId);
+      // ✅ จุดที่แก้ไข: บันทึก edited_price ลง DB ด้วย
+      const quoteUpdatePayload: any = { 
+          updated_at: new Date().toISOString() 
+      };
+
+      if (shouldUpdateEditedPrice) {
+          quoteUpdatePayload.edited_price = newEditedPriceVal;
+          console.log("💾 Saving edited_price to DB:", newEditedPriceVal);
+      }
+
+      await supabase.from("quotations").update(quoteUpdatePayload).eq("id", quotationId);
       
       console.groupEnd();
       toast({ title: "คำนวณราคาสำเร็จ", description: `Updated Total: ${TOTAL_PROJECT_PRICE.toLocaleString()}` });
