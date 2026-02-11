@@ -1,7 +1,8 @@
 import React from "react";
 import { EditableCell } from "./EditableCell";
 import { ProductSelector, SelectedProduct } from "./ProductSelector";
-import { Textarea } from "@/components/ui/textarea"; 
+import { Textarea } from "@/components/ui/textarea";
+import { Minus } from "lucide-react"; 
 // Helper จัดรูปแบบเงิน
 const formatCurrency = (num: number | undefined | null) => {
   if (num === undefined || num === null || isNaN(num)) return ""; 
@@ -44,9 +45,10 @@ interface QuotationPreviewProps {
   onUpdateDiscount: (value: number) => void;
   onUpdateTotalOverride?: (type: 'net' | 'grand', value: number) => void;
   onAddItem?: (section: "A" | "B", item: SelectedProduct) => void;
+  onDeleteItem?: (itemId: string) => void;
 }
 
-export const QuotationPreview = ({ data, isEditMode, onUpdateItem, onUpdateTerms, onUpdateTotalOverride,onAddItem,onUpdateDiscount }: QuotationPreviewProps) => {
+export const QuotationPreview = ({ data, isEditMode, onUpdateItem, onUpdateTerms, onUpdateTotalOverride,onAddItem,onUpdateDiscount,onDeleteItem }: QuotationPreviewProps) => {
   if (!data) return <div className="text-center p-10 text-xs">กำลังโหลดตัวอย่าง...</div>;
 
   const itemsA = data.items.filter((i) => i.category === "A");
@@ -75,6 +77,7 @@ export const QuotationPreview = ({ data, isEditMode, onUpdateItem, onUpdateTerms
               ? item[`edited_${field}`] 
               : item[field];
   };
+  const totalCols = isEditMode ? 11 : 10;
   
   return (
     <div className="bg-white p-[10mm] shadow-lg text-gray-800 border border-gray-200 w-full mx-auto font-sans box-border">
@@ -114,8 +117,22 @@ export const QuotationPreview = ({ data, isEditMode, onUpdateItem, onUpdateTerms
           )}
           {itemsA.map((item, idx) => (
             <tr key={`a-${item.id || idx}`}>
-              <td className={`${borderClass} text-center`}>{idx + 1}</td>
-              
+              {/* ✅ ปุ่มลบ */}
+              <td className={`${borderClass} text-center`}>
+                <div className="flex items-center justify-center gap-1">
+                  {isEditMode && (
+                    <button 
+                      onClick={() => onDeleteItem?.(item.id)}
+                      className="text-red-500 hover:text-red-700 transition-colors"
+                      title="ลบรายการ"
+                    >
+                      <Minus size={14} />
+                    </button>
+                  )}
+                  <span>{idx + 1}</span>
+                </div>
+              </td>
+
               {/* 1. รายการ */}
               <td className={`${borderClass}`}>
                 <EditableCell 
@@ -221,8 +238,22 @@ export const QuotationPreview = ({ data, isEditMode, onUpdateItem, onUpdateTerms
           )}
           {itemsB.map((item, idx) => (
             <tr key={`b-${item.id || idx}`}>
-              <td className={`${borderClass} text-center`}>{itemsA.length + idx + 1}</td>
-              
+              {/* ✅ ปุ่มลบ */}
+              <td className={`${borderClass} text-center`}>
+                <div className="flex items-center justify-center gap-1">
+                  {isEditMode && (
+                    <button 
+                      onClick={() => onDeleteItem?.(item.id)}
+                      className="text-red-500 hover:text-red-700 transition-colors"
+                      title="ลบรายการ"
+                    >
+                      <Minus size={14} />
+                    </button>
+                  )}
+                  <span>{itemsA.length + idx + 1}</span>
+                </div>
+              </td>
+
               <td className={`${borderClass}`}>
                 <EditableCell 
                   isEditMode={isEditMode}
@@ -292,8 +323,7 @@ export const QuotationPreview = ({ data, isEditMode, onUpdateItem, onUpdateTerms
         <tfoot>
           <tr>
             <td colSpan={7} className="border border-gray-400 p-0 align-top h-[1px]">
-                <div className="flex flex-col h-full min-h-[160px] p-3 border-r border-gray-400">
-                    
+              <div className="flex flex-col h-full min-h-[160px] p-3 border-r border-gray-400">
                     {/* ✅ 1. Payment Terms (Editable) */}
                     <div className="mb-3">
                       <h4 className="font-bold mb-1 underline decoration-gray-400 underline-offset-2 text-xs">เงื่อนไขการชำระเงิน</h4>
@@ -367,7 +397,7 @@ export const QuotationPreview = ({ data, isEditMode, onUpdateItem, onUpdateTerms
                       )}
                     </div>
 
-                </div>
+              </div>
             </td>
 
             {/* --- RIGHT BLOCK (Totals) --- */}
