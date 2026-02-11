@@ -32,6 +32,8 @@ export interface PreviewData {
   remarks: string;
   vatRate: number;
   discount?: number;
+  electricalPhase?: string; 
+  inverterBrand?: string;
 }
 
 interface QuotationPreviewProps {

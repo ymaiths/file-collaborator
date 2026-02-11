@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Check, ChevronsUpDown, Plus } from "lucide-react";
+import { ChevronsUpDown, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,12 +18,10 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
 
-// ✅ 1. Update Interface to include ALL fields
 export interface SelectedProduct {
   id: string | null;
   name: string;
   isNew: boolean;
-  // Optional fields that come from DB
   brand?: string | null;
   unit?: string | null;
   min_kw?: number | null;
@@ -43,7 +41,6 @@ interface ProductSelectorProps {
 
 export function ProductSelector({ onSelect, section }: ProductSelectorProps) {
   const [open, setOpen] = useState(false);
-  // ✅ 2. Update State Type to allow all fields
   const [products, setProducts] = useState<any[]>([]); 
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -51,35 +48,20 @@ export function ProductSelector({ onSelect, section }: ProductSelectorProps) {
     const fetchProducts = async () => {
       const { data } = await supabase
         .from("products")
-        .select(`
-          id, 
-          name, 
-          brand, 
-          unit, 
-          min_kw,
-          product_category,
-          is_fixed_cost,
-          cost_fixed,
-          cost_percentage,
-          is_fixed_installation_cost,
-          fixed_installation_cost,
-          installation_cost_percentage
-        `)
+        .select(`*`) // ดึงมาทั้งหมดเพื่อใช้ในงานคำนวณราคา
         .order("name");
       
       if (data) setProducts(data);
     };
     fetchProducts();
-  }, []); // Removed [open] dependency to prevent repeated fetches
+  }, []);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
-          role="combobox"
-          aria-expanded={open}
-          className="w-full justify-between text-xs h-9 bg-white border-gray-400 text-gray-600 hover:bg-blue-50"
+          className="w-full justify-between text-xs h-9 bg-white border-gray-400 text-gray-600"
         >
           <span className="flex items-center gap-2">
              <Plus className="h-3 w-3" /> เพิ่มรายการ...
@@ -90,52 +72,53 @@ export function ProductSelector({ onSelect, section }: ProductSelectorProps) {
       <PopoverContent className="w-[400px] p-0" align="center">
         <Command>
           <CommandInput 
-            placeholder="ค้นหาชื่อสินค้า หรือ ยี่ห้อ..." 
+            placeholder="พิมพ์เพื่อค้นหา (ชื่อ, หมวดหมู่, ยี่ห้อ, ขนาด...)" 
             onValueChange={setSearchQuery} 
           />
           <CommandList>
             <CommandEmpty className="py-3 px-3 text-center">
-                <p className="text-sm text-gray-500 mb-2">ไม่พบสินค้าในระบบ</p>
                 <Button 
                     size="sm" 
-                    variant="default"
                     className="w-full"
                     onClick={() => {
                         onSelect({ id: null, name: searchQuery, isNew: true }); 
                         setOpen(false);
                     }}
                 >
-                    <Plus className="mr-1 h-3 w-3" /> สร้างใหม่: "{searchQuery}"
+                    <Plus className="mr-1 h-3 w-3" /> สร้างรายการใหม่: "{searchQuery}"
                 </Button>
             </CommandEmpty>
-            <CommandGroup heading="เลือกจากรายการที่มีอยู่">
+            <CommandGroup>
               {products.map((product) => {
-                const searchKey = `${product.name} ${product.brand || ""} ${product.min_kw || ""}`;
+                // ✅ 1. กรองขนาด Watt < 10
+                const showWatt = product.min_kw && product.min_kw >= 10;
+                
+                // ✅ 2. สร้าง Search Key สำหรับกรอง Name, Brand, Category, Spec
+                const searchKey = `${product.name} ${product.product_category || ""} ${product.brand || ""} ${product.min_kw || ""}`;
                 
                 return (
                     <CommandItem
                     key={product.id}
                     value={searchKey}
                     onSelect={() => {
-                        // ✅ 3. CRITICAL FIX: Spread the entire product object
-                        // This passes cost_fixed, cost_percentage, etc. to the parent
-                        onSelect({ 
-                            ...product, 
-                            isNew: false 
-                        });
+                        onSelect({ ...product, isNew: false });
                         setOpen(false);
                     }}
                     className="flex flex-col items-start gap-1 py-2 cursor-pointer border-b last:border-0"
                     >
                         <div className="flex items-center justify-between w-full">
                             <span className="font-medium">{product.name}</span>
-                            {product.min_kw && <Badge variant="secondary" className="text-[10px] h-5">{product.min_kw} kW</Badge>}
+                            {/* ✅ แสดง Watt พร้อมลูกน้ำเฉพาะที่ >= 10 */}
+                            {showWatt && (
+                              <Badge variant="secondary" className="text-[10px] h-5">
+                                {Number(product.min_kw).toLocaleString()} Watt
+                              </Badge>
+                            )}
                         </div>
-                        {product.brand && (
-                            <span className="text-xs text-muted-foreground">
-                                Brand: <span className="text-primary font-semibold">{product.brand}</span>
-                            </span>
-                        )}
+                        <div className="flex gap-2 text-[10px] text-muted-foreground uppercase">
+                            {product.brand && <span>Brand: {product.brand}</span>}
+                            {product.product_category && <span>Category: {product.product_category}</span>}
+                        </div>
                     </CommandItem>
                 )
               })}

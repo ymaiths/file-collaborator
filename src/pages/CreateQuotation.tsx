@@ -357,7 +357,9 @@ const handleUpdateTotalOverride = async (type: 'net' | 'grand', value: number) =
          rawWarrantyTerms: finalWarranty || "",
          
          vatRate: 0.07,
-         discount: finalDiscount
+         discount: finalDiscount,
+         electricalPhase: formData.electricalPhase,
+         inverterBrand: formData.brand
       });
     } catch (e) { console.error("Preview Error", e); }
   };
@@ -902,20 +904,24 @@ const handleUpdateTotalOverride = async (type: 'net' | 'grand', value: number) =
     }
   };
 
-// ------------------------------------------------------------------
-  // ✅ ฟังก์ชันปุ่ม Reset (คืนค่า Default และล้างค่า Edited ทั้งหมด)
+  // ------------------------------------------------------------------
+  // ✅ 1. ฟังก์ชันสำหรับปุ่ม Reset (ล้างไพ่ เริ่มใบเสนอราคาใหม่)
+  // ------------------------------------------------------------------
+  // ------------------------------------------------------------------
+  // ✅ ฟังก์ชันปุ่ม Reset (คืนค่า Default โดยใช้ Input เดิม)
   // ------------------------------------------------------------------
   const handleReset = async () => {
     if (!currentQuotationId) return;
 
     // ถามยืนยันก่อน เพราะค่าที่แก้ไว้จะหายหมด
-    if (!window.confirm("คุณต้องการรีเซ็ตรายการสินค้าทั้งหมดกลับเป็นค่าเริ่มต้นหรือไม่? \n(ราคาที่แก้ไข, ส่วนลด, และรายการที่เพิ่มเอง จะหายไปทั้งหมด)")) {
+    if (!window.confirm("คุณต้องการรีเซ็ตรายการสินค้าทั้งหมดกลับเป็นค่าเริ่มต้นหรือไม่? \n(ค่าที่คุณแก้ไขราคาหรือชื่อไว้จะหายไป)")) {
       return;
     }
 
     setIsLoading(true);
     try {
-      // 1. เตรียมข้อมูล Header ปัจจุบัน
+      // 1. อัปเดต Header ให้ตรงกับหน้าจอปัจจุบันล่าสุด
+      // (เผื่อมีการแก้ Project Size แล้วกด Reset เลย โดยยังไม่กด Save)
       const projectSizeVal = formData.projectSize ? parseFloat(formData.projectSize) : 0;
       const panelSizeVal = formData.solarPanelSize ? parseFloat(formData.solarPanelSize) : 0;
       const { kwPeak } = calculateSystemSpecs(projectSizeVal, panelSizeVal);
@@ -926,7 +932,6 @@ const handleUpdateTotalOverride = async (type: 'net' | 'grand', value: number) =
         if (selectedProgram) salePackageId = selectedProgram.id;
       }
 
-      // 2. อัปเดต Header และ ✅ ล้างค่า Edited กลับเป็น 0
       await supabase.from("quotations").update({
         kw_size: projectSizeVal,
         kw_panel: panelSizeVal,
@@ -934,29 +939,24 @@ const handleUpdateTotalOverride = async (type: 'net' | 'grand', value: number) =
         inverter_brand: formData.brand,
         electrical_phase: formData.electricalPhase,
         sale_package_id: salePackageId,
-        
-        // 🗑️ ล้างค่าที่เคย Manual ไว้
-        edited_price: 0,        // ล้างราคาที่เคยแก้ (เพื่อให้กลับไปใช้ราคา Standard)
-        edited_discount: 0,     // ล้างส่วนลด (ถ้าใน DB ใช้ชื่อ discount_price ให้แก้ตรงนี้เป็น discount_price: 0)
-        
         updated_at: new Date().toISOString()
       }).eq("id", currentQuotationId);
 
-      // 3. สั่ง Generate ใหม่ (ลบของเก่า -> สร้างของใหม่)
+      // 2. สั่ง Generate ใหม่ทันที (โดยไม่มีขั้นตอน Snapshot/Restore)
+      // ฟังก์ชันนี้จะลบรายการเก่าทิ้ง และสร้างใหม่ตามสูตรมาตรฐาน
       console.log("🔄 Resetting to defaults...");
       await generateMainEquipment(currentQuotationId);
       await generateAdditionalEquipment(currentQuotationId);
 
-      // 4. คำนวณราคาใหม่ 
-      // (พอ edited_price เป็น 0 ระบบจะไปดึงราคา Standard จาก Sale Package มาใช้เอง)
+      // 3. คำนวณราคาใหม่
       await calculateAndSavePricing(currentQuotationId);
       
-      // 5. โหลดหน้า Preview ใหม่
+      // 4. โหลดหน้า Preview ใหม่
       await loadPreviewData(currentQuotationId);
 
       toast({
         title: "Reset Successful",
-        description: "คืนค่ารายการสินค้าและราคาเป็นค่ามาตรฐานเรียบร้อย",
+        description: "คืนค่ารายการสินค้าเป็นค่ามาตรฐานเรียบร้อย",
       });
 
     } catch (error) {
