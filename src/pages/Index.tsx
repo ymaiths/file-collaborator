@@ -110,7 +110,80 @@ const Index = () => {
   };
 
   const handleDuplicateProject = async (id: string) => {
-    // ... (Logic Duplicate เดิม) ...
+    try {
+      setIsLoading(true); // show loading ชั่วคราว
+
+      // 1. ดึงข้อมูล Quotation ต้นฉบับ
+      const { data: originalQuotation, error: fetchError } = await supabase
+        .from("quotations")
+        .select("*")
+        .eq("id", id)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      // 2. ดึงรายการสินค้า (Line Items) ของ Quotation นั้น
+      const { data: lineItems, error: itemsError } = await supabase
+        .from("product_line_items")
+        .select("*")
+        .eq("quotation_id", id);
+
+      if (itemsError) throw itemsError;
+
+      // 3. เตรียมข้อมูลสำหรับ Quotation ใหม่ (ลบ id, created_at, updated_at ออก)
+      const { id: _, created_at: __, updated_at: ___, ...quotationData } = originalQuotation;
+      
+      // Optional: เติมคำว่า (Copy) ต่อท้าย location หรือชื่อ
+      const newQuotationData = {
+        ...quotationData,
+        location: `${quotationData.location || ""} (Copy)`,
+      };
+
+      // 4. Insert Quotation ใหม่
+      const { data: newQuotation, error: insertError } = await supabase
+        .from("quotations")
+        .insert([newQuotationData])
+        .select()
+        .single();
+
+      if (insertError) throw insertError;
+
+      // 5. Duplicate Line Items (ถ้ามี)
+      if (lineItems && lineItems.length > 0) {
+        const newLineItems = lineItems.map(item => {
+          // ลบ ID เก่า และใส่ quotation_id ใหม่
+          const { id: oldItemId, created_at: oldCreated, updated_at: oldUpdated, quotation_id: oldQId, ...itemData } = item;
+          return {
+            ...itemData,
+            quotation_id: newQuotation.id
+          };
+        });
+
+        const { error: linesInsertError } = await supabase
+          .from("product_line_items")
+          .insert(newLineItems);
+
+        if (linesInsertError) throw linesInsertError;
+      }
+
+      // 6. โหลดข้อมูลใหม่เพื่อแสดงผล
+      await fetchQuotations();
+
+      toast({
+        title: "คัดลอกสำเร็จ",
+        description: "สร้างสำเนาใบเสนอราคาเรียบร้อยแล้ว",
+      });
+
+    } catch (error) {
+      console.error("Error duplicating project:", error);
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: "ไม่สามารถคัดลอกข้อมูลได้",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
