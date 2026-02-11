@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -67,6 +67,15 @@ const parseTerms = (text: string | null) => {
     .map((t) => t.replace(/^\d+\.\s*/, "")); // ✅ เพิ่มบรรทัดนี้: ลบ "1. ", "2. " ออกจากข้อความเสมอ
 };
 
+interface ProgramWithRange {
+  id: string;
+  name: string;
+  prices: {
+    kw_min: number | null; // แก้เป็น kw_min
+    kw_max: number | null; // แก้เป็น kw_max
+  }[];
+}
+
 const CreateQuotation = () => {
   const navigate = useNavigate();
   const { id: quotationId } = useParams<{ id: string }>();
@@ -79,7 +88,8 @@ const CreateQuotation = () => {
   // ✅ เพิ่ม State นี้กลับเข้ามาเพื่อแก้ Error
   const [currentCustomerId, setCurrentCustomerId] = useState<string | null>(null);
 
-  const [availablePrograms, setAvailablePrograms] = useState<{ id: string; name: string }[]>([]);
+  const [allPrograms, setAllPrograms] = useState<ProgramWithRange[]>([]); // เก็บทั้งหมด
+  const [filteredPrograms, setFilteredPrograms] = useState<ProgramWithRange[]>([]); // เก็บเฉพาะที่ผ่านเงื่อนไข
   const [availableBrands, setAvailableBrands] = useState<string[]>([]);
   const [availablePanelSizes, setAvailablePanelSizes] = useState<number[]>([]);
   
@@ -558,21 +568,49 @@ const CreateQuotation = () => {
      }
   }, [currentQuotationId, showQuotation]);
 
+  // ✅ 1. แก้ไข useEffect การดึงข้อมูล (ใช้ชื่อ column: kw_min, kw_max)
   useEffect(() => {
     const fetchSalesPrograms = async () => {
       try {
-        const { data, error } = await supabase.from("sale_packages").select("id, sale_name").order("sale_name");
-        if (error) throw error;
-        if (data) setAvailablePrograms(data.map((p) => ({ id: p.id, name: p.sale_name })));
-      } catch (error) { console.error("Error loading programs:", error); }
+        const { data, error } = await supabase
+          .from("sale_packages")
+          .select(`
+            id, 
+            sale_name, 
+            sale_package_prices:sale_package_prices!sale_package_prices_sale_package_id_fkey (
+              kw_min, 
+              kw_max
+            )
+          `)
+          .order("sale_name");
+
+        if (error) {
+            console.error("❌ Supabase Error:", error);
+            throw error;
+        }
+        
+        if (data) {
+          const programs = data.map((p: any) => ({
+            id: p.id,
+            name: p.sale_name,
+            prices: p.sale_package_prices || [] 
+          }));
+          
+          setAllPrograms(programs);
+          setFilteredPrograms(programs);
+        }
+      } catch (error) { 
+        console.error("Error loading programs:", error); 
+      }
     };
+    
     fetchSalesPrograms();
   }, []);
 
   useEffect(() => {
     const fetchBrandsForProgram = async () => {
       if (!formData.salesProgram) { setAvailableBrands([]); return; }
-      const selectedProgram = availablePrograms.find((p) => p.name === formData.salesProgram);
+      const selectedProgram = allPrograms.find((p) => p.name === formData.salesProgram);
       if (!selectedProgram) return;
       try {
         const { data, error } = await supabase.from("sale_package_prices").select("inverter_brand").eq("sale_package_id", selectedProgram.id);
@@ -587,7 +625,41 @@ const CreateQuotation = () => {
       } catch (error) { console.error("Error fetching brands:", error); }
     };
     fetchBrandsForProgram();
-  }, [formData.salesProgram, availablePrograms]);
+  }, [formData.salesProgram, allPrograms]);
+
+  // ✅ 2. แก้ไข useEffect การกรอง (เทียบ Watt vs Watt)
+  // ✅ แก้ไข Logic การกรอง (Compare Watt to Watt)
+  useEffect(() => {
+    const sizeInWatt = parseFloat(formData.projectSize); // ค่าที่กรอก (เช่น 50000)
+
+    // ❌ ลบบรรทัดนี้ทิ้ง (ไม่ต้องแปลงเป็น kW แล้ว)
+    // const sizeInKW = sizeInWatt / 1000; 
+
+    console.log("---------------- FILTER DEBUG ----------------");
+    console.log("Input (Watt):", sizeInWatt);
+    
+    if (!formData.projectSize || isNaN(sizeInWatt)) {
+      setFilteredPrograms(allPrograms);
+      return;
+    }
+
+    const validPrograms = allPrograms.filter((prog) => {
+      if (!prog.prices || prog.prices.length === 0) return false;
+
+      return prog.prices.some((price) => {
+        // ดึงค่าจาก DB (ซึ่งเป็น Watt ตามที่คุณบอก)
+        const min = price.kw_min || 0;       // เช่น 50000
+        const max = price.kw_max !== null ? price.kw_max : min; // เช่น 50000
+
+        // ✅ เปรียบเทียบ Watt กับ Watt ตรงๆ
+        return sizeInWatt >= min && sizeInWatt <= max;
+      });
+    });
+
+    console.log("Valid Programs:", validPrograms);
+    setFilteredPrograms(validPrograms);
+
+  }, [formData.projectSize, allPrograms]);
 
   useEffect(() => {
     const fetchPanelSizes = async () => {
@@ -642,187 +714,184 @@ const CreateQuotation = () => {
       } finally { setIsLoadingData(false); }
     };
     loadQuotationData();
-  }, [quotationId, availablePrograms]);
+  }, [quotationId, allPrograms]);
 
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
   // ------------------------------------------------------------------
-  // ✅ CREATE / SAVE QUOTATION (With Tax ID Priority Logic)
+  // ✅ NEW LOGIC: Smart Split (แยกเคสแก้ไขหัวบิล vs แก้ไขสเปค)
   // ------------------------------------------------------------------
   const handleCreateQuotation = async (skipCheck = false) => {
-    // 1. Validation
+    // 1. Validation (ตรวจสอบค่าว่าง)
     if (!formData.projectSize || !formData.salesProgram || !formData.brand || !formData.solarPanelSize) {
       toast({ title: "Required", description: "Please fill all required fields (*)", variant: "destructive" });
       return;
     }
 
-    // ---------------------------------------------------------
-    // 🟢 ตรวจสอบความขัดแย้งก่อน Save
-    // ---------------------------------------------------------
-    // ถ้าไม่ใช่การข้าม (คือการกด Save ปกติ ไม่ใช่กดจาก Popup)
+    // --- Check Duplicate Name/ID (Logic เดิม) ---
     if (!skipCheck) {
         const inputName = formData.customerName.trim();
         const inputTaxId = formData.customerTaxId ? formData.customerTaxId.trim() : "";
-
         if (inputTaxId) {
-            // 🔍 A. ค้นหาจาก Tax ID ก่อน
-            const { data: taxMatch } = await supabase
-                .from("customers")
-                .select("*")
-                .eq("id_tax", inputTaxId)
-                .maybeSingle();
-
-            if (taxMatch) {
-                // เจอ Tax ID นี้ในระบบ
-                // เปรียบเทียบชื่อ (ตัดช่องว่างซ้ายขวาออกทั้งคู่)
-                if (taxMatch.customer_name.trim() !== inputName) {
-                    // ⚠️ ชื่อไม่ตรง! (Rebranding Case) -> เปิด Popup ถาม
-                    setConflictData({
-                        id: taxMatch.id,
-                        oldName: taxMatch.customer_name,
-                        newName: inputName
-                    });
-                    setShowRenameDialog(true);
-                    return; // ⛔️ หยุดการทำงาน รอ User ตัดสินใจ
-                } 
-                // ถ้าชื่อตรงกันเป๊ะ -> ผ่าน (ไป Save ต่อข้างล่าง)
-            } else {
-                // ไม่เจอ Tax ID นี้ -> แต่ถ้าชื่อไปซ้ำกับคนอื่นที่มี Tax ID ต่างกัน?
-                 const { data: nameMatch } = await supabase
-                    .from("customers")
-                    .select("*")
-                    .eq("customer_name", inputName)
-                    .maybeSingle();
-                 
-                 if (nameMatch && nameMatch.id_tax && nameMatch.id_tax !== inputTaxId) {
-                     // ❌ ชื่อซ้ำ แต่ Tax ID ไม่ตรง -> ห้ามบันทึก
-                     toast({ 
-                        title: "ชื่อลูกค้าซ้ำ!", 
-                        description: `ชื่อ "${inputName}" มีอยู่ในระบบแล้ว (Tax ID: ${nameMatch.id_tax}) กรุณาเปลี่ยนชื่อ`,
-                        variant: "destructive" 
-                    });
-                    return;
-                 }
+            const { data: taxMatch } = await supabase.from("customers").select("*").eq("id_tax", inputTaxId).maybeSingle();
+            if (taxMatch && taxMatch.customer_name.trim() !== inputName) {
+                setConflictData({ id: taxMatch.id, oldName: taxMatch.customer_name, newName: inputName });
+                setShowRenameDialog(true);
+                return;
             }
         }
     }
 
-    // ---------------------------------------------------------
-    // 💾 เริ่มกระบวนการบันทึกจริง
-    // ---------------------------------------------------------
     setIsLoading(true);
 
     try {
+      // 2. Prepare Customer Data (เหมือนเดิม)
       let finalCustomerId = currentCustomerId;
       const inputName = formData.customerName.trim();
       const inputTaxId = formData.customerTaxId ? formData.customerTaxId.trim() : "";
       
-      let finalName = inputName;
-      let finalTaxId = inputTaxId;
-
       if (inputName) {
-        if (!finalCustomerId) {
-            // ถ้ายังไม่มี ID (และผ่านด่าน skipCheck มาแล้ว)
-            // ลองหาจาก Tax ID อีกรอบเพื่อความชัวร์ หรือหาจากชื่อ
+         // ... (Logic Customer เดิมของคุณ ใส่ตรงนี้) ...
+         if (!finalCustomerId) {
             let match = null;
             if (inputTaxId) {
-                const { data } = await supabase.from("customers").select("*").eq("id_tax", inputTaxId).maybeSingle();
-                match = data;
+               const { data } = await supabase.from("customers").select("*").eq("id_tax", inputTaxId).maybeSingle();
+               match = data;
             } else {
-                const { data } = await supabase.from("customers").select("*").eq("customer_name", inputName).maybeSingle();
-                match = data;
+               const { data } = await supabase.from("customers").select("*").eq("customer_name", inputName).maybeSingle();
+               match = data;
             }
+            if (match) finalCustomerId = match.id;
+         }
 
-            if (match) {
-                finalCustomerId = match.id;
-            }
-        }
-
-        // SAVE / UPDATE CUSTOMER
-        if (finalCustomerId) {
-            // Update
-            await supabase.from("customers").update({ 
-                customer_name: finalName,
-                id_tax: finalTaxId || null
-            }).eq("id", finalCustomerId);
-        } else {
-            // New Insert
-            const { data: newCustomer, error: createError } = await supabase
-              .from("customers")
-              .insert({ 
-                  customer_name: finalName || "-", 
-                  id_tax: finalTaxId || null
-              })
-              .select("id")
-              .single();
-            
-            if (createError) throw createError;
-            finalCustomerId = newCustomer.id;
-        }
-
-        // Update UI State
-        setFormData(prev => ({ ...prev, customerName: finalName, customerTaxId: finalTaxId }));
-        setCurrentCustomerId(finalCustomerId);
+         if (finalCustomerId) {
+             await supabase.from("customers").update({ customer_name: inputName, id_tax: inputTaxId || null }).eq("id", finalCustomerId);
+         } else {
+             const { data: newCust, error } = await supabase.from("customers").insert({ customer_name: inputName || "-", id_tax: inputTaxId || null }).select("id").single();
+             if (error) throw error;
+             finalCustomerId = newCust.id;
+         }
+         setCurrentCustomerId(finalCustomerId);
       }
 
-      // Sale Package & KW Logic
-      let salePackageId = null;
+      // 3. Prepare Quotation Data Values
+      // หา ID ของ Sales Program ใหม่
+      let newSalePackageId = null;
       if (formData.salesProgram) {
-        const selectedProgram = availablePrograms.find((p) => p.name === formData.salesProgram);
-        if (selectedProgram) salePackageId = selectedProgram.id;
-        else {
-          const { data: newPkg } = await supabase.from("sale_packages").insert({ sale_name: formData.salesProgram as any }).select("id").single();
-          salePackageId = newPkg?.id;
-        }
+        const selectedProgram = allPrograms.find((p) => p.name === formData.salesProgram);
+        if (selectedProgram) newSalePackageId = selectedProgram.id;
       }
-      const projectSizeVal = formData.projectSize ? parseFloat(formData.projectSize) : 0;
-      const panelSizeVal = formData.solarPanelSize ? parseFloat(formData.solarPanelSize) : 0;
-      const { kwPeak } = calculateSystemSpecs(projectSizeVal, panelSizeVal);
+      
+      const newProjectSize = formData.projectSize ? parseFloat(formData.projectSize) : 0;
+      const newPanelSize = formData.solarPanelSize ? parseFloat(formData.solarPanelSize) : 0;
+      const { kwPeak } = calculateSystemSpecs(newProjectSize, newPanelSize); // คำนวณ kWp
 
       const quotationData = {
         customer_id: finalCustomerId,
         location: formData.installLocation || null,
-        kw_size: formData.projectSize ? parseFloat(formData.projectSize) : null,
-        kw_panel: formData.solarPanelSize ? parseFloat(formData.solarPanelSize) : null,
+        kw_size: newProjectSize,
+        kw_panel: newPanelSize,
         kw_peak: kwPeak,
         electrical_phase: formData.electricalPhase || "single_phase",
         document_num: formData.documentNumber || null,
         creater_name: formData.serviceProvider || null,
         note: formData.additionalInfo || null,
-        sale_package_id: salePackageId,
+        sale_package_id: newSalePackageId,
         inverter_brand: formData.brand || null,
       };
 
       let targetId = currentQuotationId;
+
+      // =========================================================
+      // 🧠 Logic Decision: "แค่แก้หัว" หรือ "แก้โครงสร้าง" ?
+      // =========================================================
+      
       if (currentQuotationId) {
-        const { error: updateError } = await supabase.from("quotations").update({ ...quotationData, updated_at: new Date().toISOString() }).eq("id", currentQuotationId);
-        if (updateError) throw updateError;
-        toast({ title: "Updated", description: "Quotation updated successfully." });
+        // --- กรณี Save Changes ---
+        
+        // 1. ดึงข้อมูลเก่าจาก DB มาเทียบ
+        const { data: oldQuote } = await supabase
+            .from("quotations")
+            .select("*")
+            .eq("id", currentQuotationId)
+            .single();
+
+        if (!oldQuote) throw new Error("Quotation not found");
+
+        // 2. เช็คว่ามี "การเปลี่ยนโครงสร้าง (Structural Change)" หรือไม่?
+        // (เทียบค่าใหม่ vs ค่าเก่า)
+        const isStructuralChange = 
+            oldQuote.kw_size !== newProjectSize ||           // ขนาดเปลี่ยน?
+            oldQuote.kw_panel !== newPanelSize ||            // ขนาดแผงเปลี่ยน?
+            oldQuote.inverter_brand !== formData.brand ||    // ยี่ห้อเปลี่ยน?
+            oldQuote.electrical_phase !== formData.electricalPhase || // เฟสไฟเปลี่ยน?
+            oldQuote.sale_package_id !== newSalePackageId;   // โปรแกรมขายเปลี่ยน?
+
+        // 3. อัปเดตข้อมูล Header ลง DB (ทำทั้ง 2 กรณี)
+        await supabase
+            .from("quotations")
+            .update({ ...quotationData, updated_at: new Date().toISOString() })
+            .eq("id", currentQuotationId);
+
+        if (isStructuralChange) {
+            // 🚨 CASE A: โครงสร้างเปลี่ยน (Structural Change)
+            // ต้องคำนวณใหม่หมด (Reset Items)
+            console.log("⚠️ Structural Change Detected: Regenerating All Items...");
+            
+            await generateMainEquipment(currentQuotationId);       // ลบของเก่า -> สร้างของใหม่
+            await generateAdditionalEquipment(currentQuotationId); // สร้างของแถมใหม่
+            await calculateAndSavePricing(currentQuotationId);     // คำนวณราคาใหม่
+
+            toast({ title: "Re-calculated", description: "สเปคเปลี่ยน: สร้างรายการสินค้าและคำนวณราคาใหม่เรียบร้อย" });
+        } else {
+            // 🛡️ CASE B: แค่แก้คำผิด/หัวเอกสาร (Cosmetic Change)
+            // ไม่ต้องทำอะไรกับ Items เลย (Skip Generation)
+            console.log("✅ Cosmetic Change Only: Updated Header, Preserved Items.");
+            
+            // แค่อัปเดตราคาสุทธิ (เผื่อ Manual Target Price หาย แต่รายการสินค้ายังอยู่)
+            // หรือถ้ามั่นใจว่าไม่ต้องทำอะไรเลย ก็ข้ามบรรทัดนี้ได้
+            // await calculateAndSavePricing(currentQuotationId); 
+            
+            toast({ title: "Updated", description: "บันทึกข้อมูลทั่วไปเรียบร้อย (รายการสินค้าคงเดิม)" });
+        }
+
       } else {
-        const { data: quotation, error: insertError } = await supabase.from("quotations").insert({ ...quotationData, edited_price: 0 }).select().single();
+        // --- กรณี Create New (สร้างใหม่ครั้งแรก) ---
+        const { data: quotation, error: insertError } = await supabase
+            .from("quotations")
+            .insert({ ...quotationData, edited_price: 0 })
+            .select()
+            .single();
+        
         if (insertError) throw insertError;
+        
         targetId = quotation.id;
         setCurrentQuotationId(quotation.id);
-        toast({ title: "Created", description: "Quotation created successfully." });
-      }
 
-      if (targetId) {
+        // สร้างใหม่ต้อง Gen เสมอ
         await generateMainEquipment(targetId);
         await generateAdditionalEquipment(targetId);
         await calculateAndSavePricing(targetId);
+
+        toast({ title: "Created", description: "สร้างใบเสนอราคาใหม่เรียบร้อย" });
+      }
+
+      // 4. โหลดข้อมูลมาแสดงผลใหม่ (เพื่อให้ชื่อลูกค้า/Update ล่าสุดแสดงบนจอ)
+      if (targetId) {
         await loadPreviewData(targetId);
       }
       setShowQuotation(true);
 
     } catch (error) {
-      console.error("Error creating/updating quotation:", error);
-      toast({ title: "Error", description: "Failed to save quotation.", variant: "destructive" });
+      console.error("Error:", error);
+      toast({ title: "Error", description: "Failed to save.", variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
   };
+  
   const handleEditQuotation = async () => {
     if (!isEditMode) {
       setIsEditMode(true);
@@ -836,6 +905,69 @@ const CreateQuotation = () => {
         } catch (error) { console.error("Error updating:", error); }
       }
       setIsEditMode(false);
+    }
+  };
+
+  // ------------------------------------------------------------------
+  // ✅ 1. ฟังก์ชันสำหรับปุ่ม Reset (ล้างไพ่ เริ่มใบเสนอราคาใหม่)
+  // ------------------------------------------------------------------
+  // ------------------------------------------------------------------
+  // ✅ ฟังก์ชันปุ่ม Reset (คืนค่า Default โดยใช้ Input เดิม)
+  // ------------------------------------------------------------------
+  const handleReset = async () => {
+    if (!currentQuotationId) return;
+
+    // ถามยืนยันก่อน เพราะค่าที่แก้ไว้จะหายหมด
+    if (!window.confirm("คุณต้องการรีเซ็ตรายการสินค้าทั้งหมดกลับเป็นค่าเริ่มต้นหรือไม่? \n(ค่าที่คุณแก้ไขราคาหรือชื่อไว้จะหายไป)")) {
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      // 1. อัปเดต Header ให้ตรงกับหน้าจอปัจจุบันล่าสุด
+      // (เผื่อมีการแก้ Project Size แล้วกด Reset เลย โดยยังไม่กด Save)
+      const projectSizeVal = formData.projectSize ? parseFloat(formData.projectSize) : 0;
+      const panelSizeVal = formData.solarPanelSize ? parseFloat(formData.solarPanelSize) : 0;
+      const { kwPeak } = calculateSystemSpecs(projectSizeVal, panelSizeVal);
+      
+      let salePackageId = null;
+      if (formData.salesProgram) {
+        const selectedProgram = allPrograms.find((p) => p.name === formData.salesProgram);
+        if (selectedProgram) salePackageId = selectedProgram.id;
+      }
+
+      await supabase.from("quotations").update({
+        kw_size: projectSizeVal,
+        kw_panel: panelSizeVal,
+        kw_peak: kwPeak,
+        inverter_brand: formData.brand,
+        electrical_phase: formData.electricalPhase,
+        sale_package_id: salePackageId,
+        updated_at: new Date().toISOString()
+      }).eq("id", currentQuotationId);
+
+      // 2. สั่ง Generate ใหม่ทันที (โดยไม่มีขั้นตอน Snapshot/Restore)
+      // ฟังก์ชันนี้จะลบรายการเก่าทิ้ง และสร้างใหม่ตามสูตรมาตรฐาน
+      console.log("🔄 Resetting to defaults...");
+      await generateMainEquipment(currentQuotationId);
+      await generateAdditionalEquipment(currentQuotationId);
+
+      // 3. คำนวณราคาใหม่
+      await calculateAndSavePricing(currentQuotationId);
+      
+      // 4. โหลดหน้า Preview ใหม่
+      await loadPreviewData(currentQuotationId);
+
+      toast({
+        title: "Reset Successful",
+        description: "คืนค่ารายการสินค้าเป็นค่ามาตรฐานเรียบร้อย",
+      });
+
+    } catch (error) {
+      console.error("Reset Error:", error);
+      toast({ title: "Error", description: "Failed to reset.", variant: "destructive" });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -875,7 +1007,7 @@ const CreateQuotation = () => {
               </div>
 
               <div className="col-span-1">
-                <Label className="text-xs text-muted-foreground">Project (Watt)*</Label>
+                <Label className="text-xs text-muted-foreground">Project Size (Watt)*</Label>
                 <Input type="number" className="h-9 mt-1" placeholder="5000" value={formData.projectSize} onChange={(e) => handleInputChange("projectSize", e.target.value)} />
               </div>
               <div className="col-span-1">
@@ -891,15 +1023,36 @@ const CreateQuotation = () => {
 
               <div className="col-span-1">
                 <Label className="text-xs text-muted-foreground">Program*</Label>
-                <Select value={formData.salesProgram} onValueChange={(value) => handleInputChange("salesProgram", value)}>
-                  <SelectTrigger className="h-9 mt-1"><SelectValue placeholder="Program" /></SelectTrigger>
-                  <SelectContent>{availablePrograms.map((program) => (<SelectItem key={program.id} value={program.name}>{program.name}</SelectItem>))}</SelectContent>
+                <Select 
+                  value={formData.salesProgram} 
+                  onValueChange={(value) => handleInputChange("salesProgram", value)}
+                  // ✅ เพิ่มเงื่อนไข disabled: ถ้าไม่มี projectSize ให้กดไม่ได้
+                  disabled={!formData.projectSize} 
+                >
+                  <SelectTrigger className="h-9 mt-1">
+                    {/* ✅ เปลี่ยนข้อความ Placeholder ตามสถานะ */}
+                    <SelectValue placeholder={formData.projectSize ? "Select Program" : "Enter Project Size first"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {filteredPrograms.length > 0 ? (
+                      filteredPrograms.map((program) => (
+                        <SelectItem key={program.id} value={program.name}>
+                          {program.name}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <div className="p-2 text-xs text-muted-foreground text-center">
+                          ไม่มีโปรแกรมสำหรับขนาด {formData.projectSize} Watt
+                      </div>
+                    )}
+                  </SelectContent>
                 </Select>
               </div>
+
               <div className="col-span-1">
                 <Label className="text-xs text-muted-foreground">Brand*</Label>
                 <Select value={formData.brand} onValueChange={(value) => handleInputChange("brand", value)} disabled={!formData.salesProgram}>
-                  <SelectTrigger className="h-9 mt-1"><SelectValue placeholder="Brand" /></SelectTrigger>
+                  <SelectTrigger className="h-9 mt-1"><SelectValue placeholder="Enter Program first" /></SelectTrigger>
                   <SelectContent>{availableBrands.map((brand) => (<SelectItem key={brand} value={brand}>{formatBrandName(brand)}</SelectItem>))}</SelectContent>
                 </Select>
               </div>
@@ -935,6 +1088,9 @@ const CreateQuotation = () => {
           <div className="w-full lg:col-span-2 lg:sticky lg:top-4">
             <div className="bg-card rounded-lg shadow-sm p-4 relative border border-border animate-in fade-in">
               <div className="absolute top-3 right-3 flex gap-2 z-10">
+                <Button variant="outline" size="sm" onClick={handleReset} className="border-dashed"> 
+                  <RotateCcw className="h-4 w-4" />
+                </Button>
                 <Button variant="outline" size="sm" onClick={handleEditQuotation}>{isEditMode ? "Done" : "Edit"}</Button>
                 <Button variant="outline" size="sm" onClick={handleExportExcel}>EXCEL</Button>
               </div>

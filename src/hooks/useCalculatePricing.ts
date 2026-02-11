@@ -28,7 +28,7 @@ export const useCalculatePricing = () => {
 
   const calculateAndSavePricing = async (quotationId: string, manualTargetPrice?: number) => {
     setIsLoading(true);
-    console.clear();
+    // console.clear();
     console.group("🚀 PRICING: 3-ROUND LOGIC + TARGET OVERRIDE");
 
     try {

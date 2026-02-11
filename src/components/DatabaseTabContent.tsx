@@ -263,11 +263,14 @@ export const DatabaseTabContent = () => {
   };
 
   // ------------------------------------------------------------------
-  // 3. ฟังก์ชัน Duplicate โปรแกรมการขาย
+  // 3. ฟังก์ชัน Duplicate โปรแกรมการขาย (แก้ไขให้ Copy ข้อมูลข้างในด้วย)
   // ------------------------------------------------------------------
   const handleDuplicateSalesProgram = async (id: string) => {
+    // กำหนดตัวแปรสำหรับ loading (ถ้ามี state loading แยกก็ใช้ได้ หรือใช้ toast loading แทน)
+    const toastId = toast({ title: "Processing", description: "กำลังคัดลอกโปรแกรมการขาย..." });
+    
     try {
-      // 3.1 ดึงข้อมูลต้นฉบับ
+      // 1. ดึงข้อมูลแพ็คเกจแม่ (Parent)
       const { data: original, error: fetchError } = await supabase
         .from("sale_packages")
         .select("*")
@@ -276,31 +279,64 @@ export const DatabaseTabContent = () => {
 
       if (fetchError) throw fetchError;
 
-      // 3.2 สร้างใหม่โดยต่อท้ายชื่อด้วย (Copy)
-      const { id: _, created_at, updated_at, ...rest } = original;
+      // 2. สร้างแพ็คเกจใหม่ (Insert Parent)
+      const { id: _, created_at, updated_at, ...parentRest } = original;
       const { data: newPkg, error: insertError } = await supabase
         .from("sale_packages")
         .insert({
-          ...rest,
+          ...parentRest,
           sale_name: `${original.sale_name} (Copy)`,
         })
         .select()
         .single();
 
       if (insertError) throw insertError;
+      
+      const newPackageId = newPkg.id; // 🔑 ได้ ID แพ็คเกจใหม่มาแล้ว
 
-      // (Optional) ถ้าต้องการ Copy ราคาใน sale_package_prices ด้วย ต้องเขียนเพิ่มตรงนี้
+      // ------------------------------------------------------------------
+      // ✅ ส่วนที่เพิ่ม: Copy ข้อมูลราคา/เงื่อนไข (Deep Copy Children)
+      // ------------------------------------------------------------------
+      
+      // 3. ดึงข้อมูลลูกจากตาราง sale_package_prices
+      const { data: originalPrices, error: pricesError } = await supabase
+        .from("sale_package_prices")
+        .select("*")
+        .eq("sale_package_id", id);
+
+      if (pricesError) throw pricesError;
+
+      // 4. บันทึกข้อมูลลูกลงในแพ็คเกจใหม่
+      if (originalPrices && originalPrices.length > 0) {
+        // เตรียมข้อมูลลูกชุดใหม่ (ลบ ID เดิม, ใส่ sale_package_id ใหม่)
+        const newPrices = originalPrices.map((price) => {
+            const { id: _childId, created_at: _c, updated_at: _u, ...childRest } = price;
+            return {
+                ...childRest,
+                sale_package_id: newPackageId // 🔗 ผูกกับแพ็คเกจใหม่
+            };
+        });
+
+        const { error: insertPricesError } = await supabase
+            .from("sale_package_prices")
+            .insert(newPrices);
+
+        if (insertPricesError) throw insertPricesError;
+      }
+
+      // ------------------------------------------------------------------
 
       toast({
         title: "คัดลอกสำเร็จ",
-        description: "สร้างสำเนาโปรแกรมการขายเรียบร้อยแล้ว",
+        description: `สร้างสำเนา "${newPkg.sale_name}" พร้อมข้อมูลราคาเรียบร้อยแล้ว`,
       });
+      
       fetchSalesPrograms();
     } catch (error) {
       console.error("Error duplicating sales program:", error);
       toast({
         title: "เกิดข้อผิดพลาด",
-        description: "ไม่สามารถคัดลอกรายการได้",
+        description: "ไม่สามารถคัดลอกรายการได้: " + (error as Error).message,
         variant: "destructive",
       });
     }
