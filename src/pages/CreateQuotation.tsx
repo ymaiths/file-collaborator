@@ -23,7 +23,6 @@ import { generateQuotationExcel } from "@/utils/ExportExcel";
 import { QuotationPreview, PreviewData } from "@/components/QuotationPreview";
 import { calculateDefaultLineItem } from "@/utils/pricing-logic";
 
-// เพิ่ม imports เหล่านี้เข้าไป
 import {
   AlertDialog,
   AlertDialogAction,
@@ -50,29 +49,24 @@ const parseTerms = (text: string | null) => {
 
   let items: string[] = [];
 
-  // 1. ถ้าใน Database มีการกด Enter (New line) มาแล้ว ให้ยึดตามนั้น
   if (text.includes("\n")) {
     items = text.split("\n");
-  } 
-  // 2. ถ้าเป็น Text ยาวๆ ที่มีเลขข้อ (เช่น "1. xxx 2. xxx") ให้ตัดด้วย Regex
-  else {
-    // ตัด string โดยมองหา Pattern "ตัวเลข+จุด+เว้นวรรค"
+  } else {
     items = text.split(/(?=\d+\.\s)/);
   }
 
-  // Clean ข้อมูล
   return items
-    .map((t) => t.trim())       // ตัดช่องว่างหน้าหลัง
-    .filter((t) => t !== "")    // กรองบรรทัดว่างทิ้ง
-    .map((t) => t.replace(/^\d+\.\s*/, "")); // ✅ เพิ่มบรรทัดนี้: ลบ "1. ", "2. " ออกจากข้อความเสมอ
+    .map((t) => t.trim())
+    .filter((t) => t !== "")
+    .map((t) => t.replace(/^\d+\.\s*/, ""));
 };
 
 interface ProgramWithRange {
   id: string;
   name: string;
   prices: {
-    kw_min: number | null; // แก้เป็น kw_min
-    kw_max: number | null; // แก้เป็น kw_max
+    kw_min: number | null;
+    kw_max: number | null;
   }[];
 }
 
@@ -85,11 +79,10 @@ const CreateQuotation = () => {
   const [isEditMode, setIsEditMode] = useState(false);
   
   const [currentQuotationId, setCurrentQuotationId] = useState<string | null>(null);
-  // ✅ เพิ่ม State นี้กลับเข้ามาเพื่อแก้ Error
   const [currentCustomerId, setCurrentCustomerId] = useState<string | null>(null);
 
-  const [allPrograms, setAllPrograms] = useState<ProgramWithRange[]>([]); // เก็บทั้งหมด
-  const [filteredPrograms, setFilteredPrograms] = useState<ProgramWithRange[]>([]); // เก็บเฉพาะที่ผ่านเงื่อนไข
+  const [allPrograms, setAllPrograms] = useState<ProgramWithRange[]>([]);
+  const [filteredPrograms, setFilteredPrograms] = useState<ProgramWithRange[]>([]);
   const [availableBrands, setAvailableBrands] = useState<string[]>([]);
   const [availablePanelSizes, setAvailablePanelSizes] = useState<number[]>([]);
   
@@ -114,9 +107,6 @@ const CreateQuotation = () => {
   const [previewData, setPreviewData] = useState<PreviewData | null>(null);
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [conflictData, setConflictData] = useState<{ id: string; oldName: string; newName: string } | null>(null);
-  // ------------------------------------------------------------------
-  // Handlers for In-Place Editing & Updates
-  // ------------------------------------------------------------------
   
   const SYNCED_GROUP_KEYWORDS = [
     "Common Temporary Facilities, Construction Facilities",
@@ -126,123 +116,156 @@ const CreateQuotation = () => {
     "Safety Operation"
   ];
 
+  // ------------------------------------------------------------------
+  // Handlers
+  // ------------------------------------------------------------------
+
   const handleAddItem = async (section: "A" | "B", selectedProduct: any) => {
-  if (!currentQuotationId) return;
-    // 🔍 DEBUG: Check inputs
-    const projectSizeVal = parseFloat(formData.projectSize) || 0; 
-    console.log("---------------- DEBUG ADD ITEM ----------------");
-    console.log("1. Project Size:", projectSizeVal);
-    console.log("2. Selected Product Data:", selectedProduct);
-    console.log("   - is_fixed_cost:", selectedProduct.is_fixed_cost);
-    console.log("   - cost_fixed:", selectedProduct.cost_fixed);
-    console.log("   - cost_percentage:", selectedProduct.cost_percentage);
-    console.log("------------------------------------------------");
-  try {
-    const projectSizeVal = parseFloat(formData.projectSize) || 0; 
-
-    // 1. Calculate Default Values
-    const defaults = calculateDefaultLineItem(
-      selectedProduct, 
-      projectSizeVal, 
-      1 
-    );
-
-    // 2. Insert into Supabase (No need to select data back)
-    const { error } = await supabase
-      .from("product_line_items")
-      .insert({
-        quotation_id: currentQuotationId,
-        product_id: selectedProduct.id,
-        quantity: defaults.quantity,
-        product_price: defaults.product_price,
-        installation_price: defaults.installation_price,
-        is_additional_item: true, 
-      });
-
-    if (error) throw error;
-
-    // 3. Refresh the Preview
-    await loadPreviewData(currentQuotationId);
-
-    toast({
-      title: "เพิ่มรายการสำเร็จ",
-      description: `เพิ่ม ${selectedProduct.name} เรียบร้อยแล้ว`,
-    });
-
-  } catch (error) {
-    console.error("Error adding item:", error);
-    toast({
-      title: "เกิดข้อผิดพลาด",
-      description: "ไม่สามารถเพิ่มรายการได้",
-      variant: "destructive",
-    });
-  }
-};
-
-  const handleUpdateItem = async (itemId: string, field: string, value: any) => {
-    
+    if (!currentQuotationId) return;
     try {
-      let updateData: any = {};
-      
-      if (["edited_name", "edited_brand", "edited_unit"].includes(field)) {
-         updateData[field] = value;
-      } else if (["quantity", "product_price", "installation_price"].includes(field)) {
-         updateData[field] = value;
-         updateData[`is_edited_${field}`] = true; 
-      }
+      const projectSizeVal = parseFloat(formData.projectSize) || 0; 
+      const defaults = calculateDefaultLineItem(selectedProduct, projectSizeVal, 1);
 
-      // Logic for Section B Synced Group
-      if (field === "product_price") {
-        const { data: currentItem } = await supabase.from("product_line_items").select("*, products(name)").eq("id", itemId).single();
-        const itemName = currentItem?.products?.name || "";
-        const isSyncedItem = SYNCED_GROUP_KEYWORDS.some(keyword => itemName.toLowerCase().includes(keyword.toLowerCase()));
+      const { error } = await supabase
+        .from("product_line_items")
+        .insert({
+          quotation_id: currentQuotationId,
+          product_id: selectedProduct.id,
+          quantity: defaults.quantity,
+          product_price: defaults.product_price,
+          installation_price: defaults.installation_price,
+          is_additional_item: true, 
+        });
 
-        if (isSyncedItem) {
-            console.log("🔄 Updating Synced Group for Section B...");
-            const { data: allItems } = await supabase.from("product_line_items").select("*, products(name)").eq("quotation_id", currentQuotationId);
-            if (allItems) {
-                const itemsToUpdate = allItems.filter(i => SYNCED_GROUP_KEYWORDS.some(k => i.products?.name?.toLowerCase().includes(k.toLowerCase())));
-                const updates = itemsToUpdate.map(i => ({ id: i.id, product_price: value, is_edited_product_price: true }));
-                await Promise.all(updates.map(u => supabase.from("product_line_items").update(u).eq("id", u.id)));
-            }
-        } else {
-            await supabase.from("product_line_items").update(updateData).eq("id", itemId);
-        }
-      } else {
-        await supabase.from("product_line_items").update(updateData).eq("id", itemId);
-      }
-
-      if (["quantity", "product_price", "installation_price"].includes(field)) {
-         await calculateAndSavePricing(currentQuotationId!); 
-         await loadPreviewData(currentQuotationId!);
-      } else {
-         await loadPreviewData(currentQuotationId!);
-      }
-    } catch (err) {
-      console.error("Update Error:", err);
-      toast({ title: "Update Failed", variant: "destructive" });
+      if (error) throw error;
+      await loadPreviewData(currentQuotationId);
+      toast({ title: "เพิ่มรายการสำเร็จ", description: `เพิ่ม ${selectedProduct.name} เรียบร้อยแล้ว` });
+    } catch (error) {
+      console.error("Error adding item:", error);
+      toast({ title: "เกิดข้อผิดพลาด", description: "ไม่สามารถเพิ่มรายการได้", variant: "destructive" });
     }
   };
 
-const handleUpdateTotalOverride = async (type: 'net' | 'grand', value: number) => {
+  const handleDeleteItem = async (itemId: string) => {
+    if (!currentQuotationId) return;
+    try {
+      const { error } = await supabase.from("product_line_items").delete().eq("id", itemId);
+      if (error) throw error;
+      await calculateAndSavePricing(currentQuotationId);
+      await loadPreviewData(currentQuotationId);
+      toast({ title: "Deleted", description: "ลบรายการเรียบร้อยแล้ว" });
+    } catch (error) {
+      console.error("Delete Error:", error);
+      toast({ title: "Error", description: "ไม่สามารถลบรายการได้", variant: "destructive" });
+    }
+  };
+
+  const handleUpdateItem = async (itemId: string, field: string, value: any) => {
+    try {
+      // 1. ดึงข้อมูล Item ปัจจุบันพร้อมข้อมูลสินค้า (Products) เพื่อใช้คำนวณ
+      const { data: currentItem } = await supabase
+        .from("product_line_items")
+        .select("*, products(*)")
+        .eq("id", itemId)
+        .single();
+
+      if (!currentItem) return;
+
+      let updateData: any = {};
+
+      // =========================================================
+      // 🧠 CASE 1: แก้ไขจำนวน (Quantity) -> ต้องคำนวณราคารวมใหม่
+      // =========================================================
+      if (field === "quantity") {
+        const newQty = parseFloat(value);
+        const oldQty = currentItem.quantity || 1;
+        const projectSizeVal = parseFloat(formData.projectSize) || 0;
+
+        // ฟังก์ชันช่วยคำนวณราคาใหม่ (แยกเคส Edited vs Default)
+        const getNewPrice = (currentTotal: number, isEdited: boolean, type: 'product' | 'installation') => {
+            if (isEdited) {
+                // 🅰️ เคยแก้ราคามา: ให้รักษาราคาต่อหน่วยเดิม (Scale Linear)
+                const unitPrice = (currentTotal || 0) / oldQty;
+                return unitPrice * newQty;
+            } else {
+                // 🅱️ ไม่เคยแก้: คำนวณใหม่ตามสูตรมาตรฐาน (Recalculate Default)
+                const defaults = calculateDefaultLineItem(currentItem.products, projectSizeVal, newQty);
+                return type === 'product' ? defaults.product_price : defaults.installation_price;
+            }
+        };
+
+        updateData = {
+          quantity: newQty,
+          product_price: getNewPrice(currentItem.product_price, currentItem.is_edited_product_price, 'product'),
+          installation_price: getNewPrice(currentItem.installation_price, currentItem.is_edited_installation_price, 'installation')
+          // ไม่ต้องเปลี่ยน flag edited เพราะเราให้ระบบจัดการ auto
+        };
+      } 
+      // =========================================================
+      // 🧠 CASE 2: แก้ไขฟิลด์อื่นๆ (ราคา, ชื่อ, แบรนด์)
+      // =========================================================
+      else {
+        if (["edited_name", "edited_brand", "edited_unit"].includes(field)) {
+            updateData[field] = value;
+        } else if (["product_price", "installation_price"].includes(field)) {
+            updateData[field] = value;
+            updateData[`is_edited_${field}`] = true; // ✅ Mark ว่า User แก้เอง
+        }
+      }
+
+      // =========================================================
+      // 💾 DATABASE UPDATE (รวม Logic Synced Group)
+      // =========================================================
+      if (field === "product_price") {
+        const itemName = currentItem?.products?.name || "";
+        const isSyncedItem = SYNCED_GROUP_KEYWORDS.some(keyword => itemName.toLowerCase().includes(keyword.toLowerCase()));
+
+        if (isSyncedItem) {
+            // ถ้าเป็นรายการในกลุ่ม Synced (Section B) ให้แก้เพื่อนๆ ด้วย
+            const { data: allItems } = await supabase.from("product_line_items").select("*, products(name)").eq("quotation_id", currentQuotationId);
+            if (allItems) {
+                const itemsToUpdate = allItems.filter(i => SYNCED_GROUP_KEYWORDS.some(k => i.products?.name?.toLowerCase().includes(k.toLowerCase())));
+                const updates = itemsToUpdate.map(i => ({ id: i.id, product_price: value, is_edited_product_price: true }));
+                await Promise.all(updates.map(u => supabase.from("product_line_items").update(u).eq("id", u.id)));
+            }
+        } else {
+            // รายการปกติ
+            await supabase.from("product_line_items").update(updateData).eq("id", itemId);
+        }
+      } else {
+        // กรณีแก้ Quantity หรือฟิลด์อื่นๆ
+        await supabase.from("product_line_items").update(updateData).eq("id", itemId);
+      }
+
+      // 3. Recalculate & Refresh UI
+      if (["quantity", "product_price", "installation_price"].includes(field)) {
+         await calculateAndSavePricing(currentQuotationId!); 
+         await loadPreviewData(currentQuotationId!);
+      } else {
+         await loadPreviewData(currentQuotationId!);
+      }
+    } catch (err) {
+      console.error("Update Error:", err);
+      toast({ title: "Update Failed", variant: "destructive" });
+    }
+  };
+
+  const handleUpdateTotalOverride = async (type: 'net' | 'grand', value: number) => {
      if (!currentQuotationId) return;
      try {
-        // ✅ ส่งค่าให้ถูก Key แล้วปล่อยให้ Hook คำนวณเอง
-        if (type === 'net') {
-            // กรณีแก้ Net Total (ค่าของ)
-            await calculateAndSavePricing(currentQuotationId, { manualNetTotal: value });
-        } else {
-            // กรณีแก้ Grand Total (ยอดสุทธิ)
-            await calculateAndSavePricing(currentQuotationId, { manualGrandTotal: value });
-        }
-        
-        await loadPreviewData(currentQuotationId);
-        toast({ title: "Pricing Updated", description: "Re-calculated successfully." });
+       if (type === 'net') {
+           await calculateAndSavePricing(currentQuotationId, { manualNetTotal: value });
+       } else {
+           await calculateAndSavePricing(currentQuotationId, { manualGrandTotal: value });
+       }
+       await loadPreviewData(currentQuotationId);
+       toast({ title: "Pricing Updated", description: "Re-calculated based on new total." });
      } catch (error) {
-        console.error("Total Override Error:", error);
-        toast({ title: "Error", description: "Failed to update total.", variant: "destructive" });
+       console.error("Total Override Error:", error);
+       toast({ title: "Error", description: "Failed to update total.", variant: "destructive" });
      }
   };
+
   const handleUpdateTerms = async (field: string, value: string) => {
     try {
        const { error } = await supabase.from("quotations").update({ [field]: value }).eq("id", currentQuotationId);
@@ -254,31 +277,23 @@ const handleUpdateTotalOverride = async (type: 'net' | 'grand', value: number) =
     }
   };
 
-  // ------------------------------------------------------------------
-  // ✅ เพิ่มฟังก์ชันนี้: handleUpdateDiscount
-  // ------------------------------------------------------------------
   const handleUpdateDiscount = async (value: number) => {
     if (!currentQuotationId) return;
     try {
-      // ✅ ใช้ Hook เพื่อให้มันคำนวณ Grand Total ใหม่ (Net - Discount + VAT)
       await calculateAndSavePricing(currentQuotationId, { manualDiscount: value });
-
       await loadPreviewData(currentQuotationId);
     } catch (err) {
       console.error("Update Discount Error:", err);
       toast({ title: "Error", description: "Failed to update discount", variant: "destructive" });
     }
   };
-  // ------------------------------------------------------------------
-  // ✅ แก้ไขฟังก์ชัน: loadPreviewData
-  // ------------------------------------------------------------------
+
   const loadPreviewData = async (quotationId: string) => {
     try {
       const { data: quoteData } = await supabase.from("quotations").select("*").eq("id", quotationId).single();
       const { data: lineItems } = await supabase.from("product_line_items").select(`*, products(*)`).eq("quotation_id", quotationId);
       if (!quoteData || !lineItems) return;
 
-      // 1. ดึงค่า Default จาก Sale Package
       let defaultPayment = "-"; 
       let defaultWarranty = "-"; 
       let defaultNote = "-";
@@ -292,18 +307,14 @@ const handleUpdateTotalOverride = async (type: 'net' | 'grand', value: number) =
           }
       }
 
-      // 2. ✅ ประกาศตัวแปร final... ตรงนี้เลย (เพื่อให้ใช้ข้างล่างได้)
-      // Logic: ถ้าใน quotation มีค่า (ไม่เป็น null) ให้ใช้ค่าที่แก้แล้ว ถ้าไม่มีให้ใช้ default
       const finalPayment = quoteData.edited_payment_terms !== null ? quoteData.edited_payment_terms : defaultPayment;
       const finalWarranty = quoteData.edited_warranty_terms !== null ? quoteData.edited_warranty_terms : defaultWarranty;
       const finalNote = quoteData.edited_note !== null ? quoteData.edited_note : defaultNote;
       const finalDiscount = quoteData.edited_discount || 0;
 
-      // 3. จัดการ Items A / B (Logic เดิม)
       const mappedItems = lineItems.map((item) => {
           const product = item.products;
           const categoryRaw = product?.product_category || "";
-          // เช็ค Section B (ทั้งชื่อเก่าและใหม่)
           const isSectionB = categoryRaw === "operation" || categoryRaw === "Operation & Maintenance"; 
           return {
              id: item.id,
@@ -322,9 +333,7 @@ const handleUpdateTotalOverride = async (type: 'net' | 'grand', value: number) =
           };
       });
 
-      // 4. เรียงลำดับ (Logic เดิม)
       const sectionAOrder = ["solar_panel", "Solar Panel", "pv_mounting_structure", "PV Mounting Structure", "inverter", "Inverter", "optimizer", "Optimizer", "zero_export_smart_logger", "Zero Export & Smart Logger", "ac_box", "AC Box", "dc_box", "DC Box", "cable", "Cable & Connector", "service", "Service", "support_inverter", "Support Inverter", "electrical_management", "Electrical Management", "others", "Others"];
-      
       const sectionBOrder = ["Electrical drawing, Facility system, layout and schematic", "Common Temporary Facilities, Construction Facilities", "Safety Operation", "Comissioning Test", "Commissioning Test", "Tempolary Utility Expense", "ดำเนินการยื่นเอกสารขออนุญาตการไฟฟ้า/กกพ."];
 
       const itemsA = mappedItems.filter(i => i.category === "A").sort((a, b) => {
@@ -340,7 +349,6 @@ const handleUpdateTotalOverride = async (type: 'net' | 'grand', value: number) =
           return getOrderIndex(a.name) - getOrderIndex(b.name);
       });
 
-      // 5. ✅ Set Data (ตอนนี้รู้จักตัวแปร final... แล้ว)
       setPreviewData({
          customerName: formData.customerName,
          projectName: `โซลาร์เซลล์ ${((quoteData.kw_size||0)/1000)} kW`,
@@ -348,14 +356,11 @@ const handleUpdateTotalOverride = async (type: 'net' | 'grand', value: number) =
          date: new Date().toLocaleDateString("th-TH"),
          quotationId: quoteData.id,
          items: [...itemsA, ...itemsB],
-         
-         paymentTerms: parseTerms(finalPayment), // ใช้ตัวแปรที่ประกาศไว้ข้างบน
+         paymentTerms: parseTerms(finalPayment),
          warrantyTerms: parseTerms(finalWarranty),
          remarks: finalNote || "",
-         
          rawPaymentTerms: finalPayment || "",
          rawWarrantyTerms: finalWarranty || "",
-         
          vatRate: 0.07,
          discount: finalDiscount,
          electricalPhase: formData.electricalPhase,
@@ -363,9 +368,7 @@ const handleUpdateTotalOverride = async (type: 'net' | 'grand', value: number) =
       });
     } catch (e) { console.error("Preview Error", e); }
   };
-  // ------------------------------------------------------------------
-  // Export Excel
-  // ------------------------------------------------------------------
+
   const handleExportExcel = async () => {
     if (!currentQuotationId) { toast({ title: "Not Found", description: "Please save first.", variant: "destructive" }); return; }
     setIsLoading(true);
@@ -390,7 +393,6 @@ const handleUpdateTotalOverride = async (type: 'net' | 'grand', value: number) =
       const mappedItems = lineItems?.map((item, index) => {
           const product = item.products;
           const categoryRaw = (product?.product_category || "") as string;
-          // เช็คทั้ง key เก่า ('operation') และชื่อใหม่ ('Operation & Maintenance')
           const isSectionB = categoryRaw === "operation" || categoryRaw === "Operation & Maintenance";
           const finalName = item.edited_name || product?.name || "Unknown";
           const finalBrand = item.edited_brand || product?.brand || "-";
@@ -432,13 +434,12 @@ const handleUpdateTotalOverride = async (type: 'net' | 'grand', value: number) =
         .filter((i) => i.category === "B")
         .sort((a, b) => {
           const getOrderIndex = (name: string) => {
-      const index = sectionBOrder.findIndex(key => 
-        name.toLowerCase().includes(key.toLowerCase())
-      );
-      return index === -1 ? 999 : index;
-    };
-    return getOrderIndex(a.name) - getOrderIndex(b.name);
-  });
+              const index = sectionBOrder.findIndex(key => name.toLowerCase().includes(key.toLowerCase()));
+              return index === -1 ? 999 : index;
+          };
+          return getOrderIndex(a.name) - getOrderIndex(b.name);
+      });
+
       const exportData = {
         companyName: companyData?.name || "Company Name",
         companyAddress: companyData?.address || "-",
@@ -468,13 +469,11 @@ const handleUpdateTotalOverride = async (type: 'net' | 'grand', value: number) =
   };
 
   // ------------------------------------------------------------------
-  // ✅ 1. Auto-fill: พิมพ์ชื่อเสร็จ -> ดึง Tax ID
+  // Auto-fill Handlers
   // ------------------------------------------------------------------
   const handleNameBlur = async () => {
     const name = formData.customerName.trim();
     if (!name) return;
-
-    // ถ้า Tax ID มีอยู่แล้ว ไม่ต้องดึง (เดี๋ยวจะไปตีกันตอน Save แทน)
     if (formData.customerTaxId) return; 
 
     try {
@@ -494,14 +493,9 @@ const handleUpdateTotalOverride = async (type: 'net' | 'grand', value: number) =
     }
   };
 
-  // ------------------------------------------------------------------
-  // ✅ 2. Auto-fill: พิมพ์ Tax ID เสร็จ -> ดึงชื่อ
-  // ------------------------------------------------------------------
   const handleTaxBlur = async () => {
     const taxId = formData.customerTaxId.trim();
     if (!taxId) return;
-
-    // ถ้าชื่อมีอยู่แล้ว ไม่ต้องดึง (ให้ Priority ชื่อที่พิมพ์มา)
     if (formData.customerName) return;
 
     try {
@@ -521,15 +515,11 @@ const handleUpdateTotalOverride = async (type: 'net' | 'grand', value: number) =
     }
   };
 
-  // ------------------------------------------------------------------
-  // ✅ 3. Action เมื่อกด "ตกลง" ใน Popup เปลี่ยนชื่อ
-  // ------------------------------------------------------------------
   const handleConfirmRename = async () => {
     if (!conflictData) return;
     
     try {
       setIsLoading(true);
-      // อัปเดตชื่อลูกค้าใน DB
       const { error } = await supabase
         .from("customers")
         .update({ customer_name: conflictData.newName })
@@ -539,13 +529,10 @@ const handleUpdateTotalOverride = async (type: 'net' | 'grand', value: number) =
 
       toast({ title: "Updated", description: "Customer name updated successfully." });
       
-      // ปิด Dialog
       setShowRenameDialog(false);
       setConflictData(null);
       setCurrentCustomerId(conflictData.id);
 
-      // เรียก Save อีกครั้ง (คราวนี้จะผ่านฉลุยเพราะชื่อตรงแล้ว)
-      // *หมายเหตุ: ต้องแก้ handleCreateQuotation ให้รับ parameter skipCheck ได้ หรือเรียกซ้ำได้เลย*
       handleCreateQuotation(true); 
 
     } catch (error) {
@@ -555,32 +542,261 @@ const handleUpdateTotalOverride = async (type: 'net' | 'grand', value: number) =
     }
   };
 
-  // 1. เพิ่มฟังก์ชัน handleDeleteItem ไว้ใน Component CreateQuotation (เช่น ต่อจาก handleAddItem)
-  const handleDeleteItem = async (itemId: string) => {
-    if (!currentQuotationId) return;
-    
-    // ยืนยันก่อนลบ
-    //if (!window.confirm("คุณต้องการลบรายการนี้ใช่หรือไม่?")) return;
+  // ------------------------------------------------------------------
+  // ✅ CREATE / SAVE QUOTATION (Mixed Logic)
+  // ------------------------------------------------------------------
+  const handleCreateQuotation = async (skipCheck = false) => {
+    // 1. Validation
+    if (!formData.projectSize || !formData.salesProgram || !formData.brand || !formData.solarPanelSize) {
+      toast({ title: "Required", description: "Please fill all required fields (*)", variant: "destructive" });
+      return;
+    }
+
+    // ---------------------------------------------------------
+    // 🟢 ตรวจสอบความขัดแย้งก่อน Save (ใช้ Logic แบบใหม่ที่รัดกุมขึ้น)
+    // ---------------------------------------------------------
+    if (!skipCheck) {
+        const inputName = formData.customerName.trim();
+        const inputTaxId = formData.customerTaxId ? formData.customerTaxId.trim() : "";
+
+        if (inputTaxId) {
+            // A. ค้นหาจาก Tax ID ก่อน (Priority สูงสุด)
+            const { data: taxMatch } = await supabase
+                .from("customers")
+                .select("*")
+                .eq("id_tax", inputTaxId)
+                .maybeSingle();
+
+            if (taxMatch) {
+                // เจอ Tax ID นี้ -> เช็คชื่อว่าตรงกันไหม
+                if (taxMatch.customer_name.trim() !== inputName) {
+                    // ⚠️ ชื่อไม่ตรง -> แสดง Popup ถาม User
+                    setConflictData({ id: taxMatch.id, oldName: taxMatch.customer_name, newName: inputName });
+                    setShowRenameDialog(true);
+                    return; 
+                }
+            } else {
+                // B. ไม่เจอ Tax ID นี้ -> เช็คว่าชื่อซ้ำกับคนอื่นที่มี Tax ID ต่างกันหรือไม่?
+                 const { data: nameMatch } = await supabase
+                    .from("customers")
+                    .select("*")
+                    .eq("customer_name", inputName)
+                    .maybeSingle();
+                 
+                 if (nameMatch && nameMatch.id_tax && nameMatch.id_tax !== inputTaxId) {
+                      // ❌ ชื่อซ้ำ แต่ Tax ID ไม่ตรง -> แจ้งเตือนห้ามบันทึก
+                      toast({ 
+                         title: "ชื่อลูกค้าซ้ำ!", 
+                         description: `ชื่อ "${inputName}" มีอยู่ในระบบแล้ว (Tax ID: ${nameMatch.id_tax}) กรุณาเปลี่ยนชื่อ`,
+                         variant: "destructive" 
+                     });
+                    return;
+                 }
+            }
+        }
+    }
+
+    setIsLoading(true);
 
     try {
-      // 1. ลบจาก Database
-      const { error } = await supabase
-        .from("product_line_items")
-        .delete()
-        .eq("id", itemId);
+      // 2. Prepare Customer Data
+      let finalCustomerId = currentCustomerId;
+      const inputName = formData.customerName.trim();
+      const inputTaxId = formData.customerTaxId ? formData.customerTaxId.trim() : "";
+      
+      let finalName = inputName;
+      let finalTaxId = inputTaxId;
 
-      if (error) throw error;
+      if (inputName) {
+         if (!finalCustomerId) {
+            // Logic หากยังไม่มี ID (เช่น User พิมพ์ใหม่) พยายามหา match ครั้งสุดท้าย
+            let match = null;
+            if (inputTaxId) {
+                const { data } = await supabase.from("customers").select("*").eq("id_tax", inputTaxId).maybeSingle();
+                match = data;
+            } else {
+                const { data } = await supabase.from("customers").select("*").eq("customer_name", inputName).maybeSingle();
+                match = data;
+            }
+            if (match) finalCustomerId = match.id;
+         }
 
-      // 2. คำนวณราคาใหม่ (Recalculate)
+         // SAVE / UPDATE CUSTOMER
+         if (finalCustomerId) {
+             await supabase.from("customers").update({ 
+                customer_name: finalName,
+                id_tax: finalTaxId || null
+             }).eq("id", finalCustomerId);
+         } else {
+             const { data: newCust, error } = await supabase.from("customers").insert({ 
+                 customer_name: finalName || "-", 
+                 id_tax: finalTaxId || null
+             }).select("id").single();
+             if (error) throw error;
+             finalCustomerId = newCust.id;
+         }
+         setCurrentCustomerId(finalCustomerId);
+      }
+
+      // 3. Prepare Quotation Data
+      let newSalePackageId = null;
+      if (formData.salesProgram) {
+        const selectedProgram = allPrograms.find((p) => p.name === formData.salesProgram);
+        if (selectedProgram) newSalePackageId = selectedProgram.id;
+      }
+      
+      const newProjectSize = formData.projectSize ? parseFloat(formData.projectSize) : 0;
+      const newPanelSize = formData.solarPanelSize ? parseFloat(formData.solarPanelSize) : 0;
+      const { kwPeak } = calculateSystemSpecs(newProjectSize, newPanelSize);
+
+      const quotationData = {
+        customer_id: finalCustomerId,
+        location: formData.installLocation || null,
+        kw_size: newProjectSize,
+        kw_panel: newPanelSize,
+        kw_peak: kwPeak,
+        electrical_phase: formData.electricalPhase || "single_phase",
+        document_num: formData.documentNumber || null,
+        creater_name: formData.serviceProvider || null,
+        note: formData.additionalInfo || null,
+        sale_package_id: newSalePackageId,
+        inverter_brand: formData.brand || null,
+      };
+
+      let targetId = currentQuotationId;
+
+      // =========================================================
+      // 🧠 Logic Decision: "แค่แก้หัว" หรือ "แก้โครงสร้าง" ?
+      // =========================================================
+      
+      if (currentQuotationId) {
+        // --- กรณี Save Changes ---
+        const { data: oldQuote } = await supabase.from("quotations").select("*").eq("id", currentQuotationId).single();
+
+        if (!oldQuote) throw new Error("Quotation not found");
+
+        // เช็คการเปลี่ยนโครงสร้าง (Structural Change)
+        const isStructuralChange = 
+            oldQuote.kw_size !== newProjectSize ||          
+            oldQuote.kw_panel !== newPanelSize ||           
+            oldQuote.inverter_brand !== formData.brand ||    
+            oldQuote.electrical_phase !== formData.electricalPhase || 
+            oldQuote.sale_package_id !== newSalePackageId;   
+
+        await supabase
+            .from("quotations")
+            .update({ ...quotationData, updated_at: new Date().toISOString() })
+            .eq("id", currentQuotationId);
+
+        if (isStructuralChange) {
+            console.log("⚠️ Structural Change Detected: Regenerating All Items...");
+            await generateMainEquipment(currentQuotationId);      
+            await generateAdditionalEquipment(currentQuotationId); 
+            await calculateAndSavePricing(currentQuotationId);    
+            toast({ title: "Re-calculated", description: "สเปคเปลี่ยน: สร้างรายการสินค้าและคำนวณราคาใหม่เรียบร้อย" });
+        } else {
+            console.log("✅ Cosmetic Change Only: Updated Header, Preserved Items.");
+            toast({ title: "Updated", description: "บันทึกข้อมูลทั่วไปเรียบร้อย (รายการสินค้าคงเดิม)" });
+        }
+
+      } else {
+        // --- กรณี Create New (สร้างใหม่ครั้งแรก) ---
+        const { data: quotation, error: insertError } = await supabase
+            .from("quotations")
+            .insert({ ...quotationData, edited_price: 0 })
+            .select()
+            .single();
+        
+        if (insertError) throw insertError;
+        
+        targetId = quotation.id;
+        setCurrentQuotationId(quotation.id);
+
+        await generateMainEquipment(targetId);
+        await generateAdditionalEquipment(targetId);
+        await calculateAndSavePricing(targetId);
+
+        toast({ title: "Created", description: "สร้างใบเสนอราคาใหม่เรียบร้อย" });
+      }
+
+      if (targetId) {
+        await loadPreviewData(targetId);
+      }
+      setShowQuotation(true);
+
+    } catch (error) {
+      console.error("Error:", error);
+      toast({ title: "Error", description: "Failed to save.", variant: "destructive" });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  const handleEditQuotation = async () => {
+    if (!isEditMode) {
+      setIsEditMode(true);
+      toast({ title: "Edit Mode", description: "You can now edit the preview directly." });
+    } else {
+      if (currentQuotationId) {
+        try {
+          const { error } = await supabase.from("quotations").update({ updated_at: new Date().toISOString() }).eq("id", currentQuotationId);
+          if (error) throw error;
+          toast({ title: "Saved", description: "All changes saved." });
+        } catch (error) { console.error("Error updating:", error); }
+      }
+      setIsEditMode(false);
+    }
+  };
+
+  const handleReset = async () => {
+    if (!currentQuotationId) return;
+
+    if (!window.confirm("คุณต้องการรีเซ็ตรายการสินค้าทั้งหมดกลับเป็นค่าเริ่มต้นหรือไม่? \n(ราคาที่แก้ไข, ส่วนลด, และรายการที่เพิ่มเอง จะหายไปทั้งหมด)")) {
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const projectSizeVal = formData.projectSize ? parseFloat(formData.projectSize) : 0;
+      const panelSizeVal = formData.solarPanelSize ? parseFloat(formData.solarPanelSize) : 0;
+      const { kwPeak } = calculateSystemSpecs(projectSizeVal, panelSizeVal);
+      
+      let salePackageId = null;
+      if (formData.salesProgram) {
+        const selectedProgram = allPrograms.find((p) => p.name === formData.salesProgram);
+        if (selectedProgram) salePackageId = selectedProgram.id;
+      }
+
+      await supabase.from("quotations").update({
+        kw_size: projectSizeVal,
+        kw_panel: panelSizeVal,
+        kw_peak: kwPeak,
+        inverter_brand: formData.brand,
+        electrical_phase: formData.electricalPhase,
+        sale_package_id: salePackageId,
+        edited_price: null,       
+        edited_discount: null,    
+        edited_payment_terms: null,
+        edited_warranty_terms: null,
+        edited_note: null,
+        updated_at: new Date().toISOString()
+      }).eq("id", currentQuotationId);
+
+      await generateMainEquipment(currentQuotationId);
+      await generateAdditionalEquipment(currentQuotationId);
       await calculateAndSavePricing(currentQuotationId);
-
-      // 3. โหลดข้อมูลใหม่ (Refresh UI)
       await loadPreviewData(currentQuotationId);
 
-      toast({ title: "Deleted", description: "ลบรายการเรียบร้อยแล้ว" });
+      toast({
+        title: "Reset Successful",
+        description: "คืนค่ารายการสินค้า เงื่อนไข และราคาเป็นค่ามาตรฐานเรียบร้อย",
+      });
+
     } catch (error) {
-      console.error("Delete Error:", error);
-      toast({ title: "Error", description: "ไม่สามารถลบรายการได้", variant: "destructive" });
+      console.error("Reset Error:", error);
+      toast({ title: "Error", description: "Failed to reset.", variant: "destructive" });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -593,7 +809,6 @@ const handleUpdateTotalOverride = async (type: 'net' | 'grand', value: number) =
      }
   }, [currentQuotationId, showQuotation]);
 
-  // ✅ 1. แก้ไข useEffect การดึงข้อมูล (ใช้ชื่อ column: kw_min, kw_max)
   useEffect(() => {
     const fetchSalesPrograms = async () => {
       try {
@@ -609,10 +824,7 @@ const handleUpdateTotalOverride = async (type: 'net' | 'grand', value: number) =
           `)
           .order("sale_name");
 
-        if (error) {
-            console.error("❌ Supabase Error:", error);
-            throw error;
-        }
+        if (error) throw error;
         
         if (data) {
           const programs = data.map((p: any) => ({
@@ -652,14 +864,8 @@ const handleUpdateTotalOverride = async (type: 'net' | 'grand', value: number) =
     fetchBrandsForProgram();
   }, [formData.salesProgram, allPrograms]);
 
-  // ✅ 2. แก้ไข useEffect การกรอง (เทียบ Watt vs Watt)
-  // ✅ แก้ไข Logic การกรอง (Compare Watt to Watt)
   useEffect(() => {
-    const sizeInWatt = parseFloat(formData.projectSize); // ค่าที่กรอก (เช่น 50000)
-
-    // ❌ ลบบรรทัดนี้ทิ้ง (ไม่ต้องแปลงเป็น kW แล้ว)
-    // const sizeInKW = sizeInWatt / 1000; 
-
+    const sizeInWatt = parseFloat(formData.projectSize);
     console.log("---------------- FILTER DEBUG ----------------");
     console.log("Input (Watt):", sizeInWatt);
     
@@ -670,18 +876,13 @@ const handleUpdateTotalOverride = async (type: 'net' | 'grand', value: number) =
 
     const validPrograms = allPrograms.filter((prog) => {
       if (!prog.prices || prog.prices.length === 0) return false;
-
       return prog.prices.some((price) => {
-        // ดึงค่าจาก DB (ซึ่งเป็น Watt ตามที่คุณบอก)
-        const min = price.kw_min || 0;       // เช่น 50000
-        const max = price.kw_max !== null ? price.kw_max : min; // เช่น 50000
-
-        // ✅ เปรียบเทียบ Watt กับ Watt ตรงๆ
+        const min = price.kw_min || 0;     
+        const max = price.kw_max !== null ? price.kw_max : min;
         return sizeInWatt >= min && sizeInWatt <= max;
       });
     });
 
-    console.log("Valid Programs:", validPrograms);
     setFilteredPrograms(validPrograms);
 
   }, [formData.projectSize, allPrograms]);
@@ -692,7 +893,6 @@ const handleUpdateTotalOverride = async (type: 'net' | 'grand', value: number) =
         const { data, error } = await supabase
           .from("products")
           .select("min_kw, product_category")
-          // ✅ เปลี่ยนเป็น .in() เพื่อหาทั้งชื่อเก่าและชื่อใหม่
           .in("product_category", ["solar_panel", "Solar Panel"]) 
           .not("min_kw", "is", null);
 
@@ -717,7 +917,6 @@ const handleUpdateTotalOverride = async (type: 'net' | 'grand', value: number) =
         if (error) throw error;
         if (data) {
           setCurrentQuotationId(data.id);
-          // ✅ เก็บ ID และ Tax ID เมื่อโหลดข้อมูล
           setCurrentCustomerId(data.customer_id); 
           setFormData({
             customerName: data.customers?.customer_name || "",
@@ -745,263 +944,6 @@ const handleUpdateTotalOverride = async (type: 'net' | 'grand', value: number) =
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
-  // ------------------------------------------------------------------
-  // ✅ NEW LOGIC: Smart Split (แยกเคสแก้ไขหัวบิล vs แก้ไขสเปค)
-  // ------------------------------------------------------------------
-  const handleCreateQuotation = async (skipCheck = false) => {
-    // 1. Validation (ตรวจสอบค่าว่าง)
-    if (!formData.projectSize || !formData.salesProgram || !formData.brand || !formData.solarPanelSize) {
-      toast({ title: "Required", description: "Please fill all required fields (*)", variant: "destructive" });
-      return;
-    }
-
-    // --- Check Duplicate Name/ID (Logic เดิม) ---
-    if (!skipCheck) {
-        const inputName = formData.customerName.trim();
-        const inputTaxId = formData.customerTaxId ? formData.customerTaxId.trim() : "";
-        if (inputTaxId) {
-            const { data: taxMatch } = await supabase.from("customers").select("*").eq("id_tax", inputTaxId).maybeSingle();
-            if (taxMatch && taxMatch.customer_name.trim() !== inputName) {
-                setConflictData({ id: taxMatch.id, oldName: taxMatch.customer_name, newName: inputName });
-                setShowRenameDialog(true);
-                return;
-            }
-        }
-    }
-
-    setIsLoading(true);
-
-    try {
-      // 2. Prepare Customer Data (เหมือนเดิม)
-      let finalCustomerId = currentCustomerId;
-      const inputName = formData.customerName.trim();
-      const inputTaxId = formData.customerTaxId ? formData.customerTaxId.trim() : "";
-      
-      if (inputName) {
-         // ... (Logic Customer เดิมของคุณ ใส่ตรงนี้) ...
-         if (!finalCustomerId) {
-            let match = null;
-            if (inputTaxId) {
-               const { data } = await supabase.from("customers").select("*").eq("id_tax", inputTaxId).maybeSingle();
-               match = data;
-            } else {
-               const { data } = await supabase.from("customers").select("*").eq("customer_name", inputName).maybeSingle();
-               match = data;
-            }
-            if (match) finalCustomerId = match.id;
-         }
-
-         if (finalCustomerId) {
-             await supabase.from("customers").update({ customer_name: inputName, id_tax: inputTaxId || null }).eq("id", finalCustomerId);
-         } else {
-             const { data: newCust, error } = await supabase.from("customers").insert({ customer_name: inputName || "-", id_tax: inputTaxId || null }).select("id").single();
-             if (error) throw error;
-             finalCustomerId = newCust.id;
-         }
-         setCurrentCustomerId(finalCustomerId);
-      }
-
-      // 3. Prepare Quotation Data Values
-      // หา ID ของ Sales Program ใหม่
-      let newSalePackageId = null;
-      if (formData.salesProgram) {
-        const selectedProgram = allPrograms.find((p) => p.name === formData.salesProgram);
-        if (selectedProgram) newSalePackageId = selectedProgram.id;
-      }
-      
-      const newProjectSize = formData.projectSize ? parseFloat(formData.projectSize) : 0;
-      const newPanelSize = formData.solarPanelSize ? parseFloat(formData.solarPanelSize) : 0;
-      const { kwPeak } = calculateSystemSpecs(newProjectSize, newPanelSize); // คำนวณ kWp
-
-      const quotationData = {
-        customer_id: finalCustomerId,
-        location: formData.installLocation || null,
-        kw_size: newProjectSize,
-        kw_panel: newPanelSize,
-        kw_peak: kwPeak,
-        electrical_phase: formData.electricalPhase || "single_phase",
-        document_num: formData.documentNumber || null,
-        creater_name: formData.serviceProvider || null,
-        note: formData.additionalInfo || null,
-        sale_package_id: newSalePackageId,
-        inverter_brand: formData.brand || null,
-      };
-
-      let targetId = currentQuotationId;
-
-      // =========================================================
-      // 🧠 Logic Decision: "แค่แก้หัว" หรือ "แก้โครงสร้าง" ?
-      // =========================================================
-      
-      if (currentQuotationId) {
-        // --- กรณี Save Changes ---
-        
-        // 1. ดึงข้อมูลเก่าจาก DB มาเทียบ
-        const { data: oldQuote } = await supabase
-            .from("quotations")
-            .select("*")
-            .eq("id", currentQuotationId)
-            .single();
-
-        if (!oldQuote) throw new Error("Quotation not found");
-
-        // 2. เช็คว่ามี "การเปลี่ยนโครงสร้าง (Structural Change)" หรือไม่?
-        // (เทียบค่าใหม่ vs ค่าเก่า)
-        const isStructuralChange = 
-            oldQuote.kw_size !== newProjectSize ||           // ขนาดเปลี่ยน?
-            oldQuote.kw_panel !== newPanelSize ||            // ขนาดแผงเปลี่ยน?
-            oldQuote.inverter_brand !== formData.brand ||    // ยี่ห้อเปลี่ยน?
-            oldQuote.electrical_phase !== formData.electricalPhase || // เฟสไฟเปลี่ยน?
-            oldQuote.sale_package_id !== newSalePackageId;   // โปรแกรมขายเปลี่ยน?
-
-        // 3. อัปเดตข้อมูล Header ลง DB (ทำทั้ง 2 กรณี)
-        await supabase
-            .from("quotations")
-            .update({ ...quotationData, updated_at: new Date().toISOString() })
-            .eq("id", currentQuotationId);
-
-        if (isStructuralChange) {
-            // 🚨 CASE A: โครงสร้างเปลี่ยน (Structural Change)
-            // ต้องคำนวณใหม่หมด (Reset Items)
-            console.log("⚠️ Structural Change Detected: Regenerating All Items...");
-            
-            await generateMainEquipment(currentQuotationId);       // ลบของเก่า -> สร้างของใหม่
-            await generateAdditionalEquipment(currentQuotationId); // สร้างของแถมใหม่
-            await calculateAndSavePricing(currentQuotationId);     // คำนวณราคาใหม่
-
-            toast({ title: "Re-calculated", description: "สเปคเปลี่ยน: สร้างรายการสินค้าและคำนวณราคาใหม่เรียบร้อย" });
-        } else {
-            // 🛡️ CASE B: แค่แก้คำผิด/หัวเอกสาร (Cosmetic Change)
-            // ไม่ต้องทำอะไรกับ Items เลย (Skip Generation)
-            console.log("✅ Cosmetic Change Only: Updated Header, Preserved Items.");
-            
-            // แค่อัปเดตราคาสุทธิ (เผื่อ Manual Target Price หาย แต่รายการสินค้ายังอยู่)
-            // หรือถ้ามั่นใจว่าไม่ต้องทำอะไรเลย ก็ข้ามบรรทัดนี้ได้
-            // await calculateAndSavePricing(currentQuotationId); 
-            
-            toast({ title: "Updated", description: "บันทึกข้อมูลทั่วไปเรียบร้อย (รายการสินค้าคงเดิม)" });
-        }
-
-      } else {
-        // --- กรณี Create New (สร้างใหม่ครั้งแรก) ---
-        const { data: quotation, error: insertError } = await supabase
-            .from("quotations")
-            .insert({ ...quotationData, edited_price: 0 })
-            .select()
-            .single();
-        
-        if (insertError) throw insertError;
-        
-        targetId = quotation.id;
-        setCurrentQuotationId(quotation.id);
-
-        // สร้างใหม่ต้อง Gen เสมอ
-        await generateMainEquipment(targetId);
-        await generateAdditionalEquipment(targetId);
-        await calculateAndSavePricing(targetId);
-
-        toast({ title: "Created", description: "สร้างใบเสนอราคาใหม่เรียบร้อย" });
-      }
-
-      // 4. โหลดข้อมูลมาแสดงผลใหม่ (เพื่อให้ชื่อลูกค้า/Update ล่าสุดแสดงบนจอ)
-      if (targetId) {
-        await loadPreviewData(targetId);
-      }
-      setShowQuotation(true);
-
-    } catch (error) {
-      console.error("Error:", error);
-      toast({ title: "Error", description: "Failed to save.", variant: "destructive" });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-  
-  const handleEditQuotation = async () => {
-    if (!isEditMode) {
-      setIsEditMode(true);
-      toast({ title: "Edit Mode", description: "You can now edit the preview directly." });
-    } else {
-      if (currentQuotationId) {
-        try {
-          const { error } = await supabase.from("quotations").update({ updated_at: new Date().toISOString() }).eq("id", currentQuotationId);
-          if (error) throw error;
-          toast({ title: "Saved", description: "All changes saved." });
-        } catch (error) { console.error("Error updating:", error); }
-      }
-      setIsEditMode(false);
-    }
-  };
-
-  // ในไฟล์ CreateQuotation.tsx ค้นหาฟังก์ชัน handleReset
-
-const handleReset = async () => {
-    if (!currentQuotationId) return;
-
-    if (!window.confirm("คุณต้องการรีเซ็ตรายการสินค้าทั้งหมดกลับเป็นค่าเริ่มต้นหรือไม่? \n(ราคาที่แก้ไข, ส่วนลด, และรายการที่เพิ่มเอง จะหายไปทั้งหมด)")) {
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      // 1. เตรียมข้อมูล Header (เหมือนเดิม)
-      const projectSizeVal = formData.projectSize ? parseFloat(formData.projectSize) : 0;
-      const panelSizeVal = formData.solarPanelSize ? parseFloat(formData.solarPanelSize) : 0;
-      const { kwPeak } = calculateSystemSpecs(projectSizeVal, panelSizeVal);
-      
-      let salePackageId = null;
-      if (formData.salesProgram) {
-        const selectedProgram = allPrograms.find((p) => p.name === formData.salesProgram);
-        if (selectedProgram) salePackageId = selectedProgram.id;
-      }
-
-      // ---------------------------------------------------------
-      // ✅ 2. จุดที่ต้องแก้ไข: สั่งล้างค่า Edited ทุกตัวให้เป็น null
-      // ---------------------------------------------------------
-      await supabase.from("quotations").update({
-        kw_size: projectSizeVal,
-        kw_panel: panelSizeVal,
-        kw_peak: kwPeak,
-        inverter_brand: formData.brand,
-        electrical_phase: formData.electricalPhase,
-        sale_package_id: salePackageId,
-        
-        // 🔹 ล้างราคาและส่วนลด (ใช้ null ปลอดภัยกว่า 0 เพื่อให้ระบบรู้ว่า "ไม่มีการแก้ไข")
-        edited_price: null,       
-        edited_discount: null,    
-
-        // 🔹 ล้างเงื่อนไขและหมายเหตุ (สำคัญ! ต้องเป็น null ถึงจะดึง Default มาโชว์)
-        edited_payment_terms: null,
-        edited_warranty_terms: null,
-        edited_note: null,
-
-        updated_at: new Date().toISOString()
-      }).eq("id", currentQuotationId);
-
-      // 3. สั่ง Generate ใหม่ (เหมือนเดิม)
-      console.log("🔄 Resetting to defaults...");
-      await generateMainEquipment(currentQuotationId);
-      await generateAdditionalEquipment(currentQuotationId);
-
-      // 4. คำนวณราคาใหม่ (เหมือนเดิม)
-      await calculateAndSavePricing(currentQuotationId);
-      
-      // 5. โหลดหน้า Preview ใหม่ (เหมือนเดิม)
-      await loadPreviewData(currentQuotationId);
-
-      toast({
-        title: "Reset Successful",
-        description: "คืนค่ารายการสินค้า เงื่อนไข และราคาเป็นค่ามาตรฐานเรียบร้อย",
-      });
-
-    } catch (error) {
-      console.error("Reset Error:", error);
-      toast({ title: "Error", description: "Failed to reset.", variant: "destructive" });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   if (isLoadingData) return <div className="min-h-screen bg-muted/30 p-6 flex items-center justify-center"><p className="text-muted-foreground">Loading...</p></div>;
 
   return (
@@ -1017,7 +959,6 @@ const handleReset = async () => {
           <div className="bg-card rounded-lg shadow-sm p-5 border border-border">
             <h2 className="text-lg font-semibold mb-3 text-primary">Quotation Data</h2>
             
-            {/* ✅ GRID LAYOUT 2 Columns */}
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-1">
                 <Label className="text-xs text-muted-foreground">Customer</Label>
@@ -1057,11 +998,9 @@ const handleReset = async () => {
                 <Select 
                   value={formData.salesProgram} 
                   onValueChange={(value) => handleInputChange("salesProgram", value)}
-                  // ✅ เพิ่มเงื่อนไข disabled: ถ้าไม่มี projectSize ให้กดไม่ได้
                   disabled={!formData.projectSize} 
                 >
                   <SelectTrigger className="h-9 mt-1">
-                    {/* ✅ เปลี่ยนข้อความ Placeholder ตามสถานะ */}
                     <SelectValue placeholder={formData.projectSize ? "Select Program" : "Enter Project Size first"} />
                   </SelectTrigger>
                   <SelectContent>
