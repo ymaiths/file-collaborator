@@ -243,22 +243,6 @@ export const ExcelImportModal = ({
 
           {headers.length > 0 && (
             <>
-              {/* Extra Inputs & Global Booleans (เหมือนเดิม) */}
-              {/* ... (Copy Code ส่วน Extra Inputs & BooleanFields เดิมมาใส่ตรงนี้ได้เลย) ... */}
-              {extraInputs.length > 0 && (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-blue-50 rounded-lg border border-blue-100">
-                    {extraInputs.map((input) => (
-                        <div key={input.key} className="space-y-1">
-                            <Label className="text-xs font-semibold text-blue-800">{input.label}</Label>
-                            <Input 
-                                value={input.value} 
-                                onChange={(e) => input.onChange(e.target.value)}
-                                className="bg-white h-8 text-sm"
-                            />
-                        </div>
-                    ))}
-                </div>
-              )}
               {booleanFields.length > 0 && (
                 <div className="p-4 bg-muted rounded-lg border">
                     <h4 className="text-sm font-semibold mb-3">ตั้งค่าคอลัมน์</h4>

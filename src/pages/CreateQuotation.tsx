@@ -552,6 +552,13 @@ const CreateQuotation = () => {
       return;
     }
 
+    const isValidProgram = filteredPrograms.some(p => p.name === formData.salesProgram);
+
+    if (!isValidProgram) {
+      toast({ title: "Required", description: "Please fill all required fields (*)", variant: "destructive" });
+      setFormData(prev => ({ ...prev, salesProgram: "", brand: "" }));
+      return; 
+    }
     // ---------------------------------------------------------
     // 🟢 ตรวจสอบความขัดแย้งก่อน Save (ใช้ Logic แบบใหม่ที่รัดกุมขึ้น)
     // ---------------------------------------------------------
