@@ -118,7 +118,7 @@ export function CustomerAutocomplete({ value, onSelect, onInputChange, onClear }
       <div className="relative">
         <Input
           type="text"
-          placeholder="พิมพ์ชื่อลูกค้า..."
+          placeholder="Customer Name"
           value={inputValue}
           onChange={(e) => {
             const val = e.target.value;
