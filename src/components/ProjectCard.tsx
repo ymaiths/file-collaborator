@@ -16,6 +16,7 @@ interface ProjectCardProps {
   projectSize: string;
   price: string;
   salesProgramme: string;
+  note?: string | null;
   editedDate: string;
   createdDate: string;
   onDelete: (id: string) => void;
@@ -29,6 +30,7 @@ export const ProjectCard = ({
   projectSize,
   price,
   salesProgramme,
+  note,
   editedDate,
   createdDate,
   onDelete,
@@ -66,6 +68,19 @@ export const ProjectCard = ({
           <p className="text-sm text-foreground font-medium">{price}</p>
           <p className="text-xs text-muted-foreground">{salesProgramme}</p>
         </div>
+        
+        {note && (
+          <div className="mt-3 pt-3 border-t border-border/60">
+            <div className="flex items-start gap-2">
+              <span className="text-[10px] font-semibold text-muted-foreground/70 uppercase tracking-wider whitespace-nowrap mt-0.5">
+                Note:
+              </span>
+              <p className="text-xs text-foreground/80 line-clamp-2 break-words leading-relaxed" title={note}>
+                {note}
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="space-y-1 text-xs text-muted-foreground">

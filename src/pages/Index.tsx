@@ -59,6 +59,7 @@ const Index = () => {
           projectSize: quotation.kw_size ? `${quotation.kw_size.toLocaleString()} kW` : "ไม่ระบุขนาด",
           price: totalPrice > 0 ? `${totalPrice.toLocaleString()} บาท` : "0 บาท",
           salesProgramme: quotation.sale_packages?.sale_name || "ไม่ระบุโปรแกรม",
+          note: quotation.note,
           editedDate: quotation.updated_at ? format(new Date(quotation.updated_at), "dd/MM/yy", { locale: th }) : "-",
           createdDate: quotation.created_at ? format(new Date(quotation.created_at), "dd/MM/yy", { locale: th }) : "-",
           docNumber: quotation.document_num || ""
