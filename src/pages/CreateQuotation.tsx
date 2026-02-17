@@ -67,6 +67,8 @@ interface ProgramWithRange {
   prices: {
     kw_min: number | null;
     kw_max: number | null;
+    inverter_brand: string;      
+    electronic_phase: string;
   }[];
 }
 
@@ -85,7 +87,8 @@ const CreateQuotation = () => {
   const [filteredPrograms, setFilteredPrograms] = useState<ProgramWithRange[]>([]);
   const [availableBrands, setAvailableBrands] = useState<string[]>([]);
   const [availablePanelSizes, setAvailablePanelSizes] = useState<number[]>([]);
-  
+  const [availablePhases, setAvailablePhases] = useState<string[]>([]);
+
   const { generateMainEquipment } = useAutoGenerateLineItems();
   const { generateAdditionalEquipment } = useAutoGenerateAdditionalItems();
   const { calculateAndSavePricing } = useCalculatePricing();
@@ -826,7 +829,9 @@ const CreateQuotation = () => {
             sale_name, 
             sale_package_prices:sale_package_prices!sale_package_prices_sale_package_id_fkey (
               kw_min, 
-              kw_max
+              kw_max,
+              inverter_brand,
+              electronic_phase
             )
           `)
           .order("sale_name");
@@ -850,49 +855,6 @@ const CreateQuotation = () => {
     
     fetchSalesPrograms();
   }, []);
-
-  useEffect(() => {
-    const fetchBrandsForProgram = async () => {
-      if (!formData.salesProgram) { setAvailableBrands([]); return; }
-      const selectedProgram = allPrograms.find((p) => p.name === formData.salesProgram);
-      if (!selectedProgram) return;
-      try {
-        const { data, error } = await supabase.from("sale_package_prices").select("inverter_brand").eq("sale_package_id", selectedProgram.id);
-        if (error) throw error;
-        if (data) {
-          const uniqueBrands = Array.from(new Set(data.map((item) => item.inverter_brand)));
-          setAvailableBrands(uniqueBrands);
-          if (formData.brand && !uniqueBrands.includes(formData.brand as any)) {
-            setFormData((prev) => ({ ...prev, brand: "" }));
-          }
-        }
-      } catch (error) { console.error("Error fetching brands:", error); }
-    };
-    fetchBrandsForProgram();
-  }, [formData.salesProgram, allPrograms]);
-
-  useEffect(() => {
-    const sizeInWatt = parseFloat(formData.projectSize);
-    console.log("---------------- FILTER DEBUG ----------------");
-    console.log("Input (Watt):", sizeInWatt);
-    
-    if (!formData.projectSize || isNaN(sizeInWatt)) {
-      setFilteredPrograms(allPrograms);
-      return;
-    }
-
-    const validPrograms = allPrograms.filter((prog) => {
-      if (!prog.prices || prog.prices.length === 0) return false;
-      return prog.prices.some((price) => {
-        const min = price.kw_min || 0;     
-        const max = price.kw_max !== null ? price.kw_max : min;
-        return sizeInWatt >= min && sizeInWatt <= max;
-      });
-    });
-
-    setFilteredPrograms(validPrograms);
-
-  }, [formData.projectSize, allPrograms]);
 
   useEffect(() => {
     const fetchPanelSizes = async () => {
@@ -946,6 +908,156 @@ const CreateQuotation = () => {
     };
     loadQuotationData();
   }, [quotationId, allPrograms]);
+// -------------------------------------------------------
+  // ✅ LOGIC: Auto-Select & Filter Phase
+  // -------------------------------------------------------
+// 🟡 LEVEL 1: Project Size Changed -> Filter Programs
+  useEffect(() => {
+    const sizeInWatt = parseFloat(formData.projectSize);
+    
+    // Debug: ดูว่าค่าที่กรอกเข้ามาคือเท่าไหร่
+    // console.log("Filtering for Size:", sizeInWatt);
+
+    if (!formData.projectSize || isNaN(sizeInWatt)) {
+      setFilteredPrograms(allPrograms);
+      return;
+    }
+
+    const validPrograms = allPrograms.filter((prog) => {
+      if (!prog.prices || prog.prices.length === 0) return false;
+      
+      // เช็คว่า Program นี้มี Price Tier ไหนที่รองรับ Size นี้ไหม?
+      const isSupported = prog.prices.some((price) => {
+        // 1. แปลงเป็นตัวเลขให้ชัวร์ (หน่วย Watt)
+        const min = Number(price.kw_min || 0);
+
+        // 2. ⚠️ จุดแก้ไขสำคัญ: 
+        // ถ้ามี max ให้ใช้ max
+        // ถ้า max เป็น null/0 ให้ถือว่าเป็น Fix Size (max = min) 
+        // *ยกเว้น* ถ้าคุณตั้งใจให้ null แปลว่า Infinity จริงๆ ค่อยเปลี่ยนกลับ
+        const max = (price.kw_max !== null && Number(price.kw_max) > 0) 
+                    ? Number(price.kw_max) 
+                    : min; 
+
+        // Debug: ดูช่วงข้อมูลของแต่ละโปรแกรม (กด F12 ดูได้ถ้าสงสัย)
+        // console.log(`Check ${prog.name}: Input ${sizeInWatt} vs Range ${min}-${max}`);
+
+        return sizeInWatt >= min && sizeInWatt <= max;
+      });
+
+      return isSupported;
+    });
+
+    setFilteredPrograms(validPrograms);
+
+    // 3. Auto-Reset Logic (เหมือนเดิม)
+    if (formData.salesProgram) {
+       const isStillValid = validPrograms.some(p => p.name === formData.salesProgram);
+       if (!isStillValid) {
+          setFormData(prev => ({ ...prev, salesProgram: "", brand: "", electricalPhase: "" }));
+       }
+    }
+  }, [formData.projectSize, allPrograms]);
+// 🟡 LEVEL 2: Filter Brands (ยืดหยุ่น: ขอแค่มี Size ก็ทำงานได้)
+  useEffect(() => {
+    // 1. ถ้าไม่มี Size -> จบข่าว หา Brand ไม่ได้ (เพราะ Inverter ขึ้นกับ Size)
+    if (!formData.projectSize) {
+        setAvailableBrands([]);
+        return;
+    }
+
+    const sizeInWatt = parseFloat(formData.projectSize);
+
+    // 2. เริ่มต้นจาก "โปรแกรมทั้งหมด" หรือ "โปรแกรมที่เลือกอยู่"
+    let scopePrograms = allPrograms;
+    if (formData.salesProgram) {
+        scopePrograms = allPrograms.filter(p => p.name === formData.salesProgram);
+    }
+
+    // 3. กวาดหา Brand ทั้งหมดที่รองรับ Size นี้ (จาก Scope ที่เหลือ)
+    const validBrands: string[] = [];
+    scopePrograms.forEach(prog => {
+        if (prog.prices) {
+            prog.prices.forEach(price => {
+                const min = price.kw_min || 0;
+                const max = (price.kw_max !== null && Number(price.kw_max) > 0) ? Number(price.kw_max) : min;
+                // เช็คว่า Size นี้อยู่ในช่วงราคาไหม
+                if (sizeInWatt >= min && sizeInWatt <= max) {
+                    validBrands.push(price.inverter_brand);
+                }
+            });
+        }
+    });
+
+    const uniqueBrands = Array.from(new Set(validBrands));
+    setAvailableBrands(uniqueBrands);
+
+    // 4. Auto-Reset Brand (ถ้า Brand เดิมไม่อยู่ในลิสต์ใหม่)
+    if (formData.brand && !uniqueBrands.includes(formData.brand)) {
+         setFormData(prev => ({ ...prev, brand: "", electricalPhase: "" }));
+    }
+
+  }, [formData.salesProgram, formData.projectSize, allPrograms]);
+
+
+  // 🟡 LEVEL 3: Filter Phase & Auto Select (ยืดหยุ่น: ขอแค่มี Size ก็ทำงานได้)
+  useEffect(() => {
+    // 1. ถ้าไม่มี Size -> จบข่าว หา Phase ไม่ได้
+    if (!formData.projectSize) {
+        setAvailablePhases([]);
+        return;
+    }
+
+    const sizeInWatt = parseFloat(formData.projectSize);
+
+    // 2. เริ่มต้น Scope จากทุกโปรแกรม
+    let scopePrograms = allPrograms;
+
+    // 2.1 ถ้าเลือก Program ไว้ -> กรอง Scope ให้แคบลง
+    if (formData.salesProgram) {
+        scopePrograms = allPrograms.filter(p => p.name === formData.salesProgram);
+    }
+
+    // 3. กวาดหา Phase จาก Scope Programs ที่เหลือ
+    const validPhases: string[] = [];
+    scopePrograms.forEach(prog => {
+        if (prog.prices) {
+            prog.prices.forEach(price => {
+                const min = price.kw_min || 0;
+                const max = (price.kw_max !== null && Number(price.kw_max) > 0) ? Number(price.kw_max) : min;
+                // เงื่อนไข 1: Size ต้องตรง
+                const isSizeMatch = sizeInWatt >= min && sizeInWatt <= max;
+                
+                // เงื่อนไข 2: ถ้าเลือก Brand ไว้ Brand ต้องตรง (ถ้าไม่เลือก Brand ก็ผ่านตลอด)
+                const isBrandMatch = !formData.brand || (price.inverter_brand === formData.brand);
+
+                if (isSizeMatch && isBrandMatch) {
+                    validPhases.push(price.electronic_phase);
+                }
+            });
+        }
+    });
+    
+    const uniquePhases = Array.from(new Set(validPhases));
+    setAvailablePhases(uniquePhases);
+
+    // 4. 🤖 AUTO-ACTION (เหมือนเดิม)
+    if (uniquePhases.length === 1) {
+        if (formData.electricalPhase !== uniquePhases[0]) {
+            setFormData(prev => ({ ...prev, electricalPhase: uniquePhases[0] }));
+        }
+    } else if (uniquePhases.length === 0) {
+        if (formData.electricalPhase) {
+            setFormData(prev => ({ ...prev, electricalPhase: "" }));
+        }
+    } else {
+        // มี 2 ตัวเลือก -> เช็คว่าค่าที่เลือกอยู่ยัง Valid ไหม
+        if (formData.electricalPhase && !uniquePhases.includes(formData.electricalPhase)) {
+             setFormData(prev => ({ ...prev, electricalPhase: "" }));
+        }
+    }
+
+  }, [formData.brand, formData.salesProgram, formData.projectSize, allPrograms]);
 
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -991,11 +1103,22 @@ const CreateQuotation = () => {
               </div>
               <div className="col-span-1">
                 <Label className="text-xs text-muted-foreground">Phase*</Label>
-                <Select value={formData.electricalPhase} onValueChange={(value) => handleInputChange("electricalPhase", value)}>
-                  <SelectTrigger className="h-9 mt-1"><SelectValue placeholder="Select" /></SelectTrigger>
+                <Select 
+                  value={formData.electricalPhase} 
+                  onValueChange={(value) => handleInputChange("electricalPhase", value)}
+                  disabled={availablePhases.length <= 1} 
+                >
+                  <SelectTrigger className="h-9 mt-1"><SelectValue placeholder={availablePhases.length === 0 ? "Enter Project Size first" : "Select"} /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="single_phase">1 Phase</SelectItem>
-                    <SelectItem value="three_phase">3 Phase</SelectItem>
+                    {availablePhases.map((phase) => (
+                      <SelectItem key={phase} value={phase}>
+                        {phase === "single_phase" ? "1 Phase" : "3 Phase"}
+                      </SelectItem>
+                    ))}
+                    {/* Fallback เผื่อไว้ */}
+                    {availablePhases.length === 0 && (
+                        <div className="p-2 text-xs text-muted-foreground text-center">No options</div>
+                    )}
                   </SelectContent>
                 </Select>
               </div>
