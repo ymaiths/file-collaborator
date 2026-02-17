@@ -33,6 +33,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { CustomerAutocomplete } from "@/components/CustomerAutocomplete";
 
 // Helper function: Brand formatting
 const formatBrandName = (brand: string) => {
@@ -1081,8 +1082,29 @@ const CreateQuotation = () => {
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-1">
                 <Label className="text-xs text-muted-foreground">Customer</Label>
-                <Input className="h-9 mt-1" placeholder="Name" value={formData.customerName} onChange={(e) => handleInputChange("customerName", e.target.value)} onBlur={handleNameBlur} />
+                <CustomerAutocomplete 
+                  value={formData.customerName}
+                  onInputChange={(text) => {
+                    setFormData(prev => ({ ...prev, customerName: text }));
+                    setCurrentCustomerId(null); // ถือว่าเป็นลูกค้าใหม่ไว้ก่อน
+                  }}
+
+                  // 2. ถ้าจิ้มเลือกจากลิสต์ -> อัปเดตชื่อ + จำ ID (ลูกค้าเก่า) + เติม Tax ID
+                  onSelect={(customer) => {
+                    setFormData(prev => ({ 
+                        ...prev, 
+                        customerName: customer.customer_name,
+                        customerTaxId: customer.id_tax 
+                    }));
+                    setCurrentCustomerId(customer.id); // จำ ID ไว้
+                  }}
+                  onClear={() => {
+                    setFormData(prev => ({ ...prev, customerName: "", customerTaxId: "" }));
+                    setCurrentCustomerId(null);
+                  }}
+                />
               </div>
+
               <div className="col-span-1">
                 <Label className="text-xs text-muted-foreground">Tax ID</Label>
                 <Input className="h-9 mt-1" placeholder="Tax ID" value={formData.customerTaxId} onChange={(e) => handleInputChange("customerTaxId", e.target.value)} onBlur={handleNameBlur} />
