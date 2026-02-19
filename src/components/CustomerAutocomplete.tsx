@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Check, Plus, Loader2, X } from "lucide-react";
+import { Check, Plus, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
   Command,
@@ -22,6 +22,7 @@ export function CustomerAutocomplete({ value, onSelect, onInputChange, onClear }
   const [inputValue, setInputValue] = useState(value);
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
   
   // ✅ เพิ่มตัวช่วยจำ: เช็คว่าเพิ่งกดเลือกมาหรือเปล่า?
   const isSelectionRef = useRef(false);
@@ -55,8 +56,9 @@ export function CustomerAutocomplete({ value, onSelect, onInputChange, onClear }
       isSelectionRef.current = false; // รีเซ็ตค่ารอรอบต่อไป
       return; 
     }
-    
-    // (ลบบรรทัด if (inputValue === value) ทิ้งไปแล้ว เพราะมันกันการพิมพ์ของเรา)
+    if (inputValue === value && document.activeElement !== inputRef.current) {
+        return; 
+    }
 
     const timer = setTimeout(async () => {
       setLoading(true);
@@ -73,7 +75,9 @@ export function CustomerAutocomplete({ value, onSelect, onInputChange, onClear }
           console.log("✅ เจอ:", data); // Debug ดูผลลัพธ์
           setSuggestions((data as any[]) || []);
           if ((data as any[]).length > 0) {
-            setOpen(true);
+            if (document.activeElement === inputRef.current) {
+                setOpen(true);
+             }
           }
         }
       } catch (err) {
@@ -84,7 +88,7 @@ export function CustomerAutocomplete({ value, onSelect, onInputChange, onClear }
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [inputValue]); // เอา value ออกจาก dependency เพื่อลดการรันซ้ำซ้อน
+  }, [inputValue, value]); // เอา value ออกจาก dependency เพื่อลดการรันซ้ำซ้อน
 
   const handleSelect = (customer: any) => {
     // ✅ บอกระบบว่า "นี่คือการเลือกนะ ไม่ใช่การพิมพ์"
@@ -106,17 +110,11 @@ export function CustomerAutocomplete({ value, onSelect, onInputChange, onClear }
     }); 
   };
 
-  const handleClearClick = () => {
-    setInputValue("");
-    onInputChange("");
-    setOpen(false);
-    if (onClear) onClear();
-  };
-
   return (
     <div className="relative w-full" ref={containerRef}>
       <div className="relative">
         <Input
+          ref={inputRef}
           type="text"
           placeholder="Customer Name"
           value={inputValue}
@@ -129,9 +127,7 @@ export function CustomerAutocomplete({ value, onSelect, onInputChange, onClear }
                 onClear();
                 setOpen(false);
             }
-            // ไม่ต้อง setOpen(true) ตรงนี้ รอให้ผลลัพธ์มาค่อยเปิด
           }}
-          // เอา onFocus ออก เพื่อไม่ให้เด้งกวนใจตอนคลิกกลับมา
           className="pr-8" 
         />
         
@@ -139,15 +135,6 @@ export function CustomerAutocomplete({ value, onSelect, onInputChange, onClear }
             <div className="absolute right-3 top-1/2 -translate-y-1/2">
                 <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
             </div>
-        )}
-
-        {!loading && inputValue && (
-             <div 
-               className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer text-muted-foreground hover:text-foreground"
-               onClick={handleClearClick}
-             >
-                <X className="h-4 w-4" />
-             </div>
         )}
       </div>
 
