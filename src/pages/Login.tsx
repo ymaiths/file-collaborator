@@ -47,6 +47,10 @@ export default function Login() {
         provider: provider,
         options: {
           redirectTo: window.location.origin,
+          // 🌟 สิ่งที่เพิ่มเข้ามา: บังคับให้โชว์หน้าเลือกบัญชีเสมอ 
+          queryParams: {
+            prompt: 'select_account',
+          },
         },
       });
       if (error) throw error;

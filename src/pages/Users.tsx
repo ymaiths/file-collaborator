@@ -1,149 +1,133 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { toast } from "sonner";
-import { Trash2, Plus, Loader2 } from "lucide-react";
+import { Trash2, UserPlus, Loader2 } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
 
-export default function UsersPage() {
-  const [users, setUsers] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+export default function Users() {
+  const [emails, setEmails] = useState<{ id: string; email: string; note?: string }[]>([]);
   const [newEmail, setNewEmail] = useState("");
-  const [isAdding, setIsAdding] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
 
+  // ดึงรายชื่อตอนโหลดหน้าเว็บ
   useEffect(() => {
-    fetchUsers();
+    checkAdminStatus();
   }, []);
 
+  const checkAdminStatus = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) {
+        const email = session.user.email?.toLowerCase() || "";
+        const isCompany = email.endsWith("@ponix.co.th");
+        const isVIP = ["yaimai2909@gmail.com", "yaimai2909@outlook.com", "thanaporn.sada@kmutt.ac.th"].includes(email);
+        
+        // ถ้าไม่ใช่แอดมิน ให้เตะกลับไปหน้าแรกทันที
+        if (!isCompany && !isVIP) {
+        toast({ variant: "destructive", title: "ไม่มีสิทธิ์", description: "เฉพาะผู้ดูแลระบบเท่านั้นที่สามารถจัดการผู้ใช้งานได้" });
+        window.location.href = "/";
+        } else {
+        fetchUsers(); // ถ้าเป็นแอดมินถึงจะโหลดข้อมูลตาราง
+        }
+    }
+  };
   const fetchUsers = async () => {
     try {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from("allowed_users")
-        .select("*")
-        .order("created_at", { ascending: false });
-
+      const { data, error } = await supabase.from("allowed_users").select("*").order("id", { ascending: true });
       if (error) throw error;
-      setUsers(data || []);
+      setEmails(data || []);
     } catch (error: any) {
-      console.error("Error fetching users:", error);
-      toast.error("Failed to load users");
+      console.error("Error fetching users:", error.message);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleAddUser = async () => {
-    if (!newEmail.trim()) return;
+  // ฟังก์ชันเพิ่มอีเมล
+  const handleAddUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newEmail.includes("@")) return;
 
+    setLoading(true);
     try {
-      setIsAdding(true);
-      const { error } = await supabase
-        .from("allowed_users")
-        .insert({ email: newEmail.trim().toLowerCase() });
-
+      const { error } = await supabase.from("allowed_users").insert([{ email: newEmail.toLowerCase().trim() }]);
       if (error) throw error;
       
-      toast.success(`Added ${newEmail}`);
+      toast({ title: "เพิ่มผู้ใช้งานสำเร็จ!" });
       setNewEmail("");
-      fetchUsers();
+      fetchUsers(); // รีเฟรชตาราง
     } catch (error: any) {
-      console.error("Error adding user:", error);
-      toast.error("Failed to add user");
-    } finally {
-      setIsAdding(false);
+      toast({ variant: "destructive", title: "เกิดข้อผิดพลาด", description: error.message });
+      setLoading(false);
     }
   };
 
-  const handleDeleteUser = async (id: string, email: string) => {
-    try {
-      const { error } = await supabase
-        .from("allowed_users")
-        .delete()
-        .eq("id", id);
+  // ฟังก์ชันลบอีเมล
+  const handleDelete = async (id: string, emailToDelete: string) => {
+    if (!window.confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบสิทธิ์ของ ${emailToDelete}?`)) return;
 
+    setLoading(true);
+    try {
+      const { error } = await supabase.from("allowed_users").delete().eq("id", id);
       if (error) throw error;
       
-      toast.success(`Removed ${email}`);
-      fetchUsers();
+      toast({ title: "ลบผู้ใช้งานสำเร็จ!" });
+      fetchUsers(); // รีเฟรชตาราง
     } catch (error: any) {
-      console.error("Error deleting user:", error);
-      toast.error("Failed to remove user");
+      toast({ variant: "destructive", title: "เกิดข้อผิดพลาด", description: error.message });
+      setLoading(false);
     }
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">User Management</h1>
-          <p className="text-muted-foreground">
-            Manage users who have access to the system
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Input
-            placeholder="Enter email to add..."
-            value={newEmail}
-            onChange={(e) => setNewEmail(e.target.value)}
-            className="min-w-[250px]"
-            onKeyDown={(e) => e.key === 'Enter' && handleAddUser()}
-          />
-          <Button onClick={handleAddUser} disabled={isAdding || !newEmail.trim()}>
-            {isAdding ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
-            Add User
-          </Button>
-        </div>
-      </div>
+    <div className="p-8 max-w-4xl mx-auto">
+      <h1 className="text-3xl font-bold mb-6">ตั้งค่าผู้ใช้งานระบบ (Allowed Users)</h1>
+      
+      {/* ฟอร์มเพิ่มคน */}
+      <form onSubmit={handleAddUser} className="flex gap-3 mb-8 bg-card p-6 rounded-xl border shadow-sm">
+        <Input 
+          type="email" 
+          placeholder="กรอกอีเมลที่ต้องการให้สิทธิ์เข้าสู่ระบบ..." 
+          value={newEmail}
+          onChange={(e) => setNewEmail(e.target.value)}
+          required
+          className="flex-1"
+        />
+        <Button type="submit" disabled={loading}>
+          {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserPlus className="mr-2 h-4 w-4" />}
+          เพิ่มสิทธิ์
+        </Button>
+      </form>
 
-      {loading ? (
-        <div className="flex justify-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      {/* ตารางแสดงรายชื่อ */}
+      <div className="bg-card rounded-xl border shadow-sm overflow-hidden">
+        <div className="grid grid-cols-12 bg-muted/50 p-4 font-semibold text-muted-foreground border-b">
+          <div className="col-span-1">ID</div>
+          <div className="col-span-9">อีเมล (Email)</div>
+          <div className="col-span-2 text-center">จัดการ</div>
         </div>
-      ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle>Authorized Users ({users.length})</CardTitle>
-            <CardDescription>
-              List of users with access to the system
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {users.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                No users found. Add one above to get started.
+        
+        {loading && emails.length === 0 ? (
+          <div className="p-8 text-center text-muted-foreground">กำลังโหลดข้อมูล...</div>
+        ) : emails.length === 0 ? (
+          <div className="p-8 text-center text-muted-foreground">ยังไม่มีรายชื่อในระบบ</div>
+        ) : (
+          <div className="divide-y">
+            {emails.map((user) => (
+              <div key={user.id} className="grid grid-cols-12 p-4 items-center hover:bg-muted/30 transition-colors">
+                <div className="col-span-1 text-muted-foreground">{user.id}</div>
+                <div className="col-span-9 font-medium">{user.email}</div>
+                <div className="col-span-2 text-center">
+                  <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/10" onClick={() => handleDelete(user.id, user.email)}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
-            ) : (
-              <div className="space-y-2">
-                {users.map((user) => (
-                  <div
-                    key={user.id}
-                    className="flex items-center justify-between p-3 hover:bg-muted/50 rounded-lg transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                      <span className="font-medium">{user.email}</span>
-                      {user.email.endsWith("@ponix.co.th") && (
-                        <Badge variant="secondary">Company</Badge>
-                      )}
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleDeleteUser(user.id, user.email)}
-                      className="text-destructive hover:text-destructive/80 hover:bg-destructive/10"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
