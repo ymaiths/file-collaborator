@@ -17,6 +17,10 @@ export const CompanyInformationForm = () => {
     taxId: "",
   });
 
+  // 🌟 เช็คสิทธิ์: อนุญาตให้แก้ไขได้เฉพาะ Admin หรือ General
+  const userRole = localStorage.getItem("userRole");
+  const canEdit = userRole === "admin" || userRole === "general";
+
   useEffect(() => {
     const fetchCompanyInfo = async () => {
       const { data, error } = await supabase
@@ -47,6 +51,8 @@ export const CompanyInformationForm = () => {
   };
 
   const handleSave = async () => {
+    if (!canEdit) return; // 🌟 ป้องกัน Viewer กดยิง API
+
     setSaving(true);
     const payload = {
       name: formData.companyName,
@@ -57,19 +63,10 @@ export const CompanyInformationForm = () => {
 
     let error;
     if (companyId) {
-      // Update existing record
-      const result = await supabase
-        .from("company_info")
-        .update(payload)
-        .eq("id", companyId);
+      const result = await supabase.from("company_info").update(payload).eq("id", companyId);
       error = result.error;
     } else {
-      // Insert new record
-      const result = await supabase
-        .from("company_info")
-        .insert(payload)
-        .select()
-        .single();
+      const result = await supabase.from("company_info").insert(payload).select().single();
       error = result.error;
       if (!error && result.data) {
         setCompanyId(result.data.id);
@@ -78,16 +75,9 @@ export const CompanyInformationForm = () => {
 
     setSaving(false);
     if (error) {
-      toast({
-        title: "เกิดข้อผิดพลาด",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast({ title: "เกิดข้อผิดพลาด", description: error.message, variant: "destructive" });
     } else {
-      toast({
-        title: "บันทึกข้อมูลสำเร็จ",
-        description: `ชื่อบริษัท: ${formData.companyName || "ไม่ระบุ"}`,
-      });
+      toast({ title: "บันทึกข้อมูลสำเร็จ", description: `ชื่อบริษัท: ${formData.companyName || "ไม่ระบุ"}` });
     }
   };
 
@@ -103,58 +93,56 @@ export const CompanyInformationForm = () => {
     <div className="bg-card rounded-lg p-8 border border-border">
       <div className="space-y-6">
         <div className="space-y-2">
-          <Label htmlFor="companyName" className="text-base">
-            ชื่อบริษัท
-          </Label>
+          <Label htmlFor="companyName" className="text-base">ชื่อบริษัท</Label>
           <Input
             id="companyName"
             value={formData.companyName}
             onChange={(e) => handleChange("companyName", e.target.value)}
-            className="w-full"
+            readOnly={!canEdit} // 🌟 ล็อคช่องพิมพ์ถ้าเป็น Viewer
+            className={`w-full ${!canEdit ? "bg-muted cursor-not-allowed" : ""}`}
           />
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="address" className="text-base">
-            ที่อยู่
-          </Label>
+          <Label htmlFor="address" className="text-base">ที่อยู่</Label>
           <Input
             id="address"
             value={formData.address}
             onChange={(e) => handleChange("address", e.target.value)}
-            className="w-full"
+            readOnly={!canEdit}
+            className={`w-full ${!canEdit ? "bg-muted cursor-not-allowed" : ""}`}
           />
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="phone" className="text-base">
-            เบอร์โทร
-          </Label>
+          <Label htmlFor="phone" className="text-base">เบอร์โทร</Label>
           <Input
             id="phone"
             value={formData.phone}
             onChange={(e) => handleChange("phone", e.target.value)}
-            className="w-full"
+            readOnly={!canEdit}
+            className={`w-full ${!canEdit ? "bg-muted cursor-not-allowed" : ""}`}
           />
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="taxId" className="text-base">
-            เลขประจำตัวผู้เสียภาษี
-          </Label>
+          <Label htmlFor="taxId" className="text-base">เลขประจำตัวผู้เสียภาษี</Label>
           <Input
             id="taxId"
             value={formData.taxId}
             onChange={(e) => handleChange("taxId", e.target.value)}
-            className="w-full"
+            readOnly={!canEdit}
+            className={`w-full ${!canEdit ? "bg-muted cursor-not-allowed" : ""}`}
           />
         </div>
 
-        <div className="flex justify-end pt-4">
-          <Button onClick={handleSave} size="lg" className="px-8" disabled={saving}>
-            {saving ? "กำลังบันทึก..." : "Save"}
-          </Button>
-        </div>
+        {canEdit && (
+          <div className="flex justify-end pt-4">
+            <Button onClick={handleSave} size="lg" className="px-8" disabled={saving}>
+              {saving ? "กำลังบันทึก..." : "Save"}
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );

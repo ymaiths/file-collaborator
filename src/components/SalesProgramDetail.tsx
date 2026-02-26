@@ -8,7 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Minus, Plus, Upload, PlusCircle } from "lucide-react"; // ตัด Copy ออกเพราะไม่ได้ใช้
+import { Minus, Plus, Upload, PlusCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import type { Database } from "@/integrations/supabase/types";
@@ -69,7 +69,7 @@ export const SalesProgramDetail = ({
   // Helper States
   const [newBrandInput, setNewBrandInput] = useState("");
   const [isManualAdd, setIsManualAdd] = useState(false); 
-  const [customBrandNames, setCustomBrandNames] = useState<Record<string, string>>({}); // เก็บไว้เผื่อใช้
+  const [customBrandNames, setCustomBrandNames] = useState<Record<string, string>>({}); 
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
   
   // Import States
@@ -78,6 +78,10 @@ export const SalesProgramDetail = ({
   const [tempPaymentTerms, setTempPaymentTerms] = useState("");
   const [tempWarrantyTerms, setTempWarrantyTerms] = useState("");
   const [tempNote, setTempNote] = useState("");
+
+  // 🌟 1. ดึงสิทธิ์จากเครื่อง (Admin / General แก้ไขได้)
+  const userRole = localStorage.getItem("userRole");
+  const canEdit = userRole === "admin" || userRole === "general";
 
   useEffect(() => {
     fetchBrandEnums();
@@ -95,7 +99,6 @@ export const SalesProgramDetail = ({
         const typedData = data as { enum_value: string }[];
         const options = typedData.map((item) => {
           const val = item.enum_value;
-          // Format ชื่อ: huawei_optimizer -> Huawei Optimizer
           const label = val
             .split("_")
             .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
@@ -112,12 +115,11 @@ export const SalesProgramDetail = ({
 
   const [conflictDialog, setConflictDialog] = useState<{
     isOpen: boolean;
-    prevItem: SalePackagePrice; // รายการที่มีค่า Min น้อยกว่า (มาก่อน)
-    currItem: SalePackagePrice; // รายการที่มีค่า Min มากกว่า (มาทีหลัง) แต่ดันเริ่มก่อนที่รายการแรกจะจบ
+    prevItem: SalePackagePrice; 
+    currItem: SalePackagePrice; 
     overlapText: string;
   } | null>(null);
 
-  // Initial Fetch
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
@@ -127,7 +129,6 @@ export const SalesProgramDetail = ({
     fetchData();
   }, [programId]);
 
-  // Sync Global State
   useEffect(() => {
     if (prices.length > 0) {
       setIsExactKw(prices[0].is_exact_kw ?? true);
@@ -171,7 +172,6 @@ export const SalesProgramDetail = ({
     }
   };
 
-  // Bulk Handlers
   const handleExactKwChange = (isExact: boolean) => {
     setIsExactKw(isExact);
     setPrices(prices.map(p => ({
@@ -196,7 +196,6 @@ export const SalesProgramDetail = ({
     }));
   };
 
-  // Import Logic
   const openImportModal = (mode: "append" | "replace") => {
     setTempPaymentTerms(paymentTerms);
     setTempWarrantyTerms(warrantyTerms);
@@ -206,6 +205,8 @@ export const SalesProgramDetail = ({
   };
 
   const handleImportSales = async (data: any[], booleanValues: Record<string, boolean>) => {
+    if (!canEdit) return; // 🌟 ป้องกัน Viewer
+
     const isTableEmpty = prices.length === 0;
     const isConfigMode = importMode === "replace" || isTableEmpty;
 
@@ -216,11 +217,9 @@ export const SalesProgramDetail = ({
       id: `temp-${Date.now()}-${Math.random()}`,
       inverter_brand: row.brand as InverterBrand,
       electronic_phase: (row.phase && (String(row.phase).includes("3"))) ? "three_phase" : "single_phase" as ElectronicPhase,
-      
       is_exact_kw: _isExactKw,
       kw_min: parseFloat(row.kw_min) || 0,
       kw_max: !_isExactKw ? (parseFloat(row.kw_max) || 0) : null,
-
       price: parseFloat(row.price) || 0,
       is_exact_price: _isExactPrice,
       price_exact: _isExactPrice ? (parseFloat(row.price) || 0) : null,
@@ -250,7 +249,8 @@ export const SalesProgramDetail = ({
   };
 
   const handleAddBrand = async (brandValue?: string) => {
-     let brandToUse: InverterBrand = (brandValue as InverterBrand) || "others"; // Default to others if blank
+     if (!canEdit) return; // 🌟 ป้องกัน Viewer
+     let brandToUse: InverterBrand = (brandValue as InverterBrand) || "others"; 
      
      const newPrice: SalePackagePrice = {
         id: `temp-${Date.now()}`,
@@ -268,6 +268,7 @@ export const SalesProgramDetail = ({
   };
 
   const handleAddSize = (brand: InverterBrand) => {
+    if (!canEdit) return; // 🌟 ป้องกัน Viewer
     const newPrice: SalePackagePrice = {
         id: `temp-${Date.now()}`,
         inverter_brand: brand,
@@ -289,25 +290,21 @@ export const SalesProgramDetail = ({
   };
 
   const handleDeletePrice = (id: string) => {
+    if (!canEdit) return; // 🌟 ป้องกัน Viewer
     if (!id.startsWith("temp-")) setDeletedIds(prev => [...prev, id]);
     setPrices(prices.filter(p => p.id !== id));
   };
 
   const handleUpdatePrice = (id: string, field: keyof SalePackagePrice, value: any) => {
+    if (!canEdit) return; // 🌟 ป้องกัน Viewer
     setPrices(prices.map(p => {
         if (p.id !== id) return p;
-
-        // 1. อัปเดตค่า field ที่พิมพ์เข้ามา
         const updatedItem = { ...p, [field]: value };
-
-        // 2. ⚠️ Sync ค่า 'price' กลาง ให้ตรงกับข้อมูลล่าสุดทันที
-        // เพื่อให้ตอนกด Save หรือเช็ค Overlap ได้ค่าที่เป็นปัจจุบัน
         if (field === "price_exact" || field === "price_percentage" || field === "is_exact_price") {
             updatedItem.price = updatedItem.is_exact_price 
                 ? (updatedItem.price_exact || 0) 
                 : (updatedItem.price_percentage || 0);
         }
-
         return updatedItem;
     }));
   };
@@ -322,7 +319,6 @@ export const SalesProgramDetail = ({
   const formatBrandName = (brand: string) => brand.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
   const getBrandDisplayName = (brand: string) => customBrandNames[brand] || formatBrandName(brand);
 
-  // ✅ Logic จัดการตัวเลือก Brand ทั้งหมด + เรียง others ไว้ล่างสุด
   const allBrandOptions = React.useMemo(() => {
     const options = dbBrandOptions.map(opt => ({
         value: opt.value,
@@ -337,11 +333,9 @@ export const SalesProgramDetail = ({
     const combined = [...options, ...customOptions];
     const uniqueOptions = Array.from(new Map(combined.map(item => [item.value, item])).values());
     
-    // ✅ แก้ไข: หา 'others' (มี s) ตามที่คุณแจ้ง
     const otherOption = uniqueOptions.find(o => o.value.toLowerCase() === 'others');
     const restOptions = uniqueOptions.filter(o => o.value.toLowerCase() !== 'others');
 
-    // เรียง others ไว้ล่างสุด
     if (otherOption) {
         return [...restOptions, otherOption];
     }
@@ -352,8 +346,6 @@ export const SalesProgramDetail = ({
 
   const checkAndResolveOverlaps = () => {
     if (isExactKw) return false;
-
-    // 1. Grouping
     const grouped = prices.reduce((acc, p) => {
         const key = `${p.inverter_brand}|${p.electronic_phase}`;
         if(!acc[key]) acc[key] = [];
@@ -362,9 +354,6 @@ export const SalesProgramDetail = ({
     }, {} as Record<string, SalePackagePrice[]>);
 
     for (const key in grouped) {
-        // 2. Sorting (สำคัญ! แก้ไขให้แน่นอนขึ้น)
-        // เรียงตาม Min น้อยไปมาก
-        // **แต่ถ้า Min เท่ากัน ให้เอา Max มากกว่าขึ้นก่อน** (เพื่อให้ตัวใหญ่เป็น prev ตัวเล็กเป็น curr)
         const sorted = [...grouped[key]].sort((a, b) => {
             if (a.kw_min !== b.kw_min) return a.kw_min - b.kw_min;
             return (b.kw_max || 0) - (a.kw_max || 0); 
@@ -373,32 +362,19 @@ export const SalesProgramDetail = ({
         for (let i = 0; i < sorted.length - 1; i++) {
             const prev = sorted[i]; 
             const curr = sorted[i+1]; 
-            
-            // แปลงเป็น Number ให้ชัวร์ที่สุด
             const prevStart = Number(prev.kw_min);
             const prevMax   = Number(prev.kw_max ?? prev.kw_min);
             const currStart = Number(curr.kw_min);
             const currMax   = Number(curr.kw_max || Infinity);
 
-            // เช็คการซ้อนทับ: "ตัวใหม่เริ่ม ก่อนตัวเก่าจบ"
             if (currStart <= prevMax) {
-                
-                // คำนวณ Intersection (บังคับ Number)
                 const overlapStart = Math.max(prevStart, currStart);
                 const overlapEnd   = Math.min(prevMax, currMax);
-
-                // 🔍 Debug: ดูค่าใน Console (กด F12 ดูได้เลย)
-                console.log("⚠️ Overlap Logic Debug:", {
-                    prev: `${prevStart}-${prevMax}`,
-                    curr: `${currStart}-${currMax}`,
-                    math_min_check: `Min(${prevMax}, ${currMax}) = ${overlapEnd}`
-                });
 
                 setConflictDialog({
                     isOpen: true,
                     prevItem: prev,
                     currItem: curr,
-                    // ✅ ใช้ค่าที่คำนวณใหม่
                     overlapText: `${overlapStart} - ${overlapEnd === Infinity ? '∞' : overlapEnd}` 
                 });
                 return true; 
@@ -411,7 +387,6 @@ export const SalesProgramDetail = ({
   const handleResolveConflict = (choice: 'KEEP_PREV' | 'PRIORITIZE_CURR') => {
       if (!conflictDialog) return;
       const { prevItem, currItem } = conflictDialog;
-      
       let newPrices = [...prices];
 
       const pMin = prevItem.kw_min;
@@ -419,40 +394,26 @@ export const SalesProgramDetail = ({
       const cMin = currItem.kw_min;
       const cMax = currItem.kw_max ?? Infinity;
       
-      // ✅ กำหนดค่า Gap = 1000 Watt (1 kW)
       const GAP = 1000; 
-
-      // เช็คว่าผ่ากลางไหม?
       const isMiddleSplit = (cMin > pMin) && (cMax < pMax);
 
       if (choice === 'PRIORITIZE_CURR') {
-          // 🔵 เลือกราคาใหม่ (12 บาท) -> ตัดตัวเก่า (Prev)
-
           if (isMiddleSplit) {
-              // ✂️ ผ่ากลาง:
-              // 1. ท่อนหัว: จบก่อนตัวใหม่เริ่ม 1000 Watt
               const newPrevMax = cMin - GAP; 
               newPrices = newPrices.map(p => p.id === prevItem.id ? { ...p, kw_max: newPrevMax } : p);
-
-              // 2. ท่อนหาง: เริ่มหลังตัวใหม่จบ 1000 Watt
               const splitItem: SalePackagePrice = {
                   ...prevItem,
                   id: `temp-split-${Date.now()}`,
-                  kw_min: cMax + GAP, // ✅ 21000 + 1000 = 22000
+                  kw_min: cMax + GAP,
                   kw_max: prevItem.kw_max
               };
               newPrices.push(splitItem);
-
           } else {
-              // กรณีปกติ
               if (pMin < cMin) {
-                  // เก่าเริ่มก่อน -> ตัดหางเก่า (จบที่ cMin - 1000)
                   const newMax = cMin - GAP;
                   newPrices = newPrices.map(p => p.id === prevItem.id ? { ...p, kw_max: newMax } : p);
               } else {
-                  // เก่าเริ่มทีหลัง/พร้อมกัน -> ตัดหัวเก่า (เริ่มที่ cMax + 1000)
                   const newMin = (cMax === Infinity ? pMax : cMax) + GAP; 
-                  
                   if (newMin > pMax) {
                       newPrices = newPrices.filter(p => p.id !== prevItem.id);
                   } else {
@@ -460,20 +421,14 @@ export const SalesProgramDetail = ({
                   }
               }
           }
-
       } else {
-          // ⚪️ เลือกราคาเดิม (15.5 บาท) -> ตัดตัวใหม่ (Curr)
-
           if (isMiddleSplit) {
-              // ตัวใหม่โดนทับหมด ลบทิ้ง
               newPrices = newPrices.filter(p => p.id !== currItem.id);
           } else {
               if (cMin < pMin) {
-                  // ใหม่เริ่มก่อน -> ตัดหางใหม่
                   const newMax = pMin - GAP;
                   newPrices = newPrices.map(p => p.id === currItem.id ? { ...p, kw_max: newMax } : p);
               } else {
-                  // ใหม่เริ่มทีหลัง/พร้อมกัน -> ตัดหัวใหม่
                   const newMin = (pMax === Infinity ? cMax : pMax) + GAP;
                   if (newMin > cMax) {
                        newPrices = newPrices.filter(p => p.id !== currItem.id);
@@ -487,11 +442,13 @@ export const SalesProgramDetail = ({
       setPrices(newPrices);
       setConflictDialog(null);
   };
+
   const handleSaveAll = async () => {
+    if (!canEdit) return; // 🌟 ป้องกัน Viewer
+
     try {
-        // ✅ 5. เรียกตรวจสอบก่อนบันทึก
         if (checkAndResolveOverlaps()) {
-            return; // หยุดการบันทึกถ้าเจอ Overlap
+            return; 
         }
 
         setLoading(true);
@@ -551,7 +508,10 @@ export const SalesProgramDetail = ({
               </Button>
             </>
           )}
-          {isEditMode ? <Button onClick={handleSaveAll}>บันทึก</Button> : <Button onClick={() => setIsEditMode(true)}>แก้ไข</Button>}
+          {/* 🌟 2. ซ่อนปุ่มแก้ไข/บันทึก หากเป็นแค่ Viewer */}
+          {canEdit && (
+            isEditMode ? <Button onClick={handleSaveAll}>บันทึก</Button> : <Button onClick={() => setIsEditMode(true)}>แก้ไข</Button>
+          )}
         </div>
       </div>
 
@@ -598,7 +558,7 @@ export const SalesProgramDetail = ({
                 </tr>
               </thead>
               <tbody>
-                {Object.entries(groupedPrices).map(([brand, brandPrices], brandIndex) => (
+                {Object.entries(groupedPrices).map(([brand, brandPrices]) => (
                     <React.Fragment key={brand}>
                         {brandPrices.map((price, priceIndex) => (
                             <tr key={price.id} className="border-t">
@@ -628,14 +588,13 @@ export const SalesProgramDetail = ({
                                         
                                         {isEditMode ? (
                                             <div className="flex items-center gap-1">
-                                                {/* 🟢 Input Min: หาร 1000 ตอนโชว์ / คูณ 1000 ตอนเก็บ */}
                                                 <Input 
                                                     type="number" 
                                                     step="any" 
-                                                    value={price.kw_min ? price.kw_min / 1000 : ""} // 👁️ Show kW
+                                                    value={price.kw_min ? price.kw_min / 1000 : ""} 
                                                     onChange={(e) => {
                                                         const val = e.target.value === "" ? 0 : parseFloat(e.target.value);
-                                                        handleUpdatePrice(price.id, "kw_min", val * 1000); // 💾 Save Watt
+                                                        handleUpdatePrice(price.id, "kw_min", val * 1000);
                                                     }} 
                                                     className="w-16 h-7 text-sm px-1.5" 
                                                     placeholder={isExactKw ? "Size" : "Min"} 
@@ -644,14 +603,13 @@ export const SalesProgramDetail = ({
                                                 {!price.is_exact_kw && (
                                                     <>
                                                         <span className="text-xs">-</span>
-                                                        {/* 🟢 Input Max: หาร 1000 ตอนโชว์ / คูณ 1000 ตอนเก็บ */}
                                                         <Input 
                                                             type="number" 
                                                             step="any" 
-                                                            value={price.kw_max ? price.kw_max / 1000 : ""} // 👁️ Show kW
+                                                            value={price.kw_max ? price.kw_max / 1000 : ""}
                                                             onChange={(e) => {
                                                                 const val = e.target.value === "" ? 0 : parseFloat(e.target.value);
-                                                                handleUpdatePrice(price.id, "kw_max", val * 1000); // 💾 Save Watt
+                                                                handleUpdatePrice(price.id, "kw_max", val * 1000);
                                                             }} 
                                                             className="w-16 h-7 text-sm px-1.5" 
                                                             placeholder="Max" 
@@ -660,7 +618,6 @@ export const SalesProgramDetail = ({
                                                 )}
                                             </div>
                                         ) : (
-                                            // 👁️ Read Mode: หาร 1000 เพื่อโชว์เป็น kW
                                             <span>
                                                 {price.is_exact_kw 
                                                     ? (price.kw_min / 1000).toLocaleString() 
@@ -684,9 +641,6 @@ export const SalesProgramDetail = ({
                                 {/* Price */}
                                 <td className="px-2 py-1.5">
                                   {isEditMode ? (
-                                      // -------------------------------------------------------
-                                      // 🟢 ส่วนที่ 1: Edit Mode (เหมือนของเดิมเป๊ะ 100%)
-                                      // -------------------------------------------------------
                                       <Input 
                                           type="number" 
                                           step="any" 
@@ -699,34 +653,22 @@ export const SalesProgramDetail = ({
                                           placeholder={price.is_exact_price ? "บาท" : "บาท/watt"} 
                                       />
                                   ) : (
-                                      // -------------------------------------------------------
-                                      // 🔵 ส่วนที่ 2: View Mode (เพิ่ม Logic Range)
-                                      // -------------------------------------------------------
                                       <div className="flex flex-col">
                                           <span className="font-medium">
                                               {(() => {
-                                                  // A. ถ้าเป็น Fix Price (Logic เดิม) -> โชว์ราคาเลย
                                                   if (price.is_exact_price) {
                                                       return (price.price_exact || 0).toLocaleString();
                                                   }
-
-                                                  // B. ถ้าเป็น Per Watt
                                                   const rate = price.price_percentage || 0;
-                                                  const minTotal = rate * price.kw_min; // (Logic เดิม: เอาเรทคูณ min)
-
-                                                  // ✅ ส่วนที่เพิ่ม: ถ้าเป็น Range (มี Max) ให้โชว์ "Min - Max"
+                                                  const minTotal = rate * price.kw_min; 
                                                   if (!price.is_exact_kw && price.kw_max) {
                                                       const maxTotal = rate * price.kw_max;
                                                       return `${minTotal.toLocaleString()} - ${maxTotal.toLocaleString()}`;
                                                   }
-
-                                                  // C. ถ้าไม่ใช่ Range (Logic เดิม) -> โชว์ค่าเดียว
                                                   return minTotal.toLocaleString();
                                               })()}
                                           </span>
-                                          
                                           <span className="text-[10px] text-muted-foreground">
-                                              {/* Logic เดิม: โชว์เรทตัวคูณ */}
                                               {price.is_exact_price ? "" : `(x${price.price_percentage || 0})`}
                                           </span>
                                       </div>
@@ -744,7 +686,7 @@ export const SalesProgramDetail = ({
                     </React.Fragment>
                 ))}
                 
-                {/* ✅ ส่วนเพิ่มข้อมูลใหม่ (New Brand Row) */}
+                {/* New Brand Row */}
                 {isEditMode && (
                     <tr className="border-t bg-muted/20">
                         <td className="px-2 py-2">
@@ -788,7 +730,6 @@ export const SalesProgramDetail = ({
                                         </SelectTrigger>
                                         <SelectContent>
                                             {allBrandOptions
-                                                // กรองตัวที่มีแล้วในตารางออก
                                                 .filter(opt => !Object.keys(groupedPrices).includes(opt.value))
                                                 .map((opt) => (
                                                     <SelectItem key={opt.value} value={opt.value}>
@@ -862,7 +803,6 @@ export const SalesProgramDetail = ({
         ]}
         onImport={handleImportSales}
       />
-      {/* ... (Code อื่นๆ เหมือนเดิม) ... */}
 
       <AlertDialog open={!!conflictDialog} onOpenChange={(open) => !open && setConflictDialog(null)}>
         <AlertDialogContent>
@@ -890,7 +830,6 @@ export const SalesProgramDetail = ({
           </AlertDialogHeader>
           <AlertDialogFooter className="flex flex-row justify-center gap-4 sm:justify-center sm:space-x-0 w-full mt-2">
             
-            {/* ปุ่มเลือกราคาเดิม (Previous Price) */}
             <Button 
                 variant="outline" 
                 onClick={() => handleResolveConflict('KEEP_PREV')} 
@@ -902,7 +841,6 @@ export const SalesProgramDetail = ({
               </div>
             </Button>
 
-            {/* ปุ่มเลือกราคาใหม่ (Current Price) */}
             <Button 
                 onClick={() => handleResolveConflict('PRIORITIZE_CURR')} 
                 className="flex-1 h-auto py-3 bg-blue-600 hover:bg-blue-700"

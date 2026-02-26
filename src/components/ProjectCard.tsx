@@ -38,6 +38,10 @@ export const ProjectCard = ({
 }: ProjectCardProps) => {
   const navigate = useNavigate();
 
+  // 🌟 1. ดึงสิทธิ์จากเครื่อง (เพื่อเช็คว่าเป็น Viewer หรือไม่)
+  const userRole = localStorage.getItem("userRole");
+  const canEdit = userRole === "admin" || userRole === "general";
+
   const handleCardClick = () => {
     navigate(`/quotation/${id}`);
   };
@@ -88,24 +92,27 @@ export const ProjectCard = ({
         <p>Created Date : {createdDate}</p>
       </div>
 
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="absolute bottom-4 right-4 h-8 w-8"
-            onClick={(e)=>e.stopPropagation()}
-          >
-            <MoreVertical className="h-4 w-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={handleDuplicateClick}>Duplicate</DropdownMenuItem>
-          <DropdownMenuItem className="text-destructive cursor-pointer" onClick={handleDeleteClick}>
-            Delete
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      {/* 🌟 2. ซ่อนปุ่มจุด 3 จุด (Dropdown) ถ้าผู้ใช้เป็นแค่ Viewer */}
+      {canEdit && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute bottom-4 right-4 h-8 w-8"
+              onClick={(e)=>e.stopPropagation()}
+            >
+              <MoreVertical className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={handleDuplicateClick}>Duplicate</DropdownMenuItem>
+            <DropdownMenuItem className="text-destructive cursor-pointer" onClick={handleDeleteClick}>
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
     </Card>
   );
 };

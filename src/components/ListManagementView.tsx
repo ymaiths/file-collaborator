@@ -1,12 +1,12 @@
 import { useState, useEffect } from "react";
-import { ListItemRow } from "./ListItemRow";
 import { CreateNewItemRow } from "./CreateNewItemRow";
+import { ListItemRow } from "./ListItemRow";
 import { toast } from "@/hooks/use-toast";
 
 interface Item {
   id: string;
   name: string;
-  isSystem?: boolean; // ✅ 1. เพิ่ม Optional Prop นี้
+  isSystem?: boolean;
 }
 
 interface ListManagementViewProps {
@@ -56,16 +56,6 @@ export const ListManagementView = ({
       } catch (error) {
         console.error("Duplicate failed", error);
       }
-    } else {
-      const newItem = {
-        id: `${id}-copy-${Date.now()}`,
-        name: `${name} (Copy)`,
-      };
-      setItems([...items, newItem]);
-      toast({
-        title: "Duplicated",
-        description: `Created a copy of ${name}`,
-      });
     }
   };
 
@@ -76,13 +66,6 @@ export const ListManagementView = ({
       } catch (error) {
         console.error("Delete failed", error);
       }
-    } else {
-      setItems(items.filter((item) => item.id !== id));
-      toast({
-        title: "Deleted",
-        description: `${name} has been deleted`,
-        variant: "destructive",
-      });
     }
   };
 
@@ -93,16 +76,6 @@ export const ListManagementView = ({
   ) => {
     if (onCreateNew) {
       await onCreateNew(name, includeInPrice, isRequired);
-    } else {
-      const newItem = {
-        id: `new-${Date.now()}`,
-        name: name,
-      };
-      setItems([...items, newItem]);
-      toast({
-        title: "Created",
-        description: `${name} has been created`,
-      });
     }
   };
 
@@ -123,25 +96,23 @@ export const ListManagementView = ({
         <ListItemRow
           key={item.id}
           name={item.name}
-          onRename={item.isSystem ? undefined : () => handleRename(item.id)}
-          onDuplicate={() => handleDuplicate(item.id, item.name)}
-          
-          // ✅ 2. เช็ค isSystem: ถ้าเป็น System Category ให้ส่ง undefined เพื่อซ่อน/Disable ปุ่มลบ
-          // (หมายเหตุ: คุณต้องไปแก้ ListItemRow ให้รองรับการรับค่า undefined หรือรับ prop isLocked เพิ่ม ถ้าต้องการแสดงแม่กุญแจ)
-          onDelete={item.isSystem ? undefined : () => handleDelete(item.id, item.name)}
-          
-          // หรือถ้า ListItemRow รับ prop 'isLocked' หรือ 'readOnly' ให้ส่งไปแบบนี้:
-          // isLocked={item.isSystem} 
-          
+          // 🌟 1. ส่งค่า undefined ไปถ้าไม่มีสิทธิ์ หรือเป็นหมวดหมู่ระบบ (System)
+          onRename={(!onDeleteItem || item.isSystem) ? undefined : () => handleRename(item.id)}
+          onDuplicate={!onDuplicateItem ? undefined : () => handleDuplicate(item.id, item.name)}
+          onDelete={(!onDeleteItem || item.isSystem) ? undefined : () => handleDelete(item.id, item.name)}
           onClick={() => handleItemClick(item.id, item.name)}
         />
       ))}
-      <CreateNewItemRow
-        label={createNewLabel}
-        onCreate={handleCreateNew}
-        showCheckboxes={showCheckboxes}
-        placeholder={newItemPlaceholder}
-      />
+      
+      {/* 🌟 2. ซ่อนกล่องพิมพ์สร้างรายการใหม่ไปเลย ถ้าไม่มีสิทธิ์ (onCreateNew เป็น undefined) */}
+      {onCreateNew && (
+        <CreateNewItemRow
+          label={createNewLabel}
+          onCreate={handleCreateNew}
+          showCheckboxes={showCheckboxes}
+          placeholder={newItemPlaceholder}
+        />
+      )}
     </div>
   );
 };

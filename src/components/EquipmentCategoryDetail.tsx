@@ -9,16 +9,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Minus, Plus, Upload, PlusCircle } from "lucide-react"; // เอา Copy ออกถ้าไม่ได้ใช้
+import { Minus, Plus, Upload, PlusCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import type { Database } from "@/integrations/supabase/types";
 import { ExcelImportModal } from "./ExcelImportModal";
 
-// ✅ 1. เปลี่ยน Type จาก Enum เป็น string
 type ProductCategory = string; 
 
-// Mapping สำหรับแสดงผล (รองรับ Legacy Key)
 const enumToDisplayName: Record<string, string> = {
   solar_panel: "Solar Panel",
   inverter: "Inverter",
@@ -81,11 +79,12 @@ export const EquipmentCategoryDetail = ({
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importMode, setImportMode] = useState<"append" | "replace">("append");
 
-  // ✅ 2. ใช้ string โดยตรง (ไม่ต้อง cast เป็น Enum)
   const currentCategory = categoryId; 
-  
-  // ✅ 3. เช็คเผื่อทั้ง key เก่าและชื่อใหม่ (Case Insensitive check)
   const isInverter = currentCategory.toLowerCase() === "inverter"; 
+
+  // 🌟 1. ดึงสิทธิ์จากเครื่อง (Admin / General แก้ไขได้)
+  const userRole = localStorage.getItem("userRole");
+  const canEdit = userRole === "admin" || userRole === "general";
 
   useEffect(() => {
     if (products.length > 0) {
@@ -107,7 +106,7 @@ export const EquipmentCategoryDetail = ({
       const { data, error } = await supabase
         .from("products")
         .select("*")
-        .eq("product_category", currentCategory); // ใช้ string
+        .eq("product_category", currentCategory); 
 
       if (error) throw error;
       setProducts((data as unknown as Product[]) || []);
@@ -129,6 +128,8 @@ export const EquipmentCategoryDetail = ({
   };
 
   const handleImportEquipment = async (data: any[], booleanValues: Record<string, boolean>) => {
+    if (!canEdit) return; // 🌟 ป้องกัน Viewer
+
     const isReplace = importMode === "replace";
 
     const _isFixedCost = isReplace ? booleanValues.is_fixed_cost : isFixedCost;
@@ -139,24 +140,19 @@ export const EquipmentCategoryDetail = ({
 
     const newItems = data.map((row) => ({
       id: `temp-${Date.now()}-${Math.random()}`,
-      product_category: currentCategory, // ใช้ตัวแปรใหม่
-      
+      product_category: currentCategory,
       name: row.name || "",
       brand: row.brand || "",
       unit: row.unit || "",
-      
       is_fixed_cost: _isFixedCost,
       cost_fixed: _isFixedCost ? (parseFloat(row.cost) || 0) : null,
       cost_percentage: !_isFixedCost ? (parseFloat(row.cost) || 0) : null,
-
       is_fixed_installation_cost: _isFixedInst,
       fixed_installation_cost: _isFixedInst ? (parseFloat(row.install_cost) || 0) : null,
       installation_cost_percentage: !_isFixedInst ? (parseFloat(row.install_cost) || 0) : null,
-
       is_exact_kw: _isExactKw,
       min_kw: parseFloat(row.min_kw) || 0,
       max_kw: !_isExactKw ? (parseFloat(row.max_kw) || 0) : null,
-
       is_price_included: _isPriceIncluded,
       is_required_product: _isRequired,
       electrical_phase: isInverter ? (row.phase === "3" || row.phase === "3Ph" ? "three_phase" : "single_phase") : null,
@@ -191,6 +187,7 @@ export const EquipmentCategoryDetail = ({
   };
 
   const handleAddItem = () => {
+    if (!canEdit) return; // 🌟 ป้องกัน Viewer
     const newProduct: Product = {
       id: `temp-${Date.now()}`,
       name: "",
@@ -207,13 +204,14 @@ export const EquipmentCategoryDetail = ({
       is_exact_kw: isExactKw,
       is_price_included: isPriceIncluded,
       is_required_product: isRequired,
-      product_category: currentCategory, // ใช้ตัวแปรใหม่
+      product_category: currentCategory, 
       electrical_phase: null,
     };
     setProducts([...products, newProduct]);
   };
 
   const handleDeleteItem = async (id: string) => {
+    if (!canEdit) return; // 🌟 ป้องกัน Viewer
     if (id.startsWith("temp-")) {
       setProducts(products.filter((p) => p.id !== id));
       return;
@@ -232,7 +230,6 @@ export const EquipmentCategoryDetail = ({
     setProducts(products.map((p) => (p.id === id ? { ...p, [field]: value } : p)));
   };
 
-  // Bulk Handlers (เหมือนเดิม)
   const handlePriceIncludedChange = (checked: boolean) => {
     setIsPriceIncluded(checked);
     setProducts(products.map((p) => ({ ...p, is_price_included: checked })));
@@ -261,6 +258,8 @@ export const EquipmentCategoryDetail = ({
   };
 
   const handleSaveAll = async () => {
+    if (!canEdit) return; // 🌟 ป้องกัน Viewer
+
     try {
       for (const product of products) {
         if (product.id.startsWith("temp-")) {
@@ -306,7 +305,6 @@ export const EquipmentCategoryDetail = ({
         <div className="flex items-center gap-4">
           <Button variant="ghost" onClick={onBack}>←</Button> 
           <h2 className="text-lg font-semibold text-foreground">
-            {/* แสดงชื่อหมวดหมู่ ถ้ามีใน Legacy Map ก็ใช้ ถ้าไม่มีก็ใช้ชื่อที่ส่งมาตรงๆ */}
             {enumToDisplayName[currentCategory] || categoryName}
           </h2>
           {isEditMode && (
@@ -333,9 +331,12 @@ export const EquipmentCategoryDetail = ({
               </Button>
             </>
           )}
-          <Button variant="outline" size="sm" onClick={() => { if (isEditMode) handleSaveAll(); else setIsEditMode(true); }}>
-            {isEditMode ? "เสร็จสิ้น" : "แก้ไข"}
-          </Button>
+          {/* 🌟 2. ซ่อนปุ่มแก้ไข หากผู้ใช้ไม่มีสิทธิ์ (ทำให้ตารางเป็น Read-only ทันที) */}
+          {canEdit && (
+            <Button variant="outline" size="sm" onClick={() => { if (isEditMode) handleSaveAll(); else setIsEditMode(true); }}>
+              {isEditMode ? "เสร็จสิ้น" : "แก้ไข"}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -350,7 +351,6 @@ export const EquipmentCategoryDetail = ({
               <th className="p-3 text-left text-sm font-medium">Brand</th>
               <th className="p-3 text-left text-sm font-medium">หน่วย</th>
 
-              {/* Header: ราคาทุนอุปกรณ์ */}
               <th className="p-3 text-left text-sm font-medium min-w-[150px]">
                 <div className="flex items-center gap-2">
                   ราคาทุนอุปกรณ์
@@ -368,7 +368,6 @@ export const EquipmentCategoryDetail = ({
                 </div>
               </th>
 
-              {/* Header: ราคาทุนติดตั้ง */}
               <th className="p-3 text-left text-sm font-medium min-w-[150px]">
                 <div className="flex items-center gap-2">
                   ราคาทุนติดตั้ง
@@ -386,7 +385,6 @@ export const EquipmentCategoryDetail = ({
                 </div>
               </th>
 
-              {/* Header: ขนาด */}
               <th className="p-3 text-left text-sm font-medium min-w-[150px]">
                 <div className="flex items-center gap-2">
                   ขนาด (Watt)
@@ -447,7 +445,6 @@ export const EquipmentCategoryDetail = ({
                   ) : (<span className="text-sm">{product.unit || "-"}</span>)}
                 </td>
 
-                {/* Cost Eq */}
                 <td className="p-3">
                   {isEditMode ? (
                     <Input type="number" step="any"
@@ -458,7 +455,6 @@ export const EquipmentCategoryDetail = ({
                   ) : (<span className="text-sm">{formatCost(product, "equipment")}</span>)}
                 </td>
 
-                {/* Cost Inst */}
                 <td className="p-3">
                   {isEditMode ? (
                     <Input type="number" step="any"
@@ -469,7 +465,6 @@ export const EquipmentCategoryDetail = ({
                   ) : (<span className="text-sm">{formatCost(product, "installation")}</span>)}
                 </td>
 
-                {/* Size */}
                 <td className="p-3">
                   {isEditMode ? (
                     <div className="flex gap-2 items-center">
@@ -500,7 +495,6 @@ export const EquipmentCategoryDetail = ({
         </table>
       </div>
 
-      {/* Modal Import */}
       <ExcelImportModal
         isOpen={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}

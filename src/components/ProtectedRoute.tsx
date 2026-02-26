@@ -7,105 +7,109 @@ export function ProtectedRoute() {
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAuthorized, setIsAuthorized] = useState(false);
+  
+  // 🌟 สร้าง State ใหม่ เพื่อเก็บอีเมลที่ล็อคอินผ่านแล้ว ค่อยเอาไปเช็คสิทธิ์ทีหลัง
+  const [userEmail, setUserEmail] = useState<string | null>(null);
 
+  // ==========================================
+  // 🟢 คิวที่ 1: ตรวจสอบการล็อกอิน (Auth เท่านั้น ห้ามดึง DB ตรงนี้)
+  // ==========================================
   useEffect(() => {
-    // 1. ตัวดักจับเวลามีการ Redirect กลับมาจาก Google/Microsoft
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session) {
-        await verifyAccess(session);
-      } else if (!window.location.hash.includes("access_token")) {
-        // ถ้าไม่มี session และไม่มี token ใน URL ค่อยเตะออก
+    let isMounted = true;
+
+    // เช็คตอนโหลดหน้าครั้งแรก
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user?.email && isMounted) {
+        setIsAuthenticated(true);
+        setUserEmail(session.user.email.toLowerCase().trim()); // โยนให้คิว 2 ทำงานต่อ
+      } else if (!window.location.hash.includes("access_token") && isMounted) {
         setIsAuthenticated(false);
         setLoading(false);
       }
     });
 
-    // 2. เช็ค Session เริ่มต้นตอนโหลดหน้าเว็บ
-    checkInitialSession();
+    // ดักจับเวลามีคนกด Login / Logout
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!isMounted) return;
+
+      if (event === 'SIGNED_OUT') {
+        setIsAuthenticated(false);
+        setIsAuthorized(false);
+        setUserEmail(null);
+        localStorage.removeItem("userRole");
+        setLoading(false);
+      } else if (session?.user?.email) {
+        setIsAuthenticated(true);
+        setUserEmail(session.user.email.toLowerCase().trim()); // โยนให้คิว 2 ทำงานต่อ
+      }
+    });
 
     return () => {
-      authListener.subscription.unsubscribe();
+      isMounted = false;
+      subscription.unsubscribe();
     };
   }, []);
 
-  const checkInitialSession = async () => {
-    try {
-      // 🌟 ทริคสำคัญ: ถ้ามีคำว่า access_token ใน URL ให้ "หยุดรอ" อย่าเพิ่งเตะออก ปล่อยให้ onAuthStateChange ทำงาน
-      if (window.location.hash.includes("access_token")) {
-        return; 
-      }
+  // ==========================================
+  // 🔵 คิวที่ 2: ดึงฐานข้อมูลเช็คสิทธิ์ (ทำงานเมื่อรู้ Email แล้วเท่านั้น)
+  // ==========================================
+  useEffect(() => {
+    if (!userEmail) return; // ถ้ายังไม่ได้อีเมล ให้รอไปก่อน
 
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        await verifyAccess(session);
-      } else {
-        setIsAuthenticated(false);
-        setLoading(false);
-      }
-    } catch (error) {
-      console.error("Auth check error:", error);
-      setLoading(false);
-    }
-  };
-  const verifyAccess = async (session: any) => {
-    try {
-      setIsAuthenticated(true);
-      
-      console.log("🕵️‍♂️ [Debug] ข้อมูล User ทั้งหมด:", session.user);
-      
-      const rawEmail = 
-        session.user.email || 
-        session.user.user_metadata?.email || 
-        session.user.user_metadata?.preferred_username || 
-        session.user.user_metadata?.name || 
-        "";
-        
-      const email = rawEmail.toLowerCase().trim();
-      console.log("📧 [Debug] สรุปอีเมลที่หาเจอคือ:", `"${email}"`);
+    let isMounted = true;
 
-      // เช็คสิทธิ์ VIP
-      const isVIP = email === "yaimai2909@gmail.com" || email === "yaimai2909@outlook.com" || email === "thanaporn.sada@kmutt.ac.th";
-      console.log("👑 [Debug] ตรงกับ VIP ไหม?:", isVIP);
-      
-      if (email.endsWith("@ponix.co.th") || isVIP) {
-        console.log("✅ [Debug] ผ่าน! ให้สิทธิ์ Admin อัตโนมัติ");
-        // 🌟 แอบจดสิทธิ์ Admin ลงในเครื่องทันที
-        localStorage.setItem("userRole", "admin");
-        setIsAuthorized(true);
-      } else {
-        console.log("🔍 [Debug] ไม่ใช่ VIP กำลังเช็คสิทธิ์และ Role ในฐานข้อมูล...");
+    const checkRoleInDatabase = async () => {
+      try {
+        const isVIP = userEmail === "yaimai2909@gmail.com" || userEmail === "yaimai2909@outlook.com" || userEmail === "thanaporn.sada@kmutt.ac.th";
         
-        // 🌟 เพิ่มคำว่า role ในการ select ข้อมูล
+        if (userEmail.endsWith("@ponix.co.th") || isVIP) {
+          localStorage.setItem("userRole", "admin");
+          if (isMounted) {
+            setIsAuthorized(true);
+            setLoading(false);
+          }
+          return;
+        }
+
+        // 🌟 ดึงข้อมูลจากฐานข้อมูล (แยกออกมาทำคิวนี้ จะไม่ค้างแล้ว!)
         const { data, error } = await supabase
           .from("allowed_users")
-          .select("email, role") 
-          .eq("email", email)
+          .select("email, role")
+          .eq("email", userEmail)
           .maybeSingle();
 
-        if (error) console.log("❌ [Debug] หาในตารางไม่เจอ Error:", error.message);
-        console.log("📋 [Debug] เจอข้อมูลในตารางไหม?:", !!data);
-        
-        if (data) {
-          console.log(`✅ [Debug] ผ่าน! คุณได้รับสิทธิ์: ${data.role}`);
-          // 🌟 แอบจด Role ที่ได้จากฐานข้อมูลลงในเครื่อง
-          localStorage.setItem("userRole", data.role || "viewer"); 
-          setIsAuthorized(true);
-        } else {
-          // 🌟 ถ้าไม่มีสิทธิ์ ให้ลบความจำ Role ทิ้งไปเลย
-          localStorage.removeItem("userRole"); 
+        if (isMounted) {
+          if (data) {
+            localStorage.setItem("userRole", data.role || "viewer");
+            setIsAuthorized(true);
+          } else {
+            localStorage.removeItem("userRole");
+            setIsAuthorized(false);
+          }
+        }
+      } catch (error) {
+        console.error("Role check error:", error);
+        if (isMounted) {
           setIsAuthorized(false);
+          localStorage.removeItem("userRole");
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false); // การันตีปิดหน้าโหลด
         }
       }
-    } catch (error) {
-      console.error("Verify access error:", error);
-      setIsAuthorized(false);
-      localStorage.removeItem("userRole");
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  // หน้าจอตอนกำลังโหลดเช็คสิทธิ์
+    };
+
+    checkRoleInDatabase();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [userEmail]); // 👈 สั่งให้ useEffect นี้ทำงานก็ต่อเมื่อ userEmail มีค่า
+
+  // ==========================================
+  // 🔴 ส่วนแสดงผลหน้าจอ (UI)
+  // ==========================================
   if (loading) {
     return (
       <div className="h-screen w-full flex flex-col items-center justify-center gap-3 bg-muted/30">
@@ -115,12 +119,10 @@ export function ProtectedRoute() {
     );
   }
 
-  // ถ้ายังไม่ Login เตะไปหน้า /login
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
 
-  // ถ้า Login แล้ว แต่ไม่มีสิทธิ์ โชว์หน้า Access Denied
   if (!isAuthorized) {
     return (
       <div className="h-screen w-full flex flex-col items-center justify-center bg-destructive/5 text-center p-4">
@@ -136,6 +138,5 @@ export function ProtectedRoute() {
     );
   }
 
-  // ถ้าผ่านหมด ปล่อยผ่านให้เห็นหน้าเว็บได้!
   return <Outlet />;
 }
