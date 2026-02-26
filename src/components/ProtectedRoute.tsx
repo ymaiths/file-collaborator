@@ -51,10 +51,8 @@ export function ProtectedRoute() {
     try {
       setIsAuthenticated(true);
       
-      // 1. ดักจับดูข้อมูลทั้งหมดที่ Supabase ได้รับมา
       console.log("🕵️‍♂️ [Debug] ข้อมูล User ทั้งหมด:", session.user);
       
-      // 2. พยายามงัดแงะหาอีเมลจากทุกซอกทุกมุมที่ Microsoft ชอบซ่อนไว้!
       const rawEmail = 
         session.user.email || 
         session.user.user_metadata?.email || 
@@ -62,39 +60,51 @@ export function ProtectedRoute() {
         session.user.user_metadata?.name || 
         "";
         
-      // 3. แปลงเป็นตัวเล็กทั้งหมด และตัดช่องว่าง (Space) หน้า-หลังทิ้ง
       const email = rawEmail.toLowerCase().trim();
-      
       console.log("📧 [Debug] สรุปอีเมลที่หาเจอคือ:", `"${email}"`);
 
-      // 4. เช็คสิทธิ์
+      // เช็คสิทธิ์ VIP
       const isVIP = email === "yaimai2909@gmail.com" || email === "yaimai2909@outlook.com" || email === "thanaporn.sada@kmutt.ac.th";
       console.log("👑 [Debug] ตรงกับ VIP ไหม?:", isVIP);
       
       if (email.endsWith("@ponix.co.th") || isVIP) {
-        console.log("✅ [Debug] ผ่าน! ให้เข้าเว็บได้");
+        console.log("✅ [Debug] ผ่าน! ให้สิทธิ์ Admin อัตโนมัติ");
+        // 🌟 แอบจดสิทธิ์ Admin ลงในเครื่องทันที
+        localStorage.setItem("userRole", "admin");
         setIsAuthorized(true);
       } else {
-        console.log("🔍 [Debug] ไม่ใช่ VIP กำลังเช็คในฐานข้อมูล...");
+        console.log("🔍 [Debug] ไม่ใช่ VIP กำลังเช็คสิทธิ์และ Role ในฐานข้อมูล...");
+        
+        // 🌟 เพิ่มคำว่า role ในการ select ข้อมูล
         const { data, error } = await supabase
           .from("allowed_users")
-          .select("email")
+          .select("email, role") 
           .eq("email", email)
           .maybeSingle();
 
         if (error) console.log("❌ [Debug] หาในตารางไม่เจอ Error:", error.message);
         console.log("📋 [Debug] เจอข้อมูลในตารางไหม?:", !!data);
         
-        setIsAuthorized(!!data);
+        if (data) {
+          console.log(`✅ [Debug] ผ่าน! คุณได้รับสิทธิ์: ${data.role}`);
+          // 🌟 แอบจด Role ที่ได้จากฐานข้อมูลลงในเครื่อง
+          localStorage.setItem("userRole", data.role || "viewer"); 
+          setIsAuthorized(true);
+        } else {
+          // 🌟 ถ้าไม่มีสิทธิ์ ให้ลบความจำ Role ทิ้งไปเลย
+          localStorage.removeItem("userRole"); 
+          setIsAuthorized(false);
+        }
       }
     } catch (error) {
       console.error("Verify access error:", error);
       setIsAuthorized(false);
+      localStorage.removeItem("userRole");
     } finally {
       setLoading(false);
     }
   };
-
+  
   // หน้าจอตอนกำลังโหลดเช็คสิทธิ์
   if (loading) {
     return (

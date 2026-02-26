@@ -17,6 +17,10 @@ const Index = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<"quotation" | "database">("quotation");
   
+  // 🌟 1. ดึงสิทธิ์จากเครื่อง (เพื่อเช็คว่าเป็น Viewer หรือไม่)
+  const userRole = localStorage.getItem("userRole");
+  const canEdit = userRole === "admin" || userRole === "general";
+
   // Data States
   const [projects, setProjects] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -53,9 +57,7 @@ const Index = () => {
         return {
           id: quotation.id,
           customerName: quotation.customers?.customer_name || "ไม่ระบุชื่อลูกค้า",
-          // ✅ ตรวจสอบค่า location ให้แน่ใจว่าเป็น string เสมอ
           location: quotation.location || "ไม่ระบุสถานที่",
-          // ✅ แปลงขนาดเป็น string เพื่อให้ค้นหาได้ (เช่น "5,000")
           projectSize: quotation.kw_size ? `${quotation.kw_size.toLocaleString()} kW` : "ไม่ระบุขนาด",
           price: totalPrice > 0 ? `${totalPrice.toLocaleString()} บาท` : "0 บาท",
           salesProgramme: quotation.sale_packages?.sale_name || "ไม่ระบุโปรแกรม",
@@ -74,20 +76,16 @@ const Index = () => {
     }
   };
 
-  // ------------------------------------------------------------------
-  // ✅ LOGIC: SEARCH FILTER (ค้นหาหลายเงื่อนไข)
-  // ------------------------------------------------------------------
   const filteredProjects = projects.filter((p) => {
     const query = searchQuery.toLowerCase();
     return (
-      p.customerName.toLowerCase().includes(query) || // ค้นหาชื่อลูกค้า
-      p.location.toLowerCase().includes(query) ||     // ค้นหาสถานที่
-      p.projectSize.toLowerCase().includes(query) ||  // ค้นหาขนาด (เช่นพิมพ์ "5,000")
-      p.docNumber.toLowerCase().includes(query)       // ค้นหาเลขที่เอกสาร
+      p.customerName.toLowerCase().includes(query) ||
+      p.location.toLowerCase().includes(query) || 
+      p.projectSize.toLowerCase().includes(query) ||
+      p.docNumber.toLowerCase().includes(query) 
     );
   });
 
-  // Pagination Logic
   const totalPages = Math.ceil(filteredProjects.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const currentProjects = filteredProjects.slice(startIndex, startIndex + itemsPerPage);
@@ -99,6 +97,8 @@ const Index = () => {
   };
 
   const handleDeleteProject = async (id: string) => {
+    // 🌟 ป้องกัน Viewer ลบผ่าน URL/Console
+    if (!canEdit) return; 
     if (!confirm("คุณแน่ใจหรือไม่ที่จะลบใบเสนอราคานี้?")) return;
     try {
       const { error } = await supabase.from("quotations").delete().eq("id", id);
@@ -111,77 +111,32 @@ const Index = () => {
   };
 
   const handleDuplicateProject = async (id: string) => {
+    // 🌟 ป้องกัน Viewer คัดลอกผ่าน URL/Console
+    if (!canEdit) return;
     try {
-      setIsLoading(true); // show loading ชั่วคราว
-
-      // 1. ดึงข้อมูล Quotation ต้นฉบับ
-      const { data: originalQuotation, error: fetchError } = await supabase
-        .from("quotations")
-        .select("*")
-        .eq("id", id)
-        .single();
-
+      setIsLoading(true);
+      // ... (โค้ด duplicate เดิม)
+      const { data: originalQuotation, error: fetchError } = await supabase.from("quotations").select("*").eq("id", id).single();
       if (fetchError) throw fetchError;
-
-      // 2. ดึงรายการสินค้า (Line Items) ของ Quotation นั้น
-      const { data: lineItems, error: itemsError } = await supabase
-        .from("product_line_items")
-        .select("*")
-        .eq("quotation_id", id);
-
+      const { data: lineItems, error: itemsError } = await supabase.from("product_line_items").select("*").eq("quotation_id", id);
       if (itemsError) throw itemsError;
-
-      // 3. เตรียมข้อมูลสำหรับ Quotation ใหม่ (ลบ id, created_at, updated_at ออก)
       const { id: _, created_at: __, updated_at: ___, ...quotationData } = originalQuotation;
-      
-      // Optional: เติมคำว่า (Copy) ต่อท้าย location หรือชื่อ
-      const newQuotationData = {
-        ...quotationData,
-        location: `${quotationData.location || ""} (Copy)`,
-      };
-
-      // 4. Insert Quotation ใหม่
-      const { data: newQuotation, error: insertError } = await supabase
-        .from("quotations")
-        .insert([newQuotationData])
-        .select()
-        .single();
-
+      const newQuotationData = { ...quotationData, location: `${quotationData.location || ""} (Copy)` };
+      const { data: newQuotation, error: insertError } = await supabase.from("quotations").insert([newQuotationData]).select().single();
       if (insertError) throw insertError;
-
-      // 5. Duplicate Line Items (ถ้ามี)
       if (lineItems && lineItems.length > 0) {
         const newLineItems = lineItems.map(item => {
-          // ลบ ID เก่า และใส่ quotation_id ใหม่
           const { id: oldItemId, created_at: oldCreated, updated_at: oldUpdated, quotation_id: oldQId, ...itemData } = item;
-          return {
-            ...itemData,
-            quotation_id: newQuotation.id
-          };
+          return { ...itemData, quotation_id: newQuotation.id };
         });
-
-        const { error: linesInsertError } = await supabase
-          .from("product_line_items")
-          .insert(newLineItems);
-
+        const { error: linesInsertError } = await supabase.from("product_line_items").insert(newLineItems);
         if (linesInsertError) throw linesInsertError;
       }
-
-      // 6. โหลดข้อมูลใหม่เพื่อแสดงผล
       await fetchQuotations();
-
-      toast({
-        title: "คัดลอกสำเร็จ",
-        description: "สร้างสำเนาใบเสนอราคาเรียบร้อยแล้ว",
-      });
-
+      toast({ title: "คัดลอกสำเร็จ", description: "สร้างสำเนาใบเสนอราคาเรียบร้อยแล้ว" });
     } catch (error) {
       console.error("Error duplicating project:", error);
-      toast({
-        title: "เกิดข้อผิดพลาด",
-        description: "ไม่สามารถคัดลอกข้อมูลได้",
-        variant: "destructive",
-      });
+      toast({ title: "เกิดข้อผิดพลาด", description: "ไม่สามารถคัดลอกข้อมูลได้", variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
@@ -195,14 +150,11 @@ const Index = () => {
         {activeTab === "quotation" ? (
           <div className="space-y-6 mt-6">
             
-            {/* ================= HEADER SECTION ================= */}
             <div className="flex flex-col md:flex-row items-center gap-4 w-full">
               
-              {/* ช่องค้นหา */}
               <div className="relative w-full md:flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  // ✅ อัปเดต Placeholder ให้ User รู้ว่าค้นอะไรได้บ้าง
                   placeholder="ค้นหาชื่อลูกค้า, สถานที่, ขนาดโครงการ..."
                   className="pl-10 w-full"
                   value={searchQuery}
@@ -213,16 +165,17 @@ const Index = () => {
                 />
               </div>
 
-              {/* ปุ่ม Create New */}
-              <Button 
-                onClick={() => navigate("/quotation/new")} 
-                className="shadow-sm whitespace-nowrap w-full md:w-auto"
-              >
-                <Plus className="mr-2 h-4 w-4" /> Create New Project
-              </Button>
+              {/* 🌟 2. ซ่อนปุ่ม "Create New Project" ถ้าเป็นแค่ Viewer */}
+              {canEdit && (
+                <Button 
+                  onClick={() => navigate("/quotation/new")} 
+                  className="shadow-sm whitespace-nowrap w-full md:w-auto"
+                >
+                  <Plus className="mr-2 h-4 w-4" /> Create New Project
+                </Button>
+              )}
             </div>
 
-            {/* ================= GRID SECTION ================= */}
             {isLoading ? (
               <div className="flex justify-center items-center min-h-[400px]">
                 <p className="text-muted-foreground">กำลังโหลดข้อมูล...</p>
@@ -235,8 +188,11 @@ const Index = () => {
                       <ProjectCard 
                         key={project.id} 
                         {...project} 
-                        onDelete={handleDeleteProject} 
-                        onDuplicate={handleDuplicateProject} 
+                        // 🌟 3. ปิดฟังก์ชันลบ/คัดลอก โดยส่งเป็นค่าว่างๆ ไปแทนถ้าเป็น Viewer
+                        onDelete={canEdit ? handleDeleteProject : () => {}} 
+                        onDuplicate={canEdit ? handleDuplicateProject : () => {}}
+                        // 🌟 แถม: ถ้าคุณมี Props canEdit ให้ส่งเข้าไปใน ProjectCard ด้วย!
+                        // canEdit={canEdit}
                       />
                     ))
                   ) : (
@@ -246,7 +202,6 @@ const Index = () => {
                   )}
                 </div>
 
-                {/* ================= PAGINATION CONTROLS ================= */}
                 {totalPages > 1 && (
                   <div className="flex justify-center items-center gap-2 mt-8 py-4">
                     <Button
@@ -258,11 +213,9 @@ const Index = () => {
                     >
                       <ChevronLeft className="h-4 w-4" />
                     </Button>
-
                     <span className="text-sm text-muted-foreground mx-4">
                       หน้า {currentPage} จาก {totalPages}
                     </span>
-
                     <Button
                       variant="outline"
                       size="icon"

@@ -399,18 +399,21 @@ export type Database = {
           email: string;
           id: string;
           note: string | null;
+          role: "admin" | "general" | "viewer"; // 🌟 เพิ่มบรรทัดนี้
         };
         Insert: {
           created_at?: string;
           email: string;
           id?: string;
           note?: string | null;
+          role?: "admin" | "general" | "viewer"; // 🌟 เพิ่มบรรทัดนี้
         };
         Update: {
           created_at?: string;
           email?: string;
           id?: string;
           note?: string | null;
+          role?: "admin" | "general" | "viewer"; // 🌟 เพิ่มบรรทัดนี้
         };
         Relationships: [];
       };

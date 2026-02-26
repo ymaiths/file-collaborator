@@ -76,6 +76,8 @@ interface ProgramWithRange {
 const CreateQuotation = () => {
   const navigate = useNavigate();
   const { id: quotationId } = useParams<{ id: string }>();
+  const userRole = localStorage.getItem("userRole");
+  const canEdit = userRole === "admin" || userRole === "general";
   const [showQuotation, setShowQuotation] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingData, setIsLoadingData] = useState(false);
@@ -125,6 +127,7 @@ const CreateQuotation = () => {
   // ------------------------------------------------------------------
 
   const handleAddItem = async (section: "A" | "B", selectedProduct: any) => {
+    if (!canEdit) return;
     if (!currentQuotationId) return;
     try {
       const projectSizeVal = parseFloat(formData.projectSize) || 0; 
@@ -151,6 +154,7 @@ const CreateQuotation = () => {
   };
 
   const handleDeleteItem = async (itemId: string) => {
+    if (!canEdit) return;
     if (!currentQuotationId) return;
     try {
       const { error } = await supabase.from("product_line_items").delete().eq("id", itemId);
@@ -165,7 +169,8 @@ const CreateQuotation = () => {
   };
 
   const handleUpdateItem = async (itemId: string, field: string, value: any) => {
-    try {
+    if (!canEdit) return;
+    try {
       // 1. ดึงข้อมูล Item ปัจจุบันพร้อมข้อมูลสินค้า (Products) เพื่อใช้คำนวณ
       const { data: currentItem } = await supabase
         .from("product_line_items")
@@ -550,6 +555,10 @@ const CreateQuotation = () => {
   // ✅ CREATE / SAVE QUOTATION (Mixed Logic)
   // ------------------------------------------------------------------
   const handleCreateQuotation = async (skipCheck = false) => {
+    if (!canEdit) {
+      toast({ title: "ไม่มีสิทธิ์", description: "คุณอยู่ในสถานะ Viewer ไม่สามารถบันทึกหรือสร้างข้อมูลได้", variant: "destructive" });
+      return;
+    }
     // 1. Validation
     if (!formData.projectSize || !formData.salesProgram || !formData.brand || !formData.solarPanelSize) {
       toast({ title: "Required", description: "Please fill all required fields (*)", variant: "destructive" });
@@ -760,6 +769,7 @@ const CreateQuotation = () => {
   };
 
   const handleReset = async () => {
+    if (!canEdit) return;
     if (!currentQuotationId) return;
 
     if (!window.confirm("คุณต้องการรีเซ็ตรายการสินค้าทั้งหมดกลับเป็นค่าเริ่มต้นหรือไม่? \n(ราคาที่แก้ไข, ส่วนลด, และรายการที่เพิ่มเอง จะหายไปทั้งหมด)")) {
@@ -1197,11 +1207,12 @@ const CreateQuotation = () => {
               </div>
             </div>
 
-            <div className="mt-4 pt-2 border-t">
-              <Button onClick={() => handleCreateQuotation(false)} size="sm" disabled={isLoading} className="w-full h-10">
-                {isLoading ? "Saving..." : (currentQuotationId ? "Save Changes" : "Create Quotation")}
-              </Button>
-            </div>
+            {canEdit && (
+              <div className="mt-4 pt-2 border-t">
+                <Button onClick={() => handleCreateQuotation(false)} size="sm" disabled={isLoading} className="w-full h-10">
+                  {isLoading ? "Saving..." : (currentQuotationId ? "Save Changes" : "Create Quotation")}
+                </Button>
+              </div>)}
           </div>
         </div>
 
@@ -1210,10 +1221,16 @@ const CreateQuotation = () => {
           <div className="w-full lg:col-span-2 lg:sticky lg:top-4">
             <div className="bg-card rounded-lg shadow-sm p-4 relative border border-border animate-in fade-in">
               <div className="absolute top-3 right-3 flex gap-2 z-10">
-                <Button variant="outline" size="sm" onClick={handleReset} className="border-dashed"> 
-                  <RotateCcw className="h-4 w-4" />
-                </Button>
-                <Button variant="outline" size="sm" onClick={handleEditQuotation}>{isEditMode ? "Done" : "Edit"}</Button>
+                {canEdit && (
+                  <>
+                    <Button variant="outline" size="sm" onClick={handleReset} className="border-dashed"> 
+                      <RotateCcw className="h-4 w-4" />
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={handleEditQuotation}>
+                      {isEditMode ? "Done" : "Edit"}
+                    </Button>
+                  </>
+                )}
                 <Button variant="outline" size="sm" onClick={handleExportExcel}>EXCEL</Button>
               </div>
               <div className="flex flex-col items-center justify-center min-h-[400px] overflow-auto mt-12">

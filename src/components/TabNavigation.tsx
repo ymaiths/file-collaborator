@@ -23,54 +23,49 @@ export const TabNavigation = ({
 }: TabNavigationProps) => {
   const navigate = useNavigate();
   const [email, setEmail] = useState<string>("");
-  const [isAdmin, setIsAdmin] = useState<boolean>(false);
+  
+  // 🌟 1. ดึง Role จากที่ระบบจำไว้
+  const userRole = localStorage.getItem("userRole"); 
+  const isAdmin = userRole === "admin"; // เช็คว่าเป็น Admin ไหม
 
   useEffect(() => {
     const checkUser = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user?.email) {
-        const userEmail = session.user.email.toLowerCase();
-        setEmail(userEmail);
-        
-        const isCompany = userEmail.endsWith("@ponix.co.th");
-        const isVIP = ["yaimai2909@gmail.com", "yaimai2909@outlook.com", "thanaporn.sada@kmutt.ac.th"].includes(userEmail);
-        setIsAdmin(isCompany || isVIP);
+        setEmail(session.user.email.toLowerCase());
       }
     };
     checkUser();
   }, []);
 
   const handleLogout = async () => {
+    localStorage.removeItem("userRole"); // ล้างความจำตอนออก
     await supabase.auth.signOut();
     navigate("/login");
   };
 
   return (
-    // เปลี่ยนมาใช้ justify-between เพื่อแยกฝั่งซ้าย (โปรไฟล์) และขวา (แท็บ) ออกจากกัน
     <div className="flex justify-between items-center mb-6 w-full">
-      
-      {/* ฝั่งซ้ายสุด: เมนูจัดการผู้ใช้งาน & โปรไฟล์ (ทำเป็นวงกลม) */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          {/* เพิ่ม rounded-full เพื่อให้ปุ่มเป็นวงกลมสมบูรณ์ */}
           <Button variant="outline" size="icon" className="h-14 w-14 rounded-full">
             <User className="h-6 w-6" />
           </Button>
         </DropdownMenuTrigger>
-        {/* เปลี่ยน align เป็น start เพื่อให้เมนูกางลงมาตรงกับขอบซ้ายพอดี */}
         <DropdownMenuContent align="start" className="w-56 mt-2">
           <DropdownMenuLabel className="font-normal text-muted-foreground truncate">
             {email || "กำลังโหลด..."}
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
           
+          {/* 🌟 2. ถ้าเป็น Admin ถึงจะเห็นเมนู "จัดการผู้ใช้งาน" */}
           {isAdmin && (
             <>
               <DropdownMenuItem 
                 onClick={() => navigate("/users")} 
                 className="cursor-pointer py-3 text-base"
               >
-                จัดการผู้มีสิทธิ์ใช้งาน
+                จัดการผู้ใช้งาน
               </DropdownMenuItem>
               <DropdownMenuSeparator />
             </>
@@ -85,7 +80,6 @@ export const TabNavigation = ({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {/* ฝั่งขวาสุด: แท็บเมนูหลัก */}
       <div className="flex gap-2">
         <Button
           variant={activeTab === "quotation" ? "secondary" : "outline"}
@@ -102,7 +96,6 @@ export const TabNavigation = ({
           ฐานข้อมูล
         </Button>
       </div>
-      
     </div>
   );
 };
