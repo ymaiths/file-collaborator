@@ -334,8 +334,7 @@ const CreateQuotation = () => {
                   return `${formatVal(prod.min_kw)} - ${formatVal(prod.max_kw)}`;
               }
           };
-          const sizeLabel = formatDeviceSize(product);
-          const defaultName = product?.name ? (sizeLabel ? `${product.name} (${sizeLabel})` : product.name) : "Unknown";
+          const defaultName = product?.name || "Unknown";
           const finalName = item.edited_name || defaultName;
           const finalBrand = item.edited_brand || product?.brand || "-";
           const qty = item.quantity || 0;
@@ -1228,7 +1227,7 @@ const CreateQuotation = () => {
               </div>
               <div className="flex flex-col items-center justify-center min-h-[400px] overflow-auto mt-12">
                 {previewData ? (
-                  <div className="origin-top scale-95 transition-transform w-full flex justify-center">
+                  <div className="origin-top scale-97 transition-transform w-full flex justify-center">
                     <QuotationPreview 
                         data={previewData} 
                         isEditMode={isEditMode}
