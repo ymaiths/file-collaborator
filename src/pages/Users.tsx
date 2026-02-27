@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom"; // 🌟 นำเข้า useNavigate
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Trash2, UserPlus, Loader2, ShieldCheck, User, Eye } from "lucide-react";
-import { useToast } from "@/components/ui/use-toast";
+import { Trash2, UserPlus, Loader2, ShieldCheck, User, Eye, ArrowLeft, LogOut } from "lucide-react"; // 🌟 เพิ่ม ArrowLeft, LogOut
+import { useToast } from "@/hooks/use-toast"; // แก้ path use-toast ให้ตรงกับไฟล์อื่น
 
-// 🌟 กำหนด Type ให้มี role ด้วย
 type AllowedUser = {
   id: string;
   email: string;
@@ -14,9 +14,9 @@ type AllowedUser = {
 };
 
 export default function Users() {
+  const navigate = useNavigate(); // 🌟 เรียกใช้งาน navigate
   const [users, setUsers] = useState<AllowedUser[]>([]);
   const [newEmail, setNewEmail] = useState("");
-  // 🌟 สร้าง State สำหรับเก็บค่า Role ที่กำลังจะเพิ่ม (ค่าเริ่มต้นคือ viewer เพื่อความปลอดภัย)
   const [newRole, setNewRole] = useState<"admin" | "general" | "viewer">("viewer"); 
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
@@ -25,16 +25,14 @@ export default function Users() {
     checkAdminStatus();
   }, []);
 
-  // 🌟 ฟังก์ชันเช็คว่าคนที่เปิดหน้านี้เป็น Admin จริงไหม
   const checkAdminStatus = async () => {
     const role = localStorage.getItem("userRole");
     
-    // ถ้าไม่ใช่ admin ให้เตะกลับหน้าแรกทันที
     if (role !== "admin") {
       toast({ variant: "destructive", title: "ไม่มีสิทธิ์", description: "เฉพาะผู้ดูแลระบบเท่านั้นที่สามารถจัดการผู้ใช้งานได้" });
-      window.location.href = "/";
+      navigate("/"); // 🌟 ใช้ navigate แทน window.location.href จะลื่นกว่า
     } else {
-      fetchUsers(); // ถ้าเป็นแอดมินถึงจะโหลดข้อมูลตาราง
+      fetchUsers(); 
     }
   };
 
@@ -56,7 +54,6 @@ export default function Users() {
 
     setLoading(true);
     try {
-      // 🌟 ส่งค่า role ที่เลือกเข้าไปบันทึกในฐานข้อมูลด้วย
       const { error } = await supabase.from("allowed_users").insert([
         { email: newEmail.toLowerCase().trim(), role: newRole }
       ]);
@@ -64,8 +61,8 @@ export default function Users() {
       
       toast({ title: "เพิ่มผู้ใช้งานสำเร็จ!" });
       setNewEmail("");
-      setNewRole("viewer"); // คืนค่ากลับเป็น viewer
-      fetchUsers(); // รีเฟรชตาราง
+      setNewRole("viewer");
+      fetchUsers(); 
     } catch (error: any) {
       toast({ variant: "destructive", title: "เกิดข้อผิดพลาด", description: error.message });
       setLoading(false);
@@ -81,14 +78,20 @@ export default function Users() {
       if (error) throw error;
       
       toast({ title: "ลบผู้ใช้งานสำเร็จ!" });
-      fetchUsers(); // รีเฟรชตาราง
+      fetchUsers(); 
     } catch (error: any) {
       toast({ variant: "destructive", title: "เกิดข้อผิดพลาด", description: error.message });
       setLoading(false);
     }
   };
 
-  // 🌟 ฟังก์ชันช่วยสร้างป้าย (Badge) สีสันสวยงามตามระดับสิทธิ์
+  // 🌟 ฟังก์ชัน Logout (ล้างข้อมูลและเตะไปหน้า Login)
+  const handleLogout = async () => {
+    localStorage.removeItem("userRole");
+    await supabase.auth.signOut();
+    navigate("/login");
+  };
+
   const getRoleBadge = (role: string) => {
     switch (role) {
       case 'admin':
@@ -102,68 +105,84 @@ export default function Users() {
   };
 
   return (
-    <div className="p-8 max-w-5xl mx-auto">
-      <h1 className="text-3xl font-bold mb-6">ตั้งค่าผู้ใช้งานระบบ (User Management)</h1>
-      
-      {/* ฟอร์มเพิ่มคน */}
-      <form onSubmit={handleAddUser} className="flex flex-wrap md:flex-nowrap gap-3 mb-8 bg-card p-6 rounded-xl border shadow-sm">
-        <Input 
-          type="email" 
-          placeholder="กรอกอีเมลที่ต้องการให้สิทธิ์..." 
-          value={newEmail}
-          onChange={(e) => setNewEmail(e.target.value)}
-          required
-          className="flex-1 min-w-[200px]"
-        />
+    <div className="min-h-screen bg-muted/30">
+      <div className="p-8 max-w-5xl mx-auto">
         
-        {/* 🌟 ช่องสำหรับเลือกระดับสิทธิ์ (Dropdown) */}
-        <select 
-          value={newRole} 
-          onChange={(e) => setNewRole(e.target.value as any)}
-          className="flex h-10 w-[180px] items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-        >
-          <option value="viewer">Viewer (อ่านอย่างเดียว)</option>
-          <option value="general">General (ผู้ใช้งานทั่วไป)</option>
-          <option value="admin">Admin (ผู้ดูแลระบบ)</option>
-        </select>
-
-        <Button type="submit" disabled={loading} className="w-full md:w-auto">
-          {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserPlus className="mr-2 h-4 w-4" />}
-          เพิ่มสิทธิ์
-        </Button>
-      </form>
-
-      {/* ตารางแสดงรายชื่อ */}
-      <div className="bg-card rounded-xl border shadow-sm overflow-hidden">
-        <div className="grid grid-cols-12 bg-muted/50 p-4 font-semibold text-muted-foreground border-b">
-          <div className="col-span-6 md:col-span-7">อีเมล (Email)</div>
-          <div className="col-span-4 md:col-span-3 text-center">ระดับสิทธิ์ (Role)</div>
-          <div className="col-span-2 text-center">จัดการ</div>
+        {/* 🌟 เพิ่มแถบเมนูด้านบน (ปุ่ม Back & ปุ่ม Logout) */}
+        <div className="flex justify-between items-center mb-1">
+          <Button variant="ghost" onClick={() => navigate("/")} className="mb-4">
+            <ArrowLeft className="mr-2 h-4 w-4" /> Back
+          </Button>
+          
         </div>
+
+        <h1 className="text-3xl font-bold mb-6">ตั้งค่าผู้ใช้งานระบบ (User Management)</h1>
         
-        {loading && users.length === 0 ? (
-          <div className="p-8 text-center text-muted-foreground">กำลังโหลดข้อมูล...</div>
-        ) : users.length === 0 ? (
-          <div className="p-8 text-center text-muted-foreground">ยังไม่มีรายชื่อในระบบ</div>
-        ) : (
-          <div className="divide-y">
-            {users.map((user) => (
-              <div key={user.id} className="grid grid-cols-12 p-4 items-center hover:bg-muted/30 transition-colors">
-                <div className="col-span-6 md:col-span-7 font-medium truncate pr-4">{user.email}</div>
-                <div className="col-span-4 md:col-span-3 text-center">
-                  {/* 🌟 เรียกใช้ฟังก์ชันแสดงป้ายสี */}
-                  {getRoleBadge(user.role)}
-                </div>
-                <div className="col-span-2 text-center">
-                  <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/10" onClick={() => handleDelete(user.id, user.email)}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            ))}
+        {/* ฟอร์มเพิ่มคน */}
+        <form onSubmit={handleAddUser} className="flex flex-wrap md:flex-nowrap gap-3 mb-8 bg-card p-6 rounded-xl border shadow-sm">
+          <Input 
+            type="email" 
+            placeholder="กรอกอีเมลที่ต้องการให้สิทธิ์..." 
+            value={newEmail}
+            onChange={(e) => setNewEmail(e.target.value)}
+            required
+            className="flex-1 min-w-[200px]"
+          />
+          
+          <SelectRoleDropdown value={newRole} onChange={setNewRole} />
+
+          <Button type="submit" disabled={loading} className="w-full md:w-auto">
+            {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserPlus className="mr-2 h-4 w-4" />}
+            เพิ่มสิทธิ์
+          </Button>
+        </form>
+
+        {/* ตารางแสดงรายชื่อ */}
+        <div className="bg-card rounded-xl border shadow-sm overflow-hidden">
+          <div className="grid grid-cols-12 bg-muted/50 p-4 font-semibold text-muted-foreground border-b">
+            <div className="col-span-6 md:col-span-7">อีเมล (Email)</div>
+            <div className="col-span-4 md:col-span-3 text-center">ระดับสิทธิ์ (Role)</div>
+            <div className="col-span-2 text-center">จัดการ</div>
           </div>
-        )}
+          
+          {loading && users.length === 0 ? (
+            <div className="p-8 text-center text-muted-foreground">กำลังโหลดข้อมูล...</div>
+          ) : users.length === 0 ? (
+            <div className="p-8 text-center text-muted-foreground">ยังไม่มีรายชื่อในระบบ</div>
+          ) : (
+            <div className="divide-y">
+              {users.map((user) => (
+                <div key={user.id} className="grid grid-cols-12 p-4 items-center hover:bg-muted/30 transition-colors">
+                  <div className="col-span-6 md:col-span-7 font-medium truncate pr-4">{user.email}</div>
+                  <div className="col-span-4 md:col-span-3 text-center">
+                    {getRoleBadge(user.role)}
+                  </div>
+                  <div className="col-span-2 text-center">
+                    <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/10" onClick={() => handleDelete(user.id, user.email)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
+  );
+}
+
+// แยก Component เล็กๆ สำหรับ Dropdown จะได้อ่านง่าย
+function SelectRoleDropdown({ value, onChange }: { value: string, onChange: (val: any) => void }) {
+  return (
+    <select 
+      value={value} 
+      onChange={(e) => onChange(e.target.value)}
+      className="flex h-10 w-[180px] items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+    >
+      <option value="viewer">Viewer (อ่านอย่างเดียว)</option>
+      <option value="general">General (ผู้ใช้งานทั่วไป)</option>
+      <option value="admin">Admin (ผู้ดูแลระบบ)</option>
+    </select>
   );
 }
