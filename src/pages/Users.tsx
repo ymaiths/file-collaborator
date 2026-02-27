@@ -127,6 +127,7 @@ export default function Users() {
   };
 
   const handleDelete = async (id: string, emailToDelete: string, currentRole: string) => {
+    // 🛡️ Guardrail: ห้ามลบ Admin คนสุดท้าย
     if (currentRole === "admin") {
         const adminCount = users.filter(u => u.role === "admin").length;
         if (adminCount <= 1) {
@@ -143,8 +144,19 @@ export default function Users() {
 
     setLoading(true);
     try {
-      const { error } = await supabase.from("allowed_users").delete().eq("id", id);
+      // 🌟 เติม .select() เพื่อเช็คว่าลบสำเร็จจริงๆ ไม่ได้โดน RLS บล็อก
+      const { data, error } = await supabase
+        .from("allowed_users")
+        .delete()
+        .eq("id", id)
+        .select(); 
+        
       if (error) throw error;
+
+      // ถ้า data ว่างเปล่า แปลว่าโดนฐานข้อมูลบล็อกไม่ให้ลบ
+      if (!data || data.length === 0) {
+        throw new Error("ลบไม่สำเร็จ! ไม่ได้รับสิทธิ์แก้ไขฐานข้อมูล (RLS Policy)");
+      }
       
       toast({ title: "ลบผู้ใช้งานสำเร็จ!" });
       fetchUsers(); 
@@ -177,9 +189,6 @@ export default function Users() {
         <div className="flex justify-between items-center mb-1">
           <Button variant="ghost" onClick={() => navigate("/")} className="mb-4">
             <ArrowLeft className="mr-2 h-4 w-4" /> Back
-          </Button>
-          <Button variant="outline" onClick={handleLogout} className="mb-4 text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/20">
-            <LogOut className="mr-2 h-4 w-4" /> ออกจากระบบ
           </Button>
         </div>
 
