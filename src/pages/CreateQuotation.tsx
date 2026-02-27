@@ -302,7 +302,7 @@ const CreateQuotation = () => {
       const finalWarranty = quoteData.edited_warranty_terms !== null ? quoteData.edited_warranty_terms : defaultWarranty;
       const finalNote = quoteData.edited_note !== null ? quoteData.edited_note : defaultNote;
       const finalDiscount = quoteData.edited_discount || 0;
-
+      
       const mappedItems = lineItems.map((item) => {
           const product = item.products;
           const categoryRaw = product?.product_category || "";
@@ -665,9 +665,20 @@ const CreateQuotation = () => {
             oldQuote.electrical_phase !== formData.electricalPhase || 
             oldQuote.sale_package_id !== newSalePackageId;   
 
+        // 🌟 Payload ใหม่: ถ้าโครงสร้างเปลี่ยน ให้ล้างราคาที่แก้ไขไปแล้วทิ้งให้หมด
+        const updatePayload: any = { 
+            ...quotationData, 
+            updated_at: new Date().toISOString() 
+        };
+
+        if (isStructuralChange) {
+            updatePayload.edited_price = null;
+            updatePayload.edited_discount = null;
+        }
+
         await supabase
             .from("quotations")
-            .update({ ...quotationData, updated_at: new Date().toISOString() })
+            .update(updatePayload)
             .eq("id", currentQuotationId);
 
         if (isStructuralChange) {
@@ -1016,7 +1027,6 @@ const CreateQuotation = () => {
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-1">
                 <Label className="text-xs text-muted-foreground">Customer</Label>
-                {/* 🌟 สำหรับช่องพิเศษ ถ้าไม่มีสิทธิ์ให้เปลี่ยนมาโชว์ Input ธรรมดาที่ก๊อปปี้ได้ */}
                 {canEdit ? (
                   <CustomerAutocomplete 
                     value={formData.customerName}
@@ -1044,7 +1054,6 @@ const CreateQuotation = () => {
 
               <div className="col-span-1">
                 <Label className="text-xs text-muted-foreground">Tax ID</Label>
-                {/* 🌟 ใส่แค่ readOnly={!canEdit} ก็อปปี้ข้อความได้ปกติ หน้าตาปกติ พิมพ์แก้ไม่ได้ */}
                 <Input className="h-9 mt-1" readOnly={!canEdit} placeholder="Tax ID" value={formData.customerTaxId} onChange={(e) => handleInputChange("customerTaxId", e.target.value)} onBlur={canEdit ? handleNameBlur : undefined} />
               </div>
 
@@ -1064,7 +1073,6 @@ const CreateQuotation = () => {
 
               <div className="col-span-1">
                 <Label className="text-xs text-muted-foreground">Phase*</Label>
-                {/* 🌟 ถ้าเป็น Viewer จะสลับไปแสดงเป็นช่อง Input ให้อ่านและก๊อปได้ */}
                 {canEdit ? (
                   <Select 
                     value={formData.electricalPhase} 
