@@ -1,23 +1,32 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom"; // 🌟 นำเข้า useNavigate
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Trash2, UserPlus, Loader2, ShieldCheck, User, Eye, ArrowLeft, LogOut } from "lucide-react"; // 🌟 เพิ่ม ArrowLeft, LogOut
-import { useToast } from "@/hooks/use-toast"; // แก้ path use-toast ให้ตรงกับไฟล์อื่น
+import { Trash2, UserPlus, Loader2, ArrowLeft, LogOut } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+
+// 🌟 Import UI Select Component เข้ามาใช้งาน
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 type AllowedUser = {
   id: string;
   email: string;
   note?: string;
-  role: "admin" | "general" | "viewer";
+  role: "admin" | "general" | "viewer" | "suspended";
 };
 
 export default function Users() {
-  const navigate = useNavigate(); // 🌟 เรียกใช้งาน navigate
+  const navigate = useNavigate();
   const [users, setUsers] = useState<AllowedUser[]>([]);
   const [newEmail, setNewEmail] = useState("");
-  const [newRole, setNewRole] = useState<"admin" | "general" | "viewer">("viewer"); 
+  const [newRole, setNewRole] = useState<"admin" | "general" | "viewer" | "suspended">("viewer"); 
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
@@ -30,7 +39,7 @@ export default function Users() {
     
     if (role !== "admin") {
       toast({ variant: "destructive", title: "ไม่มีสิทธิ์", description: "เฉพาะผู้ดูแลระบบเท่านั้นที่สามารถจัดการผู้ใช้งานได้" });
-      navigate("/"); // 🌟 ใช้ navigate แทน window.location.href จะลื่นกว่า
+      navigate("/");
     } else {
       fetchUsers(); 
     }
@@ -55,7 +64,7 @@ export default function Users() {
     setLoading(true);
     try {
       const { error } = await supabase.from("allowed_users").insert([
-        { email: newEmail.toLowerCase().trim(), role: newRole }
+        { email: newEmail.toLowerCase().trim(), role: newRole as AllowedUser["role"] }
       ]);
       if (error) throw error;
       
@@ -69,8 +78,68 @@ export default function Users() {
     }
   };
 
-  const handleDelete = async (id: string, emailToDelete: string) => {
-    if (!window.confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบสิทธิ์ของ ${emailToDelete}?`)) return;
+  const handleUpdateRole = async (userId: string, currentRole: string, nextRole: string) => {
+    if (currentRole === nextRole) return; 
+
+    // 🛡️ Guardrail: เช็ค Admin คนสุดท้าย
+    if (currentRole === "admin" && nextRole !== "admin") {
+        const adminCount = users.filter(u => u.role === "admin").length;
+        if (adminCount <= 1) {
+            toast({ 
+                variant: "destructive", 
+                title: "ไม่อนุญาต", 
+                description: "ระบบต้องมี Admin อย่างน้อย 1 คนเสมอ คุณไม่สามารถลดขั้น Admin คนสุดท้ายได้" 
+            });
+            return;
+        }
+    }
+
+    // Optimistic Update
+    setUsers(prevUsers => 
+      prevUsers.map(user => 
+        user.id === userId ? { ...user, role: nextRole as AllowedUser["role"] } : user
+      )
+    );
+
+    try {
+      const { data, error } = await supabase
+        .from("allowed_users")
+        .update({ role: nextRole as AllowedUser["role"] })
+        .eq("id", userId)
+        .select();
+        
+      if (error) throw error;
+
+      if (!data || data.length === 0) {
+        throw new Error("บันทึกไม่สำเร็จ! ไม่ได้รับสิทธิ์แก้ไขฐานข้อมูล");
+      }
+      
+      toast({ title: "อัปเดตสิทธิ์สำเร็จ!" });
+      
+    } catch (error: any) {
+      setUsers(prevUsers => 
+        prevUsers.map(user => 
+          user.id === userId ? { ...user, role: currentRole as AllowedUser["role"] } : user
+        )
+      );
+      toast({ variant: "destructive", title: "เกิดข้อผิดพลาด", description: error.message });
+    }
+  };
+
+  const handleDelete = async (id: string, emailToDelete: string, currentRole: string) => {
+    if (currentRole === "admin") {
+        const adminCount = users.filter(u => u.role === "admin").length;
+        if (adminCount <= 1) {
+            toast({ 
+                variant: "destructive", 
+                title: "ไม่อนุญาต", 
+                description: "ไม่สามารถลบ Admin คนสุดท้ายออกจากระบบได้" 
+            });
+            return;
+        }
+    }
+
+    if (!window.confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบ ${emailToDelete} ออกจากระบบ?`)) return;
 
     setLoading(true);
     try {
@@ -85,22 +154,19 @@ export default function Users() {
     }
   };
 
-  // 🌟 ฟังก์ชัน Logout (ล้างข้อมูลและเตะไปหน้า Login)
   const handleLogout = async () => {
     localStorage.removeItem("userRole");
     await supabase.auth.signOut();
     navigate("/login");
   };
 
-  const getRoleBadge = (role: string) => {
+  const getSelectStyle = (role: string) => {
     switch (role) {
-      case 'admin':
-        return <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-700 bg-red-100 px-2.5 py-1 rounded-full"><ShieldCheck className="w-3.5 h-3.5"/> Admin</span>;
-      case 'general':
-        return <span className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 bg-blue-100 px-2.5 py-1 rounded-full"><User className="w-3.5 h-3.5"/> General</span>;
+      case 'admin': return 'bg-red-100 text-red-800 border-red-200 hover:bg-red-200';
+      case 'general': return 'bg-blue-100 text-blue-800 border-blue-200 hover:bg-blue-200';
+      case 'suspended': return 'bg-orange-100 text-orange-800 border-orange-200 hover:bg-orange-200';
       case 'viewer':
-      default:
-        return <span className="inline-flex items-center gap-1 text-xs font-semibold text-gray-600 bg-gray-100 px-2.5 py-1 rounded-full"><Eye className="w-3.5 h-3.5"/> Viewer</span>;
+      default: return 'bg-gray-100 text-gray-800 border-gray-200 hover:bg-gray-200';
     }
   };
 
@@ -108,17 +174,17 @@ export default function Users() {
     <div className="min-h-screen bg-muted/30">
       <div className="p-8 max-w-5xl mx-auto">
         
-        {/* 🌟 เพิ่มแถบเมนูด้านบน (ปุ่ม Back & ปุ่ม Logout) */}
         <div className="flex justify-between items-center mb-1">
           <Button variant="ghost" onClick={() => navigate("/")} className="mb-4">
             <ArrowLeft className="mr-2 h-4 w-4" /> Back
           </Button>
-          
+          <Button variant="outline" onClick={handleLogout} className="mb-4 text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/20">
+            <LogOut className="mr-2 h-4 w-4" /> ออกจากระบบ
+          </Button>
         </div>
 
         <h1 className="text-3xl font-bold mb-6">ตั้งค่าผู้ใช้งานระบบ (User Management)</h1>
         
-        {/* ฟอร์มเพิ่มคน */}
         <form onSubmit={handleAddUser} className="flex flex-wrap md:flex-nowrap gap-3 mb-8 bg-card p-6 rounded-xl border shadow-sm">
           <Input 
             type="email" 
@@ -137,12 +203,11 @@ export default function Users() {
           </Button>
         </form>
 
-        {/* ตารางแสดงรายชื่อ */}
         <div className="bg-card rounded-xl border shadow-sm overflow-hidden">
           <div className="grid grid-cols-12 bg-muted/50 p-4 font-semibold text-muted-foreground border-b">
-            <div className="col-span-6 md:col-span-7">อีเมล (Email)</div>
+            <div className="col-span-7 md:col-span-8">อีเมล (Email)</div>
             <div className="col-span-4 md:col-span-3 text-center">ระดับสิทธิ์ (Role)</div>
-            <div className="col-span-2 text-center">จัดการ</div>
+            <div className="col-span-1 text-center">ลบ</div>
           </div>
           
           {loading && users.length === 0 ? (
@@ -153,12 +218,30 @@ export default function Users() {
             <div className="divide-y">
               {users.map((user) => (
                 <div key={user.id} className="grid grid-cols-12 p-4 items-center hover:bg-muted/30 transition-colors">
-                  <div className="col-span-6 md:col-span-7 font-medium truncate pr-4">{user.email}</div>
-                  <div className="col-span-4 md:col-span-3 text-center">
-                    {getRoleBadge(user.role)}
+                  <div className="col-span-7 md:col-span-8 font-medium truncate pr-4 text-sm md:text-base">{user.email}</div>
+                  
+                  {/* 🌟 อัปเกรดเป็น Select Component ของระบบ */}
+                  <div className="col-span-4 md:col-span-3 flex justify-center">
+                    <Select 
+                      value={user.role} 
+                      onValueChange={(value) => handleUpdateRole(user.id, user.role, value)}
+                    >
+                      <SelectTrigger 
+                        className={`h-8 w-[115px] text-xs font-semibold rounded-full border border-transparent shadow-none focus:ring-2 focus:ring-offset-1 transition-colors ${getSelectStyle(user.role)}`}
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="viewer">Viewer</SelectItem>
+                        <SelectItem value="general">General</SelectItem>
+                        <SelectItem value="admin">Admin</SelectItem>
+                        <SelectItem value="suspended">Suspended</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
-                  <div className="col-span-2 text-center">
-                    <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/10" onClick={() => handleDelete(user.id, user.email)}>
+
+                  <div className="col-span-1 text-center pl-2 md:pl-0">
+                    <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/10 h-8 w-8" onClick={() => handleDelete(user.id, user.email, user.role)}>
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
@@ -172,17 +255,26 @@ export default function Users() {
   );
 }
 
-// แยก Component เล็กๆ สำหรับ Dropdown จะได้อ่านง่าย
-function SelectRoleDropdown({ value, onChange }: { value: string, onChange: (val: any) => void }) {
+// 🌟 1. ระบุ Type ของ val ให้ตรงกับ State ไปเลย
+function SelectRoleDropdown({ 
+  value, 
+  onChange 
+}: { 
+  value: string; 
+  onChange: (val: "admin" | "general" | "viewer" | "suspended") => void; 
+}) {
   return (
-    <select 
-      value={value} 
-      onChange={(e) => onChange(e.target.value)}
-      className="flex h-10 w-[180px] items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-    >
-      <option value="viewer">Viewer (อ่านอย่างเดียว)</option>
-      <option value="general">General (ผู้ใช้งานทั่วไป)</option>
-      <option value="admin">Admin (ผู้ดูแลระบบ)</option>
-    </select>
+    // 🌟 2. ใช้ as แคสต์ค่าที่จะส่งกลับให้เป็น Type ที่ถูกต้อง
+    <Select value={value} onValueChange={(val) => onChange(val as "admin" | "general" | "viewer" | "suspended")}>
+      <SelectTrigger className="flex h-10 w-[180px] bg-background">
+        <SelectValue placeholder="เลือกระดับสิทธิ์" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="viewer">Viewer (อ่านอย่างเดียว)</SelectItem>
+        <SelectItem value="general">General (ผู้ใช้งานทั่วไป)</SelectItem>
+        <SelectItem value="admin">Admin (ผู้ดูแลระบบ)</SelectItem>
+        <SelectItem value="suspended">Suspended (ระงับใช้งาน)</SelectItem>
+      </SelectContent>
+    </Select>
   );
 }

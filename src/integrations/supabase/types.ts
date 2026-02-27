@@ -399,21 +399,24 @@ export type Database = {
           email: string;
           id: string;
           note: string | null;
-          role: "admin" | "general" | "viewer"; // 🌟 เพิ่มบรรทัดนี้
+          // 🌟 อัปเดต Type ให้รองรับ suspended แบบ Official!
+          role: "admin" | "general" | "viewer" | "suspended"; 
         };
         Insert: {
           created_at?: string;
           email: string;
           id?: string;
           note?: string | null;
-          role?: "admin" | "general" | "viewer"; // 🌟 เพิ่มบรรทัดนี้
+          // 🌟 อัปเดต Type
+          role?: "admin" | "general" | "viewer" | "suspended"; 
         };
         Update: {
           created_at?: string;
           email?: string;
           id?: string;
           note?: string | null;
-          role?: "admin" | "general" | "viewer"; // 🌟 เพิ่มบรรทัดนี้
+          // 🌟 อัปเดต Type
+          role?: "admin" | "general" | "viewer" | "suspended"; 
         };
         Relationships: [];
       };

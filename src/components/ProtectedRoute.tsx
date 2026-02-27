@@ -7,40 +7,36 @@ export function ProtectedRoute() {
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAuthorized, setIsAuthorized] = useState(false);
+  const [suspendMessage, setSuspendMessage] = useState(false); // 🌟 State เพื่อโชว์ข้อความว่าโดนแบน
   
-  // 🌟 สร้าง State ใหม่ เพื่อเก็บอีเมลที่ล็อคอินผ่านแล้ว ค่อยเอาไปเช็คสิทธิ์ทีหลัง
   const [userEmail, setUserEmail] = useState<string | null>(null);
 
-  // ==========================================
-  // 🟢 คิวที่ 1: ตรวจสอบการล็อกอิน (Auth เท่านั้น ห้ามดึง DB ตรงนี้)
-  // ==========================================
   useEffect(() => {
     let isMounted = true;
 
-    // เช็คตอนโหลดหน้าครั้งแรก
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user?.email && isMounted) {
         setIsAuthenticated(true);
-        setUserEmail(session.user.email.toLowerCase().trim()); // โยนให้คิว 2 ทำงานต่อ
+        setUserEmail(session.user.email.toLowerCase().trim());
       } else if (!window.location.hash.includes("access_token") && isMounted) {
         setIsAuthenticated(false);
         setLoading(false);
       }
     });
 
-    // ดักจับเวลามีคนกด Login / Logout
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (!isMounted) return;
 
       if (event === 'SIGNED_OUT') {
         setIsAuthenticated(false);
         setIsAuthorized(false);
+        setSuspendMessage(false);
         setUserEmail(null);
         localStorage.removeItem("userRole");
         setLoading(false);
       } else if (session?.user?.email) {
         setIsAuthenticated(true);
-        setUserEmail(session.user.email.toLowerCase().trim()); // โยนให้คิว 2 ทำงานต่อ
+        setUserEmail(session.user.email.toLowerCase().trim()); 
       }
     });
 
@@ -50,11 +46,8 @@ export function ProtectedRoute() {
     };
   }, []);
 
-  // ==========================================
-  // 🔵 คิวที่ 2: ดึงฐานข้อมูลเช็คสิทธิ์ (ทำงานเมื่อรู้ Email แล้วเท่านั้น)
-  // ==========================================
   useEffect(() => {
-    if (!userEmail) return; // ถ้ายังไม่ได้อีเมล ให้รอไปก่อน
+    if (!userEmail) return; 
 
     let isMounted = true;
 
@@ -66,12 +59,12 @@ export function ProtectedRoute() {
           localStorage.setItem("userRole", "admin");
           if (isMounted) {
             setIsAuthorized(true);
+            setSuspendMessage(false);
             setLoading(false);
           }
           return;
         }
 
-        // 🌟 ดึงข้อมูลจากฐานข้อมูล (แยกออกมาทำคิวนี้ จะไม่ค้างแล้ว!)
         const { data, error } = await supabase
           .from("allowed_users")
           .select("email, role")
@@ -80,11 +73,20 @@ export function ProtectedRoute() {
 
         if (isMounted) {
           if (data) {
-            localStorage.setItem("userRole", data.role || "viewer");
-            setIsAuthorized(true);
+            // 🌟 เช็คว่าโดนแบนไหม?
+            if (data.role === "suspended") {
+                localStorage.removeItem("userRole");
+                setIsAuthorized(false);
+                setSuspendMessage(true); // เปิดข้อความ "บัญชีถูกระงับ"
+            } else {
+                localStorage.setItem("userRole", data.role || "viewer");
+                setIsAuthorized(true);
+                setSuspendMessage(false);
+            }
           } else {
             localStorage.removeItem("userRole");
             setIsAuthorized(false);
+            setSuspendMessage(false);
           }
         }
       } catch (error) {
@@ -95,7 +97,7 @@ export function ProtectedRoute() {
         }
       } finally {
         if (isMounted) {
-          setLoading(false); // การันตีปิดหน้าโหลด
+          setLoading(false); 
         }
       }
     };
@@ -105,11 +107,8 @@ export function ProtectedRoute() {
     return () => {
       isMounted = false;
     };
-  }, [userEmail]); // 👈 สั่งให้ useEffect นี้ทำงานก็ต่อเมื่อ userEmail มีค่า
+  }, [userEmail]); 
 
-  // ==========================================
-  // 🔴 ส่วนแสดงผลหน้าจอ (UI)
-  // ==========================================
   if (loading) {
     return (
       <div className="h-screen w-full flex flex-col items-center justify-center gap-3 bg-muted/30">
@@ -126,8 +125,10 @@ export function ProtectedRoute() {
   if (!isAuthorized) {
     return (
       <div className="h-screen w-full flex flex-col items-center justify-center bg-destructive/5 text-center p-4">
-        <h1 className="text-3xl font-bold text-destructive mb-2">Access Denied</h1>
-        <p className="text-muted-foreground mb-6">อีเมลของคุณไม่มีสิทธิ์เข้าถึงระบบนี้ กรุณาติดต่อผู้ดูแลระบบ</p>
+        <>
+            <h1 className="text-3xl font-bold text-destructive mb-2">Access Denied</h1>
+            <p className="text-muted-foreground mb-6">อีเมลของคุณไม่มีสิทธิ์เข้าถึงระบบนี้ กรุณาติดต่อผู้ดูแลระบบ</p>
+        </>
         <button 
           onClick={() => supabase.auth.signOut().then(() => window.location.href = '/login')} 
           className="underline text-primary hover:text-primary/80"
