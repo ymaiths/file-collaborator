@@ -302,14 +302,47 @@ const CreateQuotation = () => {
       const finalWarranty = quoteData.edited_warranty_terms !== null ? quoteData.edited_warranty_terms : defaultWarranty;
       const finalNote = quoteData.edited_note !== null ? quoteData.edited_note : defaultNote;
       const finalDiscount = quoteData.edited_discount || 0;
-      
+      // 🌟 นำฟังก์ชันแปลงหน่วยมาใส่ไว้ด้านบนของ map
+      const formatDeviceSize = (prod: any) => {
+          if (!prod || (prod.min_kw === null && prod.max_kw === null)) return "";
+          
+          const formatVal = (val: number | null) => {
+              if (val === null) return "";
+              return val >= 1000 ? `${val / 1000} kW` : `${val} W`;
+          };
+
+          if (prod.is_exact_kw || prod.min_kw === prod.max_kw || prod.max_kw === null) {
+              return formatVal(prod.min_kw);
+          } else {
+              return `${formatVal(prod.min_kw)} - ${formatVal(prod.max_kw)}`;
+          }
+      };
+
       const mappedItems = lineItems.map((item) => {
           const product = item.products;
-          const categoryRaw = product?.product_category || "";
+          const categoryRaw = (product?.product_category || "") as string;
           const isSectionB = categoryRaw === "operation" || categoryRaw === "Operation & Maintenance"; 
+          const formatDeviceSize = (prod: any) => {
+              if (!prod || (prod.min_kw === null && prod.max_kw === null)) return "";
+              const formatVal = (val: number | null) => {
+                  if (val === null) return "";
+                  return val >= 1000 ? `${val / 1000} kW` : `${val} W`;
+              };
+              if (prod.is_exact_kw || prod.min_kw === prod.max_kw || prod.max_kw === null) {
+                  return formatVal(prod.min_kw);
+              } else {
+                  return `${formatVal(prod.min_kw)} - ${formatVal(prod.max_kw)}`;
+              }
+          };
+          const sizeLabel = formatDeviceSize(product);
+          const defaultName = product?.name ? (sizeLabel ? `${product.name} (${sizeLabel})` : product.name) : "Unknown";
+          const finalName = item.edited_name || defaultName;
+          const finalBrand = item.edited_brand || product?.brand || "-";
+          const qty = item.quantity || 0;
+
           return {
              id: item.id,
-             name: item.edited_name || product?.name || "Unknown",
+             name: item.edited_name || defaultName, // <--- ใช้ชื่อที่ประกอบร่างแล้ว
              brand: item.edited_brand || product?.brand || "-",
              edited_name: item.edited_name,
              edited_brand: item.edited_brand,
@@ -323,7 +356,7 @@ const CreateQuotation = () => {
              total: (item.product_price || 0) + (item.installation_price || 0)
           };
       });
-
+      
       const sectionAOrder = ["solar_panel", "Solar Panel", "pv_mounting_structure", "PV Mounting Structure", "inverter", "Inverter", "optimizer", "Optimizer", "zero_export_smart_logger", "Zero Export & Smart Logger", "ac_box", "AC Box", "dc_box", "DC Box", "cable", "Cable & Connector", "service", "Service", "support_inverter", "Support Inverter", "electrical_management", "Electrical Management", "others", "Others"];
       const sectionBOrder = ["Electrical drawing, Facility system, layout and schematic", "Common Temporary Facilities, Construction Facilities", "Safety Operation", "Comissioning Test", "Commissioning Test", "Tempolary Utility Expense", "ดำเนินการยื่นเอกสารขออนุญาตการไฟฟ้า/กกพ."];
 
@@ -1143,7 +1176,13 @@ const CreateQuotation = () => {
                 {canEdit ? (
                   <Select value={formData.solarPanelSize} onValueChange={(value) => handleInputChange("solarPanelSize", value)}>
                     <SelectTrigger className="h-9 mt-1"><SelectValue placeholder="Panel Size" /></SelectTrigger>
-                    <SelectContent>{availablePanelSizes.map((size) => (<SelectItem key={size} value={size.toString()}>{size.toLocaleString()} Watt</SelectItem>))}</SelectContent>
+                    <SelectContent>
+                      {availablePanelSizes.map((size) => (
+                        <SelectItem key={size} value={size.toString()}>
+                          {size >= 1000 ? `${size / 1000} kW` : `${size} W`} 
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
                   </Select>
                 ) : (
                   <Input readOnly className="h-9 mt-1" value={formData.solarPanelSize ? `${Number(formData.solarPanelSize).toLocaleString()} Watt` : ""} />
