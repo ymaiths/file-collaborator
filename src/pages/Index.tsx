@@ -29,9 +29,17 @@ const Index = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8; 
+  const [viewMode, setViewMode] = useState<"all" | "my">("all");
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchQuotations();
+    // 🌟 ดึง ID ของตัวเองมาเก็บไว้ตอนเปิดหน้าเว็บ
+    const fetchUserAndQuotations = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) setCurrentUserId(user.id);
+      fetchQuotations(); // เรียกดึงข้อมูลหลังจากเช็ค User เสร็จ
+    };
+    fetchUserAndQuotations();
   }, []);
 
   const fetchQuotations = async () => {
@@ -56,6 +64,7 @@ const Index = () => {
 
         return {
           id: quotation.id,
+          user_id: quotation.user_id,
           customerName: quotation.customers?.customer_name || "ไม่ระบุชื่อลูกค้า",
           location: quotation.location || "ไม่ระบุสถานที่",
           // 🌟 1. เช็คถ้า >= 1000 ให้หารพันแล้วโชว์ kW ถ้าน้อยกว่าให้โชว์ W
@@ -83,6 +92,7 @@ const Index = () => {
   };
 
   const filteredProjects = projects.filter((p) => {
+    if (viewMode === "my" && p.user_id !== currentUserId) return false;
     const query = searchQuery.toLowerCase();
     return (
       p.customerName.toLowerCase().includes(query) ||
@@ -92,7 +102,7 @@ const Index = () => {
       p.docNumber.toLowerCase().includes(query) 
     );
   });
-  
+
   const totalPages = Math.ceil(filteredProjects.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const currentProjects = filteredProjects.slice(startIndex, startIndex + itemsPerPage);
@@ -128,7 +138,11 @@ const Index = () => {
       const { data: lineItems, error: itemsError } = await supabase.from("product_line_items").select("*").eq("quotation_id", id);
       if (itemsError) throw itemsError;
       const { id: _, created_at: __, updated_at: ___, ...quotationData } = originalQuotation;
-      const newQuotationData = { ...quotationData, location: `${quotationData.location || ""} (Copy)` };
+      const newQuotationData = { 
+        ...quotationData, 
+        location: `${quotationData.location || ""} (Copy)`,
+        user_id: currentUserId // <--- แทรกบรรทัดนี้! ระบบจะถือว่าคนที่กด Copy คือเจ้าของเอกสารใบใหม่ทันที
+      };
       const { data: newQuotation, error: insertError } = await supabase.from("quotations").insert([newQuotationData]).select().single();
       if (insertError) throw insertError;
       if (lineItems && lineItems.length > 0) {
@@ -170,6 +184,24 @@ const Index = () => {
                     setCurrentPage(1); 
                   }}
                 />
+              </div>
+              <div className="flex bg-muted/50 p-1 rounded-lg border w-full md:w-auto">
+                <Button 
+                  variant={viewMode === "all" ? "default" : "ghost"} 
+                  size="sm" 
+                  onClick={() => { setViewMode("all"); setCurrentPage(1); }}
+                  className="flex-1 md:flex-none text-xs rounded-md shadow-none"
+                >
+                  ทั้งหมด
+                </Button>
+                <Button 
+                  variant={viewMode === "my" ? "default" : "ghost"} 
+                  size="sm" 
+                  onClick={() => { setViewMode("my"); setCurrentPage(1); }}
+                  className="flex-1 md:flex-none text-xs rounded-md shadow-none"
+                >
+                  งานของฉัน
+                </Button>
               </div>
 
               {/* 🌟 2. ซ่อนปุ่ม "Create New Project" ถ้าเป็นแค่ Viewer */}

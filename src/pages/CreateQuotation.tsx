@@ -623,6 +623,7 @@ const CreateQuotation = () => {
     setIsLoading(true);
 
     try {
+      const { data: { user } } = await supabase.auth.getUser();
       let finalCustomerId = currentCustomerId;
       const inputName = formData.customerName.trim();
       const inputTaxId = formData.customerTaxId ? formData.customerTaxId.trim() : "";
@@ -681,6 +682,7 @@ const CreateQuotation = () => {
         note: formData.additionalInfo || null,
         sale_package_id: newSalePackageId,
         inverter_brand: formData.brand || null,
+        user_id: user?.id || null,
       };
 
       let targetId = currentQuotationId;

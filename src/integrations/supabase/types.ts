@@ -224,6 +224,7 @@ export type Database = {
           edited_warranty_terms: string | null;
           edited_note: string | null;
           edited_discount: number | null;
+          user_id: string | null;
         };
         Insert: {
           created_at?: string | null;
@@ -245,6 +246,7 @@ export type Database = {
           edited_warranty_terms?: string | null;
           edited_note?: string | null;
           edited_discount?: number | null;
+          user_id?: string | null;
         };
         Update: {
           created_at?: string | null;
@@ -266,6 +268,7 @@ export type Database = {
           edited_warranty_terms?: string | null;
           edited_note?: string | null;
           edited_discount?: number | null;
+          user_id?: string | null;
         };
         Relationships: [
           {
