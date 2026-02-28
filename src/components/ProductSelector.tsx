@@ -43,6 +43,13 @@ interface ProductSelectorProps {
 const formatDeviceSize = (prod: any) => {
   if (!prod || (prod.min_kw === null && prod.max_kw === null)) return null;
   
+  // 🌟 เพิ่มเงื่อนไข: ถ้าขนาดน้อยกว่า 10 Watt ให้ซ่อนป้ายไปเลย (return null)
+  // เช็คทั้งค่า min และ max (ถ้ามี) เพื่อให้ครอบคลุมทั้งแบบค่าเป๊ะๆ และแบบช่วง
+  const isLessThan10 = (prod.min_kw !== null && prod.min_kw < 10) && 
+                       (prod.max_kw === null || prod.max_kw < 10);
+                       
+  if (isLessThan10) return null;
+
   const formatVal = (val: number | null) => {
       if (val === null) return "";
       return val >= 1000 ? `${val / 1000} kW` : `${val} W`;
@@ -54,7 +61,6 @@ const formatDeviceSize = (prod: any) => {
       return `${formatVal(prod.min_kw)} - ${formatVal(prod.max_kw)}`;
   }
 };
-
 export function ProductSelector({ onSelect, section }: ProductSelectorProps) {
   const [open, setOpen] = useState(false);
   const [products, setProducts] = useState<any[]>([]); 
@@ -108,7 +114,7 @@ export function ProductSelector({ onSelect, section }: ProductSelectorProps) {
             <CommandGroup>
               {products.map((product) => {
                 const sizeLabel = formatDeviceSize(product);
-                const searchKey = `${product.name} ${product.product_category || ""} ${product.brand || ""} ${sizeLabel || ""}`;
+                const searchKey = `${product.name} ${product.product_category || ""} ${product.brand || ""} ${sizeLabel || ""} ${product.min_kw || ""} ${product.max_kw || ""}`;
                 
                 return (
                     <CommandItem

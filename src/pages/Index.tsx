@@ -58,9 +58,15 @@ const Index = () => {
           id: quotation.id,
           customerName: quotation.customers?.customer_name || "ไม่ระบุชื่อลูกค้า",
           location: quotation.location || "ไม่ระบุสถานที่",
-          projectSize: quotation.kw_size ? `${quotation.kw_size.toLocaleString()} kW` : "ไม่ระบุขนาด",
+          // 🌟 1. เช็คถ้า >= 1000 ให้หารพันแล้วโชว์ kW ถ้าน้อยกว่าให้โชว์ W
+          projectSize: quotation.kw_size 
+             ? (quotation.kw_size >= 1000 ? `${(quotation.kw_size / 1000).toLocaleString()} kW` : `${quotation.kw_size.toLocaleString()} W`) 
+             : "ไม่ระบุขนาด",
+          // 🌟 2. แอบเก็บค่าดิบที่เป็น Watt เอาไว้ให้ระบบ Search ค้นหาเจอ
+          rawProjectSize: quotation.kw_size ? quotation.kw_size.toString() : "",
+          
           price: totalPrice > 0 ? `${totalPrice.toLocaleString()} บาท` : "0 บาท",
-          salesProgramme: quotation.sale_packages?.sale_name || "ไม่ระบุโปรแกรม",
+            salesProgramme: quotation.sale_packages?.sale_name || "ไม่ระบุโปรแกรม",
           note: quotation.note,
           editedDate: quotation.updated_at ? format(new Date(quotation.updated_at), "dd/MM/yy", { locale: th }) : "-",
           createdDate: quotation.created_at ? format(new Date(quotation.created_at), "dd/MM/yy", { locale: th }) : "-",
@@ -82,10 +88,11 @@ const Index = () => {
       p.customerName.toLowerCase().includes(query) ||
       p.location.toLowerCase().includes(query) || 
       p.projectSize.toLowerCase().includes(query) ||
+      p.rawProjectSize.includes(query) || // 🌟 เพิ่มให้ค้นหาจากค่า Watt แบบตัวเลขเพียวๆ ได้
       p.docNumber.toLowerCase().includes(query) 
     );
   });
-
+  
   const totalPages = Math.ceil(filteredProjects.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const currentProjects = filteredProjects.slice(startIndex, startIndex + itemsPerPage);
