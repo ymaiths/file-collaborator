@@ -505,7 +505,7 @@ export const EquipmentCategoryDetail = ({
             { key: "unit", label: "หน่วย" },
             { key: "cost", label: "ราคา/ต้นทุน (ใส่ตัวเลข)" },
             { key: "install_cost", label: "ค่าติดตั้ง (ใส่ตัวเลข)" },
-            { key: "min_kw", label: "ขนาด (Min/Exact) Watt" },
+            { key: "min_kw", label: "ขนาดหรือขนาดต่ำสุด (Min/Exact) Watt" },
             { key: "max_kw", label: "ขนาดสูงสุด (Max) Watt" },
             ...(isInverter ? [{ key: "phase", label: "Phase (ใส่ 1 หรือ 3)" }] : [])
         ]}

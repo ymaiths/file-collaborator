@@ -34,7 +34,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { CustomerAutocomplete } from "@/components/CustomerAutocomplete";
-
 // Helper function: Brand formatting
 const formatBrandName = (brand: string) => {
   if (!brand) return "";
@@ -95,6 +94,8 @@ const CreateQuotation = () => {
   const { generateMainEquipment } = useAutoGenerateLineItems();
   const { generateAdditionalEquipment } = useAutoGenerateAdditionalItems();
   const { calculateAndSavePricing } = useCalculatePricing();
+  const [showResetDialog, setShowResetDialog] = useState(false);
+
 
   const [formData, setFormData] = useState({
     customerName: "",
@@ -774,15 +775,16 @@ const CreateQuotation = () => {
     }
   };
 
-  const handleReset = async () => {
+  const handleReset = () => {
     if (!canEdit) return;
     if (!currentQuotationId) return;
+    setShowResetDialog(true);
+  };
 
-    if (!window.confirm("คุณต้องการรีเซ็ตรายการสินค้าทั้งหมดกลับเป็นค่าเริ่มต้นหรือไม่? \n(ราคาที่แก้ไข, ส่วนลด, และรายการที่เพิ่มเอง จะหายไปทั้งหมด)")) {
-      return;
-    }
-
+  const executeReset = async () => {
     setIsLoading(true);
+    setShowResetDialog(false);
+    
     try {
       const projectSizeVal = formData.projectSize ? parseFloat(formData.projectSize) : 0;
       const panelSizeVal = formData.solarPanelSize ? parseFloat(formData.solarPanelSize) : 0;
@@ -826,7 +828,6 @@ const CreateQuotation = () => {
       setIsLoading(false);
     }
   };
-
   // ------------------------------------------------------------------
   // useEffects
   // ------------------------------------------------------------------
@@ -1265,8 +1266,28 @@ const CreateQuotation = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <AlertDialog open={showResetDialog} onOpenChange={setShowResetDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>ยืนยันการรีเซ็ตข้อมูล</AlertDialogTitle>
+            <AlertDialogDescription className="text-sm">
+              คุณต้องการรีเซ็ตรายการสินค้าทั้งหมดกลับเป็นค่าเริ่มต้นหรือไม่?<br/><br/>
+              <span className="text-destructive font-semibold">⚠️ คำเตือน: ส่วนลด, ข้อมูลที่แก้ไขในตาราง, และรายการที่เพิ่มเข้ามาเอง จะหายไปทั้งหมด</span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={executeReset} 
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              ยืนยันรีเซ็ต
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </div>
   );
 };
-
 export default CreateQuotation;

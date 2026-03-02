@@ -12,8 +12,21 @@ import { toast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Plus, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const Index = () => {
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+const [projectToDelete, setProjectToDelete] = useState<string | null>(null);
+const [deleteWarningMsg, setDeleteWarningMsg] = useState("");
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<"quotation" | "database">("quotation");
   
@@ -116,14 +129,35 @@ const Index = () => {
   const handleDeleteProject = async (id: string) => {
     // 🌟 ป้องกัน Viewer ลบผ่าน URL/Console
     if (!canEdit) return; 
-    if (!confirm("คุณแน่ใจหรือไม่ที่จะลบใบเสนอราคานี้?")) return;
+    // 🌟 1. ค้นหาข้อมูลโปรเจกต์ที่กำลังจะถูกลบจาก State
+    const projectToDelete = projects.find(p => p.id === id);
+    
+    // 🌟 2. ตรวจสอบว่าคนที่กดลบ เป็นคนสร้างโปรเจกต์นี้หรือไม่
+    const isOwner = projectToDelete?.user_id === currentUserId;
+    
+    // 🌟 3. ตั้งค่าข้อความแจ้งเตือนให้เหมาะสม
+    const confirmMessage = isOwner 
+      ? "คุณแน่ใจหรือไม่ ที่จะลบใบเสนอราคานี้?" 
+      : "⚠️ คุณไม่ได้สร้างใบเสนอราคานี้ ยืนยันที่จะลบหรือไม่?";
+
+    setDeleteWarningMsg(confirmMessage);
+    setProjectToDelete(id);
+    setDeleteDialogOpen(true); // เปิด Custom Dialog
+  };
+
+  // 🌟 ฟังก์ชันใหม่: จะถูกเรียกเมื่อผู้ใช้กดปุ่ม "ตกลง" ใน Dialog
+  const executeDeleteProject = async () => {
+    if (!projectToDelete) return;
     try {
-      const { error } = await supabase.from("quotations").delete().eq("id", id);
+      const { error } = await supabase.from("quotations").delete().eq("id", projectToDelete);
       if (error) throw error;
-      setProjects((prev) => prev.filter((p) => p.id !== id));
+      setProjects((prev) => prev.filter((p) => p.id !== projectToDelete));
       toast({ title: "ลบสำเร็จ", description: "ใบเสนอราคาถูกลบเรียบร้อยแล้ว" });
     } catch (error) {
       toast({ title: "เกิดข้อผิดพลาด", description: "ไม่สามารถลบได้", variant: "destructive" });
+    } finally {
+      setDeleteDialogOpen(false); // ปิด Dialog
+      setProjectToDelete(null);
     }
   };
 
@@ -272,9 +306,30 @@ const Index = () => {
         ) : (
           <DatabaseTabContent />
         )}
+        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className={deleteWarningMsg.includes("⚠️") ? "text-destructive font-bold" : ""}>
+                {deleteWarningMsg.includes("⚠️") ? "ยืนยันการลบข้อมูลของผู้อื่น!" : "ยืนยันการลบข้อมูล"}
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-sm">
+                {deleteWarningMsg}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setProjectToDelete(null)}>ยกเลิก</AlertDialogCancel>
+              <AlertDialogAction 
+                onClick={executeDeleteProject} 
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                ลบข้อมูล
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
       </div>
     </div>
   );
 };
-
 export default Index;

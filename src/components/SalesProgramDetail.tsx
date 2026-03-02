@@ -541,7 +541,7 @@ export const SalesProgramDetail = ({
                   <th className="px-2 py-1.5 text-left text-sm font-medium">Phase</th>
                   <th className="px-2 py-1.5 text-left text-sm font-medium min-w-[140px]">
                     <div className="flex items-center gap-2">
-                       ราคาโครงการ
+                       ราคาโครงการ (บาท)
                        {isEditMode && (
                         <Select value={isExactPrice ? "exact" : "percent"} onValueChange={(v) => handleExactPriceChange(v === "exact")}>
                            <SelectTrigger className="w-7 h-7 rounded-full p-0 border-none bg-primary/10 text-primary hover:bg-primary/20 focus:ring-0 focus:ring-offset-0 [&>svg]:hidden">
@@ -788,9 +788,9 @@ export const SalesProgramDetail = ({
         fields={[
             { key: "brand", label: "Inverter Brand", type: "enum", enumOptions: allBrandOptions },
             { key: "phase", label: "Phase", type: "enum", enumOptions: [{ label: "1 Phase", value: "single_phase"}, { label: "3 Phase", value: "three_phase"}] },
-            { key: "kw_min", label: "ขนาด (Min/Exact) kW" },
-            { key: "kw_max", label: "ขนาดสูงสุด (Max) kW" },
-            { key: "price", label: "ราคา" },
+            { key: "kw_min", label: "Project Size/ Min Project size (Watt)" },
+            { key: "kw_max", label: "Max Project Size (Watt)" },
+            { key: "price", label: "Cost (Baht)" },
         ]}
         booleanFields={(importMode === "replace" || prices.length === 0) ? [
             { key: "is_exact_kw", label: "ขนาดแบบค่าเดียว (Exact)", defaultValue: isExactKw },
