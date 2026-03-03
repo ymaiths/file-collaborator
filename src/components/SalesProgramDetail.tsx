@@ -497,7 +497,7 @@ export const SalesProgramDetail = ({
           <Button variant="ghost" onClick={onBack}>←</Button>
           <h2 className="text-xl font-semibold">{programName}</h2>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-3">
           {isEditMode && (
             <>
               <Button variant="outline" size="sm" onClick={() => openImportModal("append")}>
