@@ -216,7 +216,7 @@ export const SalesProgramDetail = ({
     const newItems = data.map((row) => ({
       id: `temp-${Date.now()}-${Math.random()}`,
       inverter_brand: row.brand as InverterBrand,
-      electronic_phase: (row.phase && (String(row.phase).includes("3"))) ? "three_phase" : "single_phase" as ElectronicPhase,
+      electronic_phase: (row.phase === "three_phase" || String(row.phase).includes("3")) ? "three_phase" : "single_phase" as ElectronicPhase,
       is_exact_kw: _isExactKw,
       kw_min: parseFloat(row.kw_min) || 0,
       kw_max: !_isExactKw ? (parseFloat(row.kw_max) || 0) : null,

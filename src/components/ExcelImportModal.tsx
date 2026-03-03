@@ -25,8 +25,8 @@ export interface ImportField {
   key: string;
   label: string;
   required?: boolean;
-  type?: "text" | "number" | "enum"; // เพิ่ม type enum
-  enumOptions?: { label: string; value: string }[]; // ตัวเลือกสำหรับ enum
+  type?: "text" | "number" | "enum"; 
+  enumOptions?: { label: string; value: string }[]; 
 }
 
 export interface BooleanField {
@@ -61,11 +61,10 @@ export const ExcelImportModal = ({
   extraInputs = [],
   onImport,
 }: ExcelImportModalProps) => {
-  const [fullData, setFullData] = useState<any[][]>([]); // เก็บข้อมูลทั้งหมด
+  const [fullData, setFullData] = useState<any[][]>([]); 
   const [headers, setHeaders] = useState<string[]>([]);
   const [columnMapping, setColumnMapping] = useState<Record<number, string>>({});
   
-  // State สำหรับเก็บการจับคู่ค่า Enum: { fieldKey: { excelValue: systemValue } }
   const [enumValueMapping, setEnumValueMapping] = useState<Record<string, Record<string, string>>>({});
   
   const [booleanValues, setBooleanValues] = useState<Record<string, boolean>>(
@@ -73,60 +72,71 @@ export const ExcelImportModal = ({
   );
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // ฟังก์ชันเดาค่า Enum (Fuzzy Match อย่างง่าย)
+  // 🌟 1. อัปเกรดฟังก์ชันเดาค่า ให้ฉลาดเรื่องตัวเลข Phase มากขึ้น
   const guessEnumValue = (excelVal: string, options: { label: string; value: string }[]) => {
     if (!excelVal) return "";
-    const normalized = String(excelVal).toLowerCase().replace(/[^a-z0-9]/g, ""); // ตัดอักขระพิเศษ
+    const rawStr = String(excelVal).toLowerCase();
+    const normalized = rawStr.replace(/[^a-z0-9]/g, ""); 
     
-    // 1. หาที่ตรงกันเป๊ะๆ (Exact Match)
-    const exact = options.find(opt => opt.value.toLowerCase() === normalized || opt.label.toLowerCase() === excelVal.toLowerCase());
+    const exact = options.find(opt => opt.value.toLowerCase() === normalized || opt.label.toLowerCase() === rawStr);
     if (exact) return exact.value;
 
-    // ✅ 2. หาที่มีคำคล้ายกัน (Contains) แต่เลือกตัวที่ "ยาวที่สุด" (Longest Match)
-    // เพื่อป้องกันกรณีเลือก 'huawei' แทนที่จะเป็น 'huawei_optimizer'
+    // ✅ ดักตัวเลข 1 กับ 3 โดยเฉพาะ (ถ้า Excel มาเป็นเลข 3 ก็จะเจอ 3 Phase ทันที)
+    const numMatch = rawStr.match(/\d+/);
+    if (numMatch) {
+        const num = numMatch[0];
+        const optWithNum = options.find(opt => opt.label.includes(num) || opt.value.includes(num));
+        if (optWithNum) return optWithNum.value;
+    }
+
     const partialMatches = options.filter(opt => 
-        normalized.includes(opt.value.toLowerCase()) || 
-        opt.label.toLowerCase().includes(normalized) ||
-        normalized.includes(opt.label.toLowerCase().replace(/[^a-z0-9]/g, "")) // เช็ค Label แบบตัดอักขระด้วย
+        normalized.includes(opt.value.toLowerCase().replace(/[^a-z0-9]/g, "")) || 
+        opt.label.toLowerCase().replace(/[^a-z0-9]/g, "").includes(normalized)
     );
 
     if (partialMatches.length > 0) {
-        // เรียงลำดับตามความยาวของ value (จากยาวไปสั้น) แล้วเอาตัวแรก
-        // เช่น ['huawei', 'huawei_optimizer'] -> เรียงเป็น ['huawei_optimizer', 'huawei'] -> เลือกตัวแรก
         partialMatches.sort((a, b) => b.value.length - a.value.length);
         return partialMatches[0].value;
     }
 
-    return "other"; // Default fallback
+    // ✅ คืนค่า option ตัวแรกเสมอแทนที่จะคืนค่า "other" (เพื่อป้องกัน DB Error)
+    return options[0]?.value || ""; 
   };
 
-  // เมื่อ columnMapping เปลี่ยน ให้คำนวณ Unique Values ของ Enum columns
+  // 🌟 2. ปรับ useEffect ให้ "รักษาค่าที่ผู้ใช้เลือกไว้" ไม่เขียนทับมั่วๆ ตอน Re-render
   useEffect(() => {
-    const newMapping: Record<string, Record<string, string>> = {};
-    
-    // หาว่า Column ไหนบ้างที่ Map เข้ากับ Field ที่เป็น Enum
-    Object.entries(columnMapping).forEach(([colIndex, fieldKey]) => {
-        const fieldConfig = fields.find(f => f.key === fieldKey);
-        
-        if (fieldConfig?.type === "enum" && fieldConfig.enumOptions) {
-            const uniqueValues = new Set<string>();
-            // สแกนหาค่าที่ไม่ซ้ำใน Column นั้นจากข้อมูลทั้งหมด
-            fullData.slice(1).forEach(row => {
-                const val = row[Number(colIndex)];
-                if (val !== undefined && val !== null && String(val).trim() !== "") {
-                    uniqueValues.add(String(val).trim());
-                }
-            });
+    setEnumValueMapping(prevMapping => {
+      // Copy ค่าที่ผู้ใช้เคยจับคู่ไว้มาใช้งานต่อ
+      const newMapping: Record<string, Record<string, string>> = { ...prevMapping };
+      let hasChanges = false;
+      
+      Object.entries(columnMapping).forEach(([colIndex, fieldKey]) => {
+          const fieldConfig = fields.find(f => f.key === fieldKey);
+          
+          if (fieldConfig?.type === "enum" && fieldConfig.enumOptions) {
+              if (!newMapping[fieldKey]) {
+                  newMapping[fieldKey] = {};
+                  hasChanges = true;
+              }
+              
+              fullData.slice(1).forEach(row => {
+                  const val = row[Number(colIndex)];
+                  if (val !== undefined && val !== null && String(val).trim() !== "") {
+                      const strVal = String(val).trim();
+                      
+                      // ✅ ถ้าค่านั้นยังไม่เคยถูก Mapping ถึงจะยอมให้เดาค่าใหม่ (ห้ามทับของที่ผู้ใช้เปลี่ยนเอง)
+                      if (!newMapping[fieldKey][strVal]) {
+                          newMapping[fieldKey][strVal] = guessEnumValue(strVal, fieldConfig.enumOptions!);
+                          hasChanges = true;
+                      }
+                  }
+              });
+          }
+      });
 
-            // สร้าง Auto Map สำหรับแต่ละค่า
-            const valueMap: Record<string, string> = {};
-            uniqueValues.forEach(val => {
-                valueMap[val] = guessEnumValue(val, fieldConfig.enumOptions!);
-            });
-            newMapping[fieldKey] = valueMap;
-        }
+      // ถ้าไม่มีอะไรเปลี่ยน ให้คืนค่าเดิมเพื่อลดการกระตุกของหน้าจอ
+      return hasChanges ? newMapping : prevMapping;
     });
-    setEnumValueMapping(newMapping);
 
   }, [columnMapping, fullData, fields]);
 
@@ -141,23 +151,16 @@ export const ExcelImportModal = ({
       const wb = XLSX.read(bstr, { type: "binary" });
       const ws = wb.Sheets[wb.SheetNames[0]];
       
-      // ✅ 1. เพิ่ม Logic จัดการ Merge Cells ตรงนี้ครับ
       if (ws["!merges"]) {
         ws["!merges"].forEach((merge) => {
-          // 1.1 หาพิกัดเซลล์แม่ (ซ้ายบน)
           const startRef = XLSX.utils.encode_cell({ c: merge.s.c, r: merge.s.r });
           const sourceCell = ws[startRef];
 
-          // ถ้าเซลล์แม่มีค่า (และไม่ใช่ undefined)
           if (sourceCell) {
-            // 1.2 วนลูปทุกเซลล์ที่อยู่ใน Range การ Merge
             for (let row = merge.s.r; row <= merge.e.r; row++) {
               for (let col = merge.s.c; col <= merge.e.c; col++) {
                 const targetRef = XLSX.utils.encode_cell({ c: col, r: row });
-                
-                // ถ้าเซลล์เป้าหมายไม่มีค่า (เป็นช่องว่างจากการ Merge) ให้ก๊อปปี้ค่าจากเซลล์แม่ใส่เข้าไป
                 if (!ws[targetRef]) {
-                   // Clone object เพื่อไม่ให้กระทบ reference เดิม
                    ws[targetRef] = { ...sourceCell }; 
                 }
               }
@@ -166,14 +169,12 @@ export const ExcelImportModal = ({
         });
       }
 
-      // ✅ 2. แปลงเป็น JSON หลังจากเติมค่าเสร็จแล้ว
       const data = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
 
       if (data.length > 0) {
         setHeaders(data[0] as string[]);
         setFullData(data); 
         
-        // ... (Logic เดิมของคุณ) ...
         const initialMapping: Record<number, string> = {};
         data[0].forEach((headerVal: any, index: number) => {
             const h = String(headerVal).toLowerCase();
@@ -192,7 +193,6 @@ export const ExcelImportModal = ({
   };
 
   const handleConfirm = () => {
-    // Process Data
     const processedData = fullData.slice(1).map((row) => {
         const item: any = {};
         
@@ -200,18 +200,24 @@ export const ExcelImportModal = ({
             let rawValue = row[Number(colIndex)];
             const fieldConfig = fields.find(f => f.key === fieldKey);
 
-            // ถ้าเป็น Enum ให้แปลงค่าตาม Mapping ที่ผู้ใช้เลือก
-            if (fieldConfig?.type === "enum" && rawValue) {
+            if (fieldConfig?.type === "enum" && rawValue !== undefined && rawValue !== null) {
                 const strVal = String(rawValue).trim();
                 const mappedVal = enumValueMapping[fieldKey]?.[strVal];
-                // ถ้า Map ได้ให้ใช้ค่า Map, ถ้าไม่ได้ให้ลองเดาครั้งสุดท้ายหรือส่ง raw (ซึ่งอาจจะ error ที่ db ถ้าไม่ตรง)
-                item[fieldKey] = mappedVal || "other"; 
+                
+                // 🔴 DEBUG 1: แอบดูว่าตอนจับคู่มันได้ค่าอะไรมา
+                console.log(`[ตรวจสอบ Enum] คอลัมน์: ${fieldKey} | ค่าใน Excel: "${strVal}" | ค่าที่จะนำไปใช้: "${mappedVal}"`);
+                
+                item[fieldKey] = mappedVal || fieldConfig.enumOptions?.[0]?.value || strVal; 
             } else {
                 item[fieldKey] = rawValue;
             }
         });
         return item;
     }).filter(item => Object.keys(item).length > 0);
+
+    // 🔴 DEBUG 2: แอบดูข้อมูลก้อนสุดท้ายก่อนส่งออกไปให้หน้าหลัก
+    console.log("🔥 ข้อมูลที่ Modal กำลังจะส่งออกไป (Processed Data):", processedData);
+    console.log("🔥 เช็คสถานะ Mapping ปัจจุบัน:", enumValueMapping);
 
     onImport(processedData, booleanValues);
     onClose();
@@ -225,7 +231,6 @@ export const ExcelImportModal = ({
         </DialogHeader>
 
         <div className="space-y-6">
-          {/* 1. File Upload */}
           <div className="flex items-center gap-4 p-4 border-2 border-dashed rounded-lg bg-muted/50">
             <div className="p-3 bg-white rounded-full shadow-sm">
                 <FileSpreadsheet className="w-6 h-6 text-green-600" />
@@ -263,7 +268,6 @@ export const ExcelImportModal = ({
                 </div>
               )}
 
-              {/* 2. Column Mapping */}
               <div className="border rounded-md overflow-hidden">
                 <div className="bg-muted px-4 py-2 text-sm font-semibold border-b">
                     1. จับคู่หัวตาราง (Mapping Columns)
@@ -298,7 +302,6 @@ export const ExcelImportModal = ({
                                 ))}
                             </tr>
                         </thead>
-                        {/* Preview 3 Rows */}
                         <tbody>
                             {fullData.slice(1, 4).map((row, rIdx) => (
                                 <tr key={rIdx} className="border-b last:border-0 hover:bg-gray-50 opacity-60">
@@ -312,7 +315,6 @@ export const ExcelImportModal = ({
                 </div>
               </div>
 
-              {/* 3. Enum Value Mapping (ส่วนใหม่!) */}
               {Object.keys(enumValueMapping).length > 0 && (
                 <div className="border rounded-md overflow-hidden mt-4">
                     <div className="bg-orange-50 px-4 py-2 text-sm font-semibold border-b border-orange-100 text-orange-800 flex items-center gap-2">

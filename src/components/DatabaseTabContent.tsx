@@ -46,6 +46,53 @@ export const DatabaseTabContent = () => {
     }
   }, [activeSubTab]);
 
+  const handleRenameSalesProgram = async (id: string, oldName: string, newName: string) => {
+    if (!canEdit) return;
+    
+    // ถ้าชื่อว่าง หรือไม่ได้แก้ชื่อเลย ให้ยกเลิกการทำงาน
+    if (!newName || newName.trim() === "" || newName === oldName) return;
+
+    try {
+      const { error } = await supabase
+        .from("sale_packages")
+        .update({ sale_name: newName.trim() })
+        .eq("id", id);
+        
+      if (error) throw error;
+      
+      toast({ title: "เปลี่ยนชื่อสำเร็จ", description: `เปลี่ยนเป็น "${newName}" เรียบร้อยแล้ว` });
+      fetchSalesPrograms();
+    } catch (error) {
+      toast({ title: "เกิดข้อผิดพลาด", description: "ไม่สามารถเปลี่ยนชื่อโปรแกรมได้", variant: "destructive" });
+    }
+  };
+  
+  const handleRenameCategory = async (id: string, oldName: string, newName: string) => {
+    if (!canEdit) return;
+    
+    if (isSystemCategory(id) || isSystemCategory(enumToDisplayName[id] || id)) {
+        toast({ title: "การดำเนินการถูกปฏิเสธ", description: "ไม่สามารถเปลี่ยนชื่อหมวดหมู่มาตรฐานของระบบได้", variant: "destructive" });
+        return;
+    }
+    
+    // ถ้าชื่อว่าง หรือไม่ได้แก้ชื่อเลย ให้ยกเลิกการทำงาน
+    if (!newName || newName.trim() === "" || newName === oldName) return;
+
+    try {
+      // อัปเดตตาราง products ทั้งหมดที่มี category เดิม ให้เป็นชื่อใหม่
+      const { error } = await supabase
+        .from("products")
+        .update({ product_category: newName.trim() })
+        .eq("product_category", id);
+        
+      if (error) throw error;
+      
+      toast({ title: "เปลี่ยนชื่อสำเร็จ", description: `เปลี่ยนหมวดหมู่เป็น "${newName}" เรียบร้อยแล้ว` });
+      fetchEquipmentCategories();
+    } catch (error) {
+      toast({ title: "เกิดข้อผิดพลาด", description: "ไม่สามารถเปลี่ยนชื่อหมวดหมู่ได้", variant: "destructive" });
+    }
+  };
   const fetchEquipmentCategories = async () => {
     try {
       setLoading(true);
@@ -244,6 +291,7 @@ export const DatabaseTabContent = () => {
               onCreateNew={canEdit ? handleCreateSalesProgram : undefined}
               onDeleteItem={canEdit ? handleDeleteSalesProgram : undefined}
               onDuplicateItem={canEdit ? handleDuplicateSalesProgram : undefined}
+              onRenameItem={canEdit ? handleRenameSalesProgram : undefined}
             />
           )}
         </>
@@ -270,6 +318,7 @@ export const DatabaseTabContent = () => {
               onCreateNew={canEdit ? handleCreateEquipmentCategory : undefined}
               onDeleteItem={canEdit ? handleDeleteCategory : undefined}
               onDuplicateItem={canEdit ? handleDuplicateCategory : undefined}
+              onRenameItem={canEdit ? handleRenameCategory : undefined}
             />
           )}
         </>

@@ -23,6 +23,7 @@ interface ListManagementViewProps {
   ) => Promise<void>;
   onDeleteItem?: (id: string) => Promise<void>;
   onDuplicateItem?: (id: string) => Promise<void>;
+  onRenameItem?: (id: string, oldName: string, newName: string) => Promise<void>;
 }
 
 export const ListManagementView = ({
@@ -35,6 +36,7 @@ export const ListManagementView = ({
   onCreateNew,
   onDeleteItem,
   onDuplicateItem,
+  onRenameItem,
 }: ListManagementViewProps) => {
   const [items, setItems] = useState(initialItems);
 
@@ -42,13 +44,15 @@ export const ListManagementView = ({
     setItems(initialItems);
   }, [initialItems]);
 
-  const handleRename = (id: string) => {
-    toast({
-      title: "Rename functionality",
-      description: `Renaming item ${id} - will be implemented with database`,
-    });
+  const handleRename = async (id: string, oldName: string, newName: string) => {
+      if (onRenameItem) {
+        try {
+            await onRenameItem(id, oldName, newName);
+        } catch (error) {
+            console.error("Rename failed", error);
+        }
+    }
   };
-
   const handleDuplicate = async (id: string, name: string) => {
     if (onDuplicateItem) {
       try {
@@ -96,8 +100,7 @@ export const ListManagementView = ({
         <ListItemRow
           key={item.id}
           name={item.name}
-          // 🌟 1. ส่งค่า undefined ไปถ้าไม่มีสิทธิ์ หรือเป็นหมวดหมู่ระบบ (System)
-          onRename={(!onDeleteItem || item.isSystem) ? undefined : () => handleRename(item.id)}
+          onRename={(!onRenameItem || item.isSystem) ? undefined : (newName) => handleRename(item.id, item.name, newName)}
           onDuplicate={!onDuplicateItem ? undefined : () => handleDuplicate(item.id, item.name)}
           onDelete={(!onDeleteItem || item.isSystem) ? undefined : () => handleDelete(item.id, item.name)}
           onClick={() => handleItemClick(item.id, item.name)}
