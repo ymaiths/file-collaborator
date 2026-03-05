@@ -71,6 +71,7 @@ export const EquipmentCategoryDetail = ({
   const [loading, setLoading] = useState(true);
   const [editedName, setEditedName] = useState(categoryName);
   const isSystemCat = Object.keys(enumToDisplayName).includes(categoryId) || Object.values(enumToDisplayName).includes(categoryId);
+  
   // Global settings
   const [isPriceIncluded, setIsPriceIncluded] = useState(true);
   const [isRequired, setIsRequired] = useState(false);
@@ -85,7 +86,7 @@ export const EquipmentCategoryDetail = ({
   const currentCategory = categoryId; 
   const isInverter = currentCategory.toLowerCase() === "inverter"; 
 
-  // 🌟 1. ดึงสิทธิ์จากเครื่อง (Admin / General แก้ไขได้)
+  // 🌟 ดึงสิทธิ์จากเครื่อง (Admin / General แก้ไขได้)
   const userRole = localStorage.getItem("userRole");
   const canEdit = userRole === "admin" || userRole === "general";
 
@@ -131,21 +132,23 @@ export const EquipmentCategoryDetail = ({
   };
 
   const handleImportEquipment = async (data: any[], booleanValues: Record<string, boolean>) => {
-    if (!canEdit) return; // 🌟 ป้องกัน Viewer
+    if (!canEdit) return; 
 
     const isReplace = importMode === "replace";
 
-    const _isFixedCost = isReplace ? booleanValues.is_fixed_cost : isFixedCost;
-    const _isFixedInst = isReplace ? booleanValues.is_fixed_installation_cost : isFixedInstallationCost;
-    const _isExactKw = isReplace ? booleanValues.is_exact_kw : isExactKw;
+    // 🌟 รับค่าจาก Checkbox ที่ความหมายสลับกันมาแปลกลับให้ฐานข้อมูลเข้าใจ
+    const _isFixedCost = isReplace ? !booleanValues.is_dynamic_cost : isFixedCost;
+    const _isFixedInst = isReplace ? !booleanValues.is_dynamic_install : isFixedInstallationCost;
+    const _isExactKw = isReplace ? !booleanValues.is_range_kw : isExactKw;
+    
     const _isPriceIncluded = isReplace ? booleanValues.is_price_included : isPriceIncluded;
     const _isRequired = isReplace ? booleanValues.is_required_product : isRequired;
-
+    
     const newItems = data.map((row) => {
-      // 🌟 1. เช็คว่ามีค่าติดตั้งส่งมาหรือไม่ (กันช่องว่าง, null, undefined)
+      // เช็คว่ามีค่าติดตั้งส่งมาหรือไม่
       const hasInstallCost = row.install_cost !== undefined && row.install_cost !== null && String(row.install_cost).trim() !== "";
       
-      // 🌟 2. ถ้าไม่มีค่าติดตั้ง ให้บังคับใช้โหมด % และมีค่า = 0.2
+      // ถ้าไม่มีค่าติดตั้ง ให้บังคับใช้โหมด % และมีค่า = 0.2
       const finalIsFixedInst = hasInstallCost ? _isFixedInst : false;
       const finalFixedInstVal = hasInstallCost && _isFixedInst ? (parseFloat(row.install_cost) || 0) : null;
       const finalPercentInstVal = !hasInstallCost ? 0.2 : (!finalIsFixedInst ? (parseFloat(row.install_cost) || 0) : null);
@@ -155,19 +158,20 @@ export const EquipmentCategoryDetail = ({
         product_category: currentCategory,
         name: row.name || "",
         brand: row.brand || "",
-        unit: row.unit || "",
+        unit: row.unit || "set",
         is_fixed_cost: _isFixedCost,
         cost_fixed: _isFixedCost ? (parseFloat(row.cost) || 0) : null,
         cost_percentage: !_isFixedCost ? (parseFloat(row.cost) || 0) : null,
         
-        // 🌟 3. นำค่าที่คำนวณมาใส่ตรงนี้
         is_fixed_installation_cost: finalIsFixedInst,
         fixed_installation_cost: finalFixedInstVal,
         installation_cost_percentage: finalPercentInstVal,
         
         is_exact_kw: _isExactKw,
-        min_kw: parseFloat(row.min_kw) || 0,
-        max_kw: !_isExactKw ? (parseFloat(row.max_kw) || 0) : null,
+        // 🌟 ดึงค่าจาก row.kw_min แทนที่จะเป็น min_kw (เพราะ Modal จัดการตัวคูณ Watt/kW ให้แล้ว)
+        min_kw: parseFloat(row.kw_min) || 0,
+        max_kw: !_isExactKw ? (parseFloat(row.kw_max) || 0) : null,
+        
         is_price_included: _isPriceIncluded,
         is_required_product: _isRequired,
         electrical_phase: isInverter ? (row.phase === "three_phase" ? "three_phase" : "single_phase") : null,
@@ -203,12 +207,12 @@ export const EquipmentCategoryDetail = ({
   };
 
   const handleAddItem = () => {
-    if (!canEdit) return; // 🌟 ป้องกัน Viewer
+    if (!canEdit) return; 
     const newProduct: Product = {
       id: `temp-${Date.now()}`,
       name: "",
       brand: "",
-      unit: "",
+      unit: "set",
       cost_fixed: null,
       cost_percentage: null,
       is_fixed_cost: isFixedCost,
@@ -227,7 +231,7 @@ export const EquipmentCategoryDetail = ({
   };
 
   const handleDeleteItem = async (id: string) => {
-    if (!canEdit) return; // 🌟 ป้องกัน Viewer
+    if (!canEdit) return; 
     if (id.startsWith("temp-")) {
       setProducts(products.filter((p) => p.id !== id));
       return;
@@ -277,18 +281,16 @@ export const EquipmentCategoryDetail = ({
     if (!canEdit) return; 
 
     try {
-      // 🌟 1. เช็คว่ามีการพิมพ์เปลี่ยนชื่อจริงๆ
       const originalName = enumToDisplayName[categoryId] || categoryName;
       if (editedName !== originalName) {
         
-        // 🌟 2. ดักจับ: ถ้าเป็นหมวดหมู่ระบบ ให้เด้งแจ้งเตือนเลยว่าห้ามเปลี่ยน!
         if (isSystemCat) {
            toast({ 
               title: "ไม่อนุญาตให้เปลี่ยนชื่อ", 
               description: `"${originalName}" เป็นหมวดหมู่มาตรฐานของระบบ`, 
               variant: "destructive" 
            });
-           setEditedName(originalName); // รีเซ็ตชื่อกลับ
+           setEditedName(originalName); 
            return; 
         }
 
@@ -297,29 +299,19 @@ export const EquipmentCategoryDetail = ({
            return;
         }
         
-        console.log("กำลังส่งคำสั่ง Update ไปที่ DB...", { old: currentCategory, new: editedName.trim() });
-
-        // 🌟 3. อัปเดตตาราง Products
         const { error: renameError } = await supabase
           .from("products")
           .update({ product_category: editedName.trim() })
           .eq("product_category", currentCategory);
         
-        if (renameError) {
-            console.error("Database Update Error:", renameError);
-            toast({ title: "DB Error", description: renameError.message, variant: "destructive" });
-            throw renameError;
-        }
+        if (renameError) throw renameError;
         
-        // 🌟 4. แจ้งให้ Component แม่รู้ว่าเปลี่ยนชื่อแล้วนะ! (ถ้ามี)
         if (onRenameSuccess) {
-            console.log("เรียก onRenameSuccess กลับไปหน้าแม่");
             onRenameSuccess(categoryId, editedName.trim());
         }
       }
 
-      // บันทึกแก้ไขราคาสินค้าด้านล่างต่อ...
-      const categoryToSave = (!isSystemCat) ? editedName.trim() : currentCategory; // ย้ายตัวแปรนี้ออกมานอก Loop
+      const categoryToSave = (!isSystemCat) ? editedName.trim() : currentCategory; 
       for (const product of products) {
         if (product.id.startsWith("temp-")) {
           const { id, ...productData } = product;
@@ -331,6 +323,7 @@ export const EquipmentCategoryDetail = ({
           if (error) throw error;
         }
       }
+      
       await fetchProducts(categoryToSave);
       setIsEditMode(false);
       toast({ title: "บันทึกสำเร็จ", description: "บันทึกข้อมูลเรียบร้อยแล้ว" });
@@ -339,6 +332,7 @@ export const EquipmentCategoryDetail = ({
       toast({ title: "เกิดข้อผิดพลาดในการบันทึก", variant: "destructive" });
     }
   };
+
   const formatCost = (product: Product, type: "equipment" | "installation") => {
     if (type === "equipment") {
       if (product.is_fixed_cost) return product.cost_fixed?.toLocaleString() || "-";
@@ -397,7 +391,6 @@ export const EquipmentCategoryDetail = ({
               </Button>
             </>
           )}
-          {/* 🌟 2. ซ่อนปุ่มแก้ไข หากผู้ใช้ไม่มีสิทธิ์ (ทำให้ตารางเป็น Read-only ทันที) */}
           {canEdit && (
             <Button variant="outline" size="sm" onClick={() => { if (isEditMode) handleSaveAll(); else setIsEditMode(true); }}>
               {isEditMode ? "บันทึก" : "แก้ไข"}
@@ -571,12 +564,14 @@ export const EquipmentCategoryDetail = ({
             { key: "unit", label: "หน่วย" },
             { key: "cost", label: "ราคา/ต้นทุน (ใส่ตัวเลข)" },
             { key: "install_cost", label: "ค่าติดตั้ง (ใส่ตัวเลข)" },
-            { key: "min_kw", label: "ขนาด (Min/Exact) Watt" },
-            { key: "max_kw", label: "ขนาดสูงสุด (Max) Watt" },
+            // 🌟 เปลี่ยน key ไปใช้ "kw_min" เพื่อดึงพลังการแตกตัวเลือกของ ExcelImportModal ออกมาใช้
+            // แต่คง label เดิมไว้ว่า "min_kw" ให้ตรงกับความต้องการ
+            { key: "kw_min", label: "ขนาดอุปกรณ์ MIN" }, 
+            { key: "kw_max", label: "ขนาดอุปกรณ์ MAX" }, 
             ...(isInverter ? [{ 
                 key: "phase", 
                 label: "Phase (ระบบไฟ)", 
-                type: "enum"as const, 
+                type: "enum" as const, 
                 enumOptions: [
                     { label: "1 Phase", value: "single_phase" }, 
                     { label: "3 Phase", value: "three_phase" }
@@ -586,9 +581,9 @@ export const EquipmentCategoryDetail = ({
         booleanFields={
             importMode === "replace" 
             ? [
-                { key: "is_fixed_cost", label: "ราคาทุนแบบคงที่ (Fixed)", defaultValue: isFixedCost },
-                { key: "is_fixed_installation_cost", label: "ค่าติดตั้งแบบคงที่ (Fixed)", defaultValue: isFixedInstallationCost },
-                { key: "is_exact_kw", label: "ขนาดแบบค่าเดียว (Exact)", defaultValue: isExactKw },
+                { key: "is_dynamic_cost", label: "ราคาอุปกรณ์ตามขนาดโครงการ (%)", defaultValue: !isFixedCost },
+                { key: "is_dynamic_install", label: "ค่าติดตั้งตามราคาอุปกรณ์ (%)", defaultValue: !isFixedInstallationCost },
+                { key: "is_range_kw", label: "ขนาดอุปกรณ์เป็นช่วง (Range)", defaultValue: !isExactKw },
                 { key: "is_price_included", label: "รวมในราคาขาย", defaultValue: isPriceIncluded },
                 { key: "is_required_product", label: "Required Item", defaultValue: isRequired },
             ]

@@ -79,11 +79,11 @@ export const ExcelImportModal = ({
     let expanded: ImportField[] = [];
     fields.forEach(f => {
       if (f.key === 'kw_min') {
-        expanded.push({ ...f, key: 'kw_min_watt', label: `${f.label} (หน่วย Watt)` });
-        expanded.push({ ...f, key: 'kw_min_kw', label: `${f.label} (หน่วย kW)` });
+        expanded.push({ ...f, key: 'kw_min_watt', label: `${f.label} (Watt)` });
+        expanded.push({ ...f, key: 'kw_min_kw', label: `${f.label} (kW)` });
       } else if (f.key === 'kw_max') {
-        expanded.push({ ...f, key: 'kw_max_watt', label: `${f.label} (หน่วย Watt)` });
-        expanded.push({ ...f, key: 'kw_max_kw', label: `${f.label} (หน่วย kW)` });
+        expanded.push({ ...f, key: 'kw_max_watt', label: `${f.label} (Watt)` });
+        expanded.push({ ...f, key: 'kw_max_kw', label: `${f.label} (kW)` });
       } else {
         expanded.push(f);
       }
