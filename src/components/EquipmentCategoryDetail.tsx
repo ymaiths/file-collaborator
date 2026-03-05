@@ -141,25 +141,38 @@ export const EquipmentCategoryDetail = ({
     const _isPriceIncluded = isReplace ? booleanValues.is_price_included : isPriceIncluded;
     const _isRequired = isReplace ? booleanValues.is_required_product : isRequired;
 
-    const newItems = data.map((row) => ({
-      id: `temp-${Date.now()}-${Math.random()}`,
-      product_category: currentCategory,
-      name: row.name || "",
-      brand: row.brand || "",
-      unit: row.unit || "",
-      is_fixed_cost: _isFixedCost,
-      cost_fixed: _isFixedCost ? (parseFloat(row.cost) || 0) : null,
-      cost_percentage: !_isFixedCost ? (parseFloat(row.cost) || 0) : null,
-      is_fixed_installation_cost: _isFixedInst,
-      fixed_installation_cost: _isFixedInst ? (parseFloat(row.install_cost) || 0) : null,
-      installation_cost_percentage: !_isFixedInst ? (parseFloat(row.install_cost) || 0) : null,
-      is_exact_kw: _isExactKw,
-      min_kw: parseFloat(row.min_kw) || 0,
-      max_kw: !_isExactKw ? (parseFloat(row.max_kw) || 0) : null,
-      is_price_included: _isPriceIncluded,
-      is_required_product: _isRequired,
-      electrical_phase: isInverter ? (row.phase === "3" || row.phase === "3Ph" ? "three_phase" : "single_phase") : null,
-    }));
+    const newItems = data.map((row) => {
+      // 🌟 1. เช็คว่ามีค่าติดตั้งส่งมาหรือไม่ (กันช่องว่าง, null, undefined)
+      const hasInstallCost = row.install_cost !== undefined && row.install_cost !== null && String(row.install_cost).trim() !== "";
+      
+      // 🌟 2. ถ้าไม่มีค่าติดตั้ง ให้บังคับใช้โหมด % และมีค่า = 0.2
+      const finalIsFixedInst = hasInstallCost ? _isFixedInst : false;
+      const finalFixedInstVal = hasInstallCost && _isFixedInst ? (parseFloat(row.install_cost) || 0) : null;
+      const finalPercentInstVal = !hasInstallCost ? 0.2 : (!finalIsFixedInst ? (parseFloat(row.install_cost) || 0) : null);
+
+      return {
+        id: `temp-${Date.now()}-${Math.random()}`,
+        product_category: currentCategory,
+        name: row.name || "",
+        brand: row.brand || "",
+        unit: row.unit || "",
+        is_fixed_cost: _isFixedCost,
+        cost_fixed: _isFixedCost ? (parseFloat(row.cost) || 0) : null,
+        cost_percentage: !_isFixedCost ? (parseFloat(row.cost) || 0) : null,
+        
+        // 🌟 3. นำค่าที่คำนวณมาใส่ตรงนี้
+        is_fixed_installation_cost: finalIsFixedInst,
+        fixed_installation_cost: finalFixedInstVal,
+        installation_cost_percentage: finalPercentInstVal,
+        
+        is_exact_kw: _isExactKw,
+        min_kw: parseFloat(row.min_kw) || 0,
+        max_kw: !_isExactKw ? (parseFloat(row.max_kw) || 0) : null,
+        is_price_included: _isPriceIncluded,
+        is_required_product: _isRequired,
+        electrical_phase: isInverter ? (row.phase === "three_phase" ? "three_phase" : "single_phase") : null,
+      };
+    });
 
     if (isReplace) {
       const hasRealItems = products.some(p => !p.id.startsWith("temp-"));
@@ -560,8 +573,16 @@ export const EquipmentCategoryDetail = ({
             { key: "install_cost", label: "ค่าติดตั้ง (ใส่ตัวเลข)" },
             { key: "min_kw", label: "ขนาด (Min/Exact) Watt" },
             { key: "max_kw", label: "ขนาดสูงสุด (Max) Watt" },
-            ...(isInverter ? [{ key: "phase", label: "Phase (ใส่ 1 หรือ 3)" }] : [])
-        ]}
+            ...(isInverter ? [{ 
+                key: "phase", 
+                label: "Phase (ระบบไฟ)", 
+                type: "enum"as const, 
+                enumOptions: [
+                    { label: "1 Phase", value: "single_phase" }, 
+                    { label: "3 Phase", value: "three_phase" }
+                ] 
+            }] : [])
+          ]}
         booleanFields={
             importMode === "replace" 
             ? [
