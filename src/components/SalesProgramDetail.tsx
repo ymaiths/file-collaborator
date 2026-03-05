@@ -76,11 +76,15 @@ export const SalesProgramDetail = ({
   // Import States
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importMode, setImportMode] = useState<"append" | "replace">("append");
+  
+  // 🌟 1. เพิ่มตัวแปรมารับค่า Checkbox จากหน้า Modal
+  const [importBooleans, setImportBooleans] = useState<Record<string, boolean>>({});
+  
   const [tempPaymentTerms, setTempPaymentTerms] = useState("");
   const [tempWarrantyTerms, setTempWarrantyTerms] = useState("");
   const [tempNote, setTempNote] = useState("");
 
-  // 🌟 1. ดึงสิทธิ์จากเครื่อง (Admin / General แก้ไขได้)
+  // ดึงสิทธิ์จากเครื่อง (Admin / General แก้ไขได้)
   const userRole = localStorage.getItem("userRole");
   const canEdit = userRole === "admin" || userRole === "general";
 
@@ -197,22 +201,28 @@ export const SalesProgramDetail = ({
     }));
   };
 
+  // 🌟 2. อัปเดตฟังก์ชันนี้ ให้ส่งค่าปัจจุบันแบบ "สลับความหมายแล้ว" ไปให้ Modal ทันทีที่เปิด
   const openImportModal = (mode: "append" | "replace") => {
     setTempPaymentTerms(paymentTerms);
     setTempWarrantyTerms(warrantyTerms);
     setTempNote(note);
     setImportMode(mode);
+    setImportBooleans({
+      is_range_kw: !isExactKw,
+      is_dynamic_price: !isExactPrice,
+    });
     setIsImportModalOpen(true);
   };
 
   const handleImportSales = async (data: any[], booleanValues: Record<string, boolean>) => {
-    if (!canEdit) return; // 🌟 ป้องกัน Viewer
+    if (!canEdit) return; 
 
     const isTableEmpty = prices.length === 0;
     const isConfigMode = importMode === "replace" || isTableEmpty;
 
-    const _isExactKw = isConfigMode ? booleanValues.is_exact_kw : isExactKw;
-    const _isExactPrice = isConfigMode ? booleanValues.is_exact_price : isExactPrice;
+    // 🌟 3. รับค่าตัวแปรใหม่ และใช้ ! (Not) เพื่อแปลงกลับเป็น is_exact ให้ฐานข้อมูลเข้าใจ
+    const _isExactKw = isConfigMode ? !booleanValues.is_range_kw : isExactKw;
+    const _isExactPrice = isConfigMode ? !booleanValues.is_dynamic_price : isExactPrice;
 
     const newItems = data.map((row) => ({
       id: `temp-${Date.now()}-${Math.random()}`,
@@ -250,7 +260,7 @@ export const SalesProgramDetail = ({
   };
 
   const handleAddBrand = async (brandValue?: string) => {
-     if (!canEdit) return; // 🌟 ป้องกัน Viewer
+     if (!canEdit) return; 
      let brandToUse: InverterBrand = (brandValue as InverterBrand) || "others"; 
      
      const newPrice: SalePackagePrice = {
@@ -269,7 +279,7 @@ export const SalesProgramDetail = ({
   };
 
   const handleAddSize = (brand: InverterBrand) => {
-    if (!canEdit) return; // 🌟 ป้องกัน Viewer
+    if (!canEdit) return; 
     const newPrice: SalePackagePrice = {
         id: `temp-${Date.now()}`,
         inverter_brand: brand,
@@ -291,13 +301,13 @@ export const SalesProgramDetail = ({
   };
 
   const handleDeletePrice = (id: string) => {
-    if (!canEdit) return; // 🌟 ป้องกัน Viewer
+    if (!canEdit) return; 
     if (!id.startsWith("temp-")) setDeletedIds(prev => [...prev, id]);
     setPrices(prices.filter(p => p.id !== id));
   };
 
   const handleUpdatePrice = (id: string, field: keyof SalePackagePrice, value: any) => {
-    if (!canEdit) return; // 🌟 ป้องกัน Viewer
+    if (!canEdit) return; 
     setPrices(prices.map(p => {
         if (p.id !== id) return p;
         const updatedItem = { ...p, [field]: value };
@@ -445,7 +455,7 @@ export const SalesProgramDetail = ({
   };
 
   const handleSaveAll = async () => {
-    if (!canEdit) return; // 🌟 ป้องกัน Viewer
+    if (!canEdit) return; 
 
     try {
         if (checkAndResolveOverlaps()) {
@@ -521,7 +531,6 @@ export const SalesProgramDetail = ({
               </Button>
             </>
           )}
-          {/* 🌟 2. ซ่อนปุ่มแก้ไข/บันทึก หากเป็นแค่ Viewer */}
           {canEdit && (
             isEditMode ? <Button onClick={handleSaveAll}>บันทึก</Button> : <Button onClick={() => setIsEditMode(true)}>แก้ไข</Button>
           )}
@@ -798,17 +807,34 @@ export const SalesProgramDetail = ({
         isOpen={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}
         title={importMode === "replace" ? "แทนที่ข้อมูล" : "เพิ่มข้อมูล"}
+        
+        // 🌟 4. ส่งค่า Checkbox กลับมาจาก Modal เพื่อเปลี่ยนชื่อคอลัมน์ Dynamic
+        onBooleanChange={setImportBooleans}
+
         fields={[
             { key: "brand", label: "Inverter Brand", type: "enum", enumOptions: allBrandOptions },
             { key: "phase", label: "Phase", type: "enum", enumOptions: [{ label: "1 Phase", value: "single_phase"}, { label: "3 Phase", value: "three_phase"}] },
-            { key: "kw_min", label: "Project Size/ Min Project size (Watt)" },
-            { key: "kw_max", label: "Max Project Size (Watt)" },
-            { key: "price", label: "Cost (Baht)" },
+            
+            // 🌟 5. แสดงชื่อคอลัมน์แบบ Dynamic ตามที่ติ๊กเลือก
+            ...( ((importMode === "replace" || prices.length === 0) ? importBooleans.is_range_kw : !isExactKw) 
+              ? [
+                  { key: "kw_min", label: "ขนาดโครงการ MIN" }, 
+                  { key: "kw_max", label: "ขนาดโครงการ MAX" }
+                ] 
+              : [
+                  { key: "kw_min", label: "ขนาดโครงการ" }
+                ]
+            ),
+
+            { key: "price", label: "ราคาขายโครงการ" },
         ]}
+        
+        // 🌟 6. แก้ไขรายการ Checkbox ให้เป็นแบบใหม่ และสลับค่าเริ่มต้น
         booleanFields={(importMode === "replace" || prices.length === 0) ? [
-            { key: "is_exact_kw", label: "ขนาดแบบค่าเดียว (Exact)", defaultValue: isExactKw },
-            { key: "is_exact_price", label: "ราคาแบบ Fix (บาท)", defaultValue: isExactPrice },
+            { key: "is_range_kw", label: "ขนาดโครงการเป็นช่วง (Range)", defaultValue: !isExactKw },
+            { key: "is_dynamic_price", label: "ราคาตามขนาดโครงการ (%)", defaultValue: !isExactPrice },
         ] : []}
+        
         extraInputs={[
             { key: "payment", label: "เงื่อนไขชำระเงิน", value: tempPaymentTerms, onChange: setTempPaymentTerms },
             { key: "warranty", label: "เงื่อนไขรับประกัน", value: tempWarrantyTerms, onChange: setTempWarrantyTerms },
@@ -821,7 +847,7 @@ export const SalesProgramDetail = ({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="text-destructive flex items-center gap-2">
-               ⚠️ พบช่วงข้อมูลซ้ำซ้อน
+                ⚠️ พบช่วงข้อมูลซ้ำซ้อน
             </AlertDialogTitle>
             <AlertDialogDescription>
               ที่ยี่ห้อ <span className="font-bold text-foreground">{conflictDialog?.currItem.inverter_brand}</span>
