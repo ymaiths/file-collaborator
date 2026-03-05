@@ -82,6 +82,7 @@ export const EquipmentCategoryDetail = ({
   // Import States
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importMode, setImportMode] = useState<"append" | "replace">("append");
+  const [importBooleans, setImportBooleans] = useState<Record<string, boolean>>({});
 
   const currentCategory = categoryId; 
   const isInverter = currentCategory.toLowerCase() === "inverter"; 
@@ -128,6 +129,13 @@ export const EquipmentCategoryDetail = ({
 
   const openImportModal = (mode: "append" | "replace") => {
     setImportMode(mode);
+    setImportBooleans({
+      is_dynamic_cost: !isFixedCost,
+      is_dynamic_install: !isFixedInstallationCost,
+      is_range_kw: !isExactKw,
+      is_price_included: isPriceIncluded,
+      is_required_product: isRequired,
+    });
     setIsImportModalOpen(true);
   };
 
@@ -143,7 +151,7 @@ export const EquipmentCategoryDetail = ({
     
     const _isPriceIncluded = isReplace ? booleanValues.is_price_included : isPriceIncluded;
     const _isRequired = isReplace ? booleanValues.is_required_product : isRequired;
-    
+
     const newItems = data.map((row) => {
       // เช็คว่ามีค่าติดตั้งส่งมาหรือไม่
       const hasInstallCost = row.install_cost !== undefined && row.install_cost !== null && String(row.install_cost).trim() !== "";
@@ -558,16 +566,22 @@ export const EquipmentCategoryDetail = ({
         isOpen={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}
         title={importMode === "replace" ? `แทนที่ข้อมูล ${categoryName}` : `เพิ่มข้อมูล ${categoryName}`}
+        onBooleanChange={setImportBooleans}
         fields={[
             { key: "name", label: "ชื่ออุปกรณ์" },
             { key: "brand", label: "ยี่ห้อ (Brand)" },
             { key: "unit", label: "หน่วย" },
-            { key: "cost", label: "ราคา/ต้นทุน (ใส่ตัวเลข)" },
-            { key: "install_cost", label: "ค่าติดตั้ง (ใส่ตัวเลข)" },
-            // 🌟 เปลี่ยน key ไปใช้ "kw_min" เพื่อดึงพลังการแตกตัวเลือกของ ExcelImportModal ออกมาใช้
-            // แต่คง label เดิมไว้ว่า "min_kw" ให้ตรงกับความต้องการ
-            { key: "kw_min", label: "ขนาดอุปกรณ์ MIN" }, 
-            { key: "kw_max", label: "ขนาดอุปกรณ์ MAX" }, 
+            { key: "cost", label: "ราคาทุนอุปกรณ์" },
+            { key: "install_cost", label: "ค่าติดตั้ง" },
+            ...( (importMode === "replace" ? importBooleans.is_range_kw : !isExactKw) 
+              ? [
+                  { key: "kw_min", label: "ขนาดอุปกรณ์ MIN" }, 
+                  { key: "kw_max", label: "ขนาดอุปกรณ์ MAX" }
+                ] 
+              : [
+                  { key: "kw_min", label: "ขนาดอุปกรณ์" }
+                ]
+            ),
             ...(isInverter ? [{ 
                 key: "phase", 
                 label: "Phase (ระบบไฟ)", 

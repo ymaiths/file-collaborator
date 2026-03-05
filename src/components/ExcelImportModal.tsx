@@ -50,6 +50,7 @@ interface ExcelImportModalProps {
   booleanFields?: BooleanField[];
   extraInputs?: ExtraInput[];
   onImport: (data: any[], booleanValues: Record<string, boolean>) => void;
+  onBooleanChange?: (values: Record<string, boolean>) => void; 
 }
 
 export const ExcelImportModal = ({
@@ -60,6 +61,7 @@ export const ExcelImportModal = ({
   booleanFields = [],
   extraInputs = [],
   onImport,
+  onBooleanChange,
 }: ExcelImportModalProps) => {
   const [workbook, setWorkbook] = useState<XLSX.WorkBook | null>(null);
   const [sheetNames, setSheetNames] = useState<string[]>([]);
@@ -73,6 +75,13 @@ export const ExcelImportModal = ({
   const [booleanValues, setBooleanValues] = useState<Record<string, boolean>>(
     booleanFields.reduce((acc, field) => ({ ...acc, [field.key]: field.defaultValue }), {})
   );
+
+  useEffect(() => {
+    if (onBooleanChange) {
+      onBooleanChange(booleanValues);
+    }
+  }, [booleanValues]);
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const displayFields = useMemo(() => {
@@ -90,6 +99,22 @@ export const ExcelImportModal = ({
     });
     return expanded;
   }, [fields]);
+
+  useEffect(() => {
+    setColumnMapping(prev => {
+      const newMap = { ...prev };
+      let hasChanges = false;
+      const validKeys = displayFields.map(f => f.key);
+      
+      Object.entries(newMap).forEach(([idx, key]) => {
+        if (!validKeys.includes(key)) {
+          delete newMap[Number(idx)];
+          hasChanges = true;
+        }
+      });
+      return hasChanges ? newMap : prev;
+    });
+  }, [displayFields]);
 
   const getAvailableFields = (currentColIdx: number) => {
     const otherSelectedKeys = Object.entries(columnMapping)
