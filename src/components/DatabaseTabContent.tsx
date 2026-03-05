@@ -6,7 +6,6 @@ import { EquipmentCategoryDetail } from "@/components/EquipmentCategoryDetail";
 import { SalesProgramDetail } from "@/components/SalesProgramDetail";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
-import { isSystemCategory } from "@/constants"; 
 
 type DatabaseSubTab = "company" | "sales" | "equipment";
 
@@ -23,6 +22,12 @@ const enumToDisplayName: Record<string, string> = {
   optimizer: "Optimizer",
   electrical_management: "Electrical Management",
   others: "Others"
+};
+
+// 🌟 สร้างฟังก์ชันเช็ค System Category ที่ปลอดภัย 100% ไม่พังแน่นอน
+const checkIsSystemCategory = (val: string | null | undefined) => {
+  if (!val || val === "others" || val === "Others") return false;
+  return Object.keys(enumToDisplayName).includes(val) || Object.values(enumToDisplayName).includes(val);
 };
 
 export const DatabaseTabContent = () => {
@@ -49,7 +54,6 @@ export const DatabaseTabContent = () => {
   const handleRenameSalesProgram = async (id: string, oldName: string, newName: string) => {
     if (!canEdit) return;
     
-    // ถ้าชื่อว่าง หรือไม่ได้แก้ชื่อเลย ให้ยกเลิกการทำงาน
     if (!newName || newName.trim() === "" || newName === oldName) return;
 
     try {
@@ -70,16 +74,15 @@ export const DatabaseTabContent = () => {
   const handleRenameCategory = async (id: string, oldName: string, newName: string) => {
     if (!canEdit) return;
     
-    if (isSystemCategory(id) || isSystemCategory(enumToDisplayName[id] || id)) {
+    // ใช้ฟังก์ชันตัวใหม่ที่เราสร้างขึ้นมา
+    if (checkIsSystemCategory(id) || checkIsSystemCategory(oldName)) {
         toast({ title: "การดำเนินการถูกปฏิเสธ", description: "ไม่สามารถเปลี่ยนชื่อหมวดหมู่มาตรฐานของระบบได้", variant: "destructive" });
         return;
     }
     
-    // ถ้าชื่อว่าง หรือไม่ได้แก้ชื่อเลย ให้ยกเลิกการทำงาน
     if (!newName || newName.trim() === "" || newName === oldName) return;
 
     try {
-      // อัปเดตตาราง products ทั้งหมดที่มี category เดิม ให้เป็นชื่อใหม่
       const { error } = await supabase
         .from("products")
         .update({ product_category: newName.trim() })
@@ -93,21 +96,34 @@ export const DatabaseTabContent = () => {
       toast({ title: "เกิดข้อผิดพลาด", description: "ไม่สามารถเปลี่ยนชื่อหมวดหมู่ได้", variant: "destructive" });
     }
   };
+  
   const fetchEquipmentCategories = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase.from("products").select("product_category").order("product_category");
+      const { data, error } = await supabase.from("products").select("product_category");
       if (error) throw error;
 
-      const uniqueCategories = Array.from(new Set(data?.map((p) => p.product_category) || [])).map((category) => {
-        const catString = category as string;
-        const displayName = enumToDisplayName[catString] || catString;
+      // 🌟 เพิ่ม .filter(Boolean) เพื่อกรองค่า null, undefined หรือช่องว่างทิ้ง ป้องกันระบบแครช
+      const dbCategories = Array.from(new Set(data?.map((p) => p.product_category).filter(Boolean) || [])) as string[];
+
+      const systemCategories = Object.keys(enumToDisplayName).filter(k => k !== "others");
+
+      const combinedCategoryIds = Array.from(new Set([...systemCategories, ...dbCategories]));
+
+      const uniqueCategories = combinedCategoryIds.map((catId) => {
         return {
-            id: catString,
-            name: displayName,
-            isSystem: isSystemCategory(catString) || isSystemCategory(displayName)
+            id: catId,
+            name: enumToDisplayName[catId] || catId,
+            isSystem: checkIsSystemCategory(catId)
         };
       });
+
+      uniqueCategories.sort((a, b) => {
+        if (a.isSystem && !b.isSystem) return -1;
+        if (!a.isSystem && b.isSystem) return 1;
+        return a.name.localeCompare(b.name);
+      });
+
       setEquipmentCategories(uniqueCategories);
     } catch (error) {
       console.error("Error fetching equipment categories:", error);
@@ -162,10 +178,13 @@ export const DatabaseTabContent = () => {
 
   const handleDeleteCategory = async (id: string) => {
     if (!canEdit) return;
-    if (isSystemCategory(id) || isSystemCategory(enumToDisplayName[id] || id)) {
+    
+    // ใช้ฟังก์ชันตัวใหม่ที่เราสร้างขึ้นมา
+    if (checkIsSystemCategory(id)) {
         toast({ title: "การดำเนินการถูกปฏิเสธ", description: "ไม่สามารถลบหมวดหมู่มาตรฐานของระบบได้", variant: "destructive" });
         return;
     }
+    
     try {
       const { error } = await supabase.from("products").delete().eq("product_category", id);
       if (error) throw error;
@@ -304,6 +323,10 @@ export const DatabaseTabContent = () => {
               categoryName={selectedCategory.name}
               categoryId={selectedCategory.id}
               onBack={handleBackToList}
+              onRenameSuccess={(oldId, newName) => {
+                  handleRenameCategory(oldId, selectedCategory.name, newName);
+                  setSelectedCategory({ id: newName, name: newName }); 
+              }}
             />
           ) : loading ? (
             <div className="p-4 text-center text-muted-foreground">กำลังโหลดรายการหมวดหมู่...</div>
@@ -326,4 +349,3 @@ export const DatabaseTabContent = () => {
     </div>
   );
 };
-

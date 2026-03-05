@@ -57,17 +57,20 @@ interface EquipmentCategoryDetailProps {
   categoryName: string;
   categoryId: string;
   onBack: () => void;
+  onRenameSuccess?: (oldId: string, newName: string) => void;
 }
 
 export const EquipmentCategoryDetail = ({
   categoryName,
   categoryId,
   onBack,
+  onRenameSuccess,
 }: EquipmentCategoryDetailProps) => {
   const [isEditMode, setIsEditMode] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
-  
+  const [editedName, setEditedName] = useState(categoryName);
+  const isSystemCat = Object.keys(enumToDisplayName).includes(categoryId) || Object.values(enumToDisplayName).includes(categoryId);
   // Global settings
   const [isPriceIncluded, setIsPriceIncluded] = useState(true);
   const [isRequired, setIsRequired] = useState(false);
@@ -100,13 +103,13 @@ export const EquipmentCategoryDetail = ({
     fetchProducts();
   }, [currentCategory]);
 
-  const fetchProducts = async () => {
+  const fetchProducts = async (catName = currentCategory) => {
     try {
       setLoading(true);
       const { data, error } = await supabase
         .from("products")
         .select("*")
-        .eq("product_category", currentCategory); 
+        .eq("product_category", catName); 
 
       if (error) throw error;
       setProducts((data as unknown as Product[]) || []);
@@ -258,29 +261,71 @@ export const EquipmentCategoryDetail = ({
   };
 
   const handleSaveAll = async () => {
-    if (!canEdit) return; // 🌟 ป้องกัน Viewer
+    if (!canEdit) return; 
 
     try {
+      // 🌟 1. เช็คว่ามีการพิมพ์เปลี่ยนชื่อจริงๆ
+      const originalName = enumToDisplayName[categoryId] || categoryName;
+      if (editedName !== originalName) {
+        
+        // 🌟 2. ดักจับ: ถ้าเป็นหมวดหมู่ระบบ ให้เด้งแจ้งเตือนเลยว่าห้ามเปลี่ยน!
+        if (isSystemCat) {
+           toast({ 
+              title: "ไม่อนุญาตให้เปลี่ยนชื่อ", 
+              description: `"${originalName}" เป็นหมวดหมู่มาตรฐานของระบบ`, 
+              variant: "destructive" 
+           });
+           setEditedName(originalName); // รีเซ็ตชื่อกลับ
+           return; 
+        }
+
+        if (!editedName.trim()) {
+           toast({ title: "เกิดข้อผิดพลาด", description: "ชื่อหมวดหมู่ห้ามว่างเปล่า", variant: "destructive" });
+           return;
+        }
+        
+        console.log("กำลังส่งคำสั่ง Update ไปที่ DB...", { old: currentCategory, new: editedName.trim() });
+
+        // 🌟 3. อัปเดตตาราง Products
+        const { error: renameError } = await supabase
+          .from("products")
+          .update({ product_category: editedName.trim() })
+          .eq("product_category", currentCategory);
+        
+        if (renameError) {
+            console.error("Database Update Error:", renameError);
+            toast({ title: "DB Error", description: renameError.message, variant: "destructive" });
+            throw renameError;
+        }
+        
+        // 🌟 4. แจ้งให้ Component แม่รู้ว่าเปลี่ยนชื่อแล้วนะ! (ถ้ามี)
+        if (onRenameSuccess) {
+            console.log("เรียก onRenameSuccess กลับไปหน้าแม่");
+            onRenameSuccess(categoryId, editedName.trim());
+        }
+      }
+
+      // บันทึกแก้ไขราคาสินค้าด้านล่างต่อ...
+      const categoryToSave = (!isSystemCat) ? editedName.trim() : currentCategory; // ย้ายตัวแปรนี้ออกมานอก Loop
       for (const product of products) {
         if (product.id.startsWith("temp-")) {
           const { id, ...productData } = product;
-          const { error } = await supabase.from("products").insert([productData]);
+          const { error } = await supabase.from("products").insert([{ ...productData, product_category: categoryToSave }]);
           if (error) throw error;
         } else {
           const { id, ...updateData } = product;
-          const { error } = await supabase.from("products").update(updateData).eq("id", id);
+          const { error } = await supabase.from("products").update({ ...updateData, product_category: categoryToSave }).eq("id", id);
           if (error) throw error;
         }
       }
-      await fetchProducts();
+      await fetchProducts(categoryToSave);
       setIsEditMode(false);
-      toast({ title: "บันทึกสำเร็จ", description: "บันทึกข้อมูลอุปกรณ์เรียบร้อยแล้ว" });
+      toast({ title: "บันทึกสำเร็จ", description: "บันทึกข้อมูลเรียบร้อยแล้ว" });
     } catch (error) {
       console.error("Error saving products:", error);
-      toast({ title: "เกิดข้อผิดพลาด", variant: "destructive" });
+      toast({ title: "เกิดข้อผิดพลาดในการบันทึก", variant: "destructive" });
     }
   };
-
   const formatCost = (product: Product, type: "equipment" | "installation") => {
     if (type === "equipment") {
       if (product.is_fixed_cost) return product.cost_fixed?.toLocaleString() || "-";
@@ -304,9 +349,17 @@ export const EquipmentCategoryDetail = ({
       <div className="flex items-center justify-between p-4 bg-card border border-border rounded-md">
         <div className="flex items-center gap-4">
           <Button variant="ghost" onClick={onBack}>←</Button> 
-          <h2 className="text-lg font-semibold text-foreground">
-            {enumToDisplayName[currentCategory] || categoryName}
-          </h2>
+          {isEditMode && !isSystemCat ? (
+             <Input 
+                value={editedName} 
+                onChange={(e) => setEditedName(e.target.value)}
+                className="font-semibold text-lg h-9 w-64"
+             />
+          ) : (
+            <h2 className="text-lg font-semibold text-foreground">
+              {editedName}
+            </h2>
+          )}
           {isEditMode && (
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
@@ -334,7 +387,7 @@ export const EquipmentCategoryDetail = ({
           {/* 🌟 2. ซ่อนปุ่มแก้ไข หากผู้ใช้ไม่มีสิทธิ์ (ทำให้ตารางเป็น Read-only ทันที) */}
           {canEdit && (
             <Button variant="outline" size="sm" onClick={() => { if (isEditMode) handleSaveAll(); else setIsEditMode(true); }}>
-              {isEditMode ? "เสร็จสิ้น" : "แก้ไข"}
+              {isEditMode ? "บันทึก" : "แก้ไข"}
             </Button>
           )}
         </div>

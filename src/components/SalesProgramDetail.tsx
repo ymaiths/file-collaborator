@@ -56,7 +56,8 @@ export const SalesProgramDetail = ({
   const [isEditMode, setIsEditMode] = useState(false);
   const [prices, setPrices] = useState<SalePackagePrice[]>([]);
   const [loading, setLoading] = useState(true);
-  
+  const [editedName, setEditedName] = useState(programName);
+
   // Terms State
   const [paymentTerms, setPaymentTerms] = useState("");
   const [warrantyTerms, setWarrantyTerms] = useState("");
@@ -452,8 +453,12 @@ export const SalesProgramDetail = ({
         }
 
         setLoading(true);
+        if (!editedName.trim()) {
+           toast({ title: "เกิดข้อผิดพลาด", description: "ชื่อโปรแกรมห้ามว่างเปล่า", variant: "destructive" });
+           return;
+        }
         const { error: pkgError } = await supabase.from("sale_packages")
-            .update({ payment_terms: paymentTerms, warranty_terms: warrantyTerms, note: note })
+            .update({ sale_name: editedName.trim(),payment_terms: paymentTerms, warranty_terms: warrantyTerms, note: note })
             .eq("id", programId);
         if (pkgError) throw pkgError;
 
@@ -495,8 +500,16 @@ export const SalesProgramDetail = ({
       <div className="flex items-center justify-between mb-6 p-4 border rounded-lg bg-card">
         <div className="flex items-center gap-4">
           <Button variant="ghost" onClick={onBack}>←</Button>
-          <h2 className="text-xl font-semibold">{programName}</h2>
-        </div>
+          {isEditMode ? (
+             <Input 
+                value={editedName} 
+                onChange={(e) => setEditedName(e.target.value)}
+                className="font-semibold text-lg h-9 w-64"
+             />
+          ) : (
+            <h2 className="text-xl font-semibold">{editedName}</h2>
+          )}
+          </div>
         <div className="flex gap-3">
           {isEditMode && (
             <>

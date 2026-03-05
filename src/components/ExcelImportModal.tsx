@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import * as XLSX from "xlsx";
 import { Button } from "@/components/ui/button";
 import {
@@ -61,7 +61,6 @@ export const ExcelImportModal = ({
   extraInputs = [],
   onImport,
 }: ExcelImportModalProps) => {
-  // 🌟 เพิ่ม States สำหรับจัดการเรื่อง Sheet
   const [workbook, setWorkbook] = useState<XLSX.WorkBook | null>(null);
   const [sheetNames, setSheetNames] = useState<string[]>([]);
   const [selectedSheet, setSelectedSheet] = useState<string>("");
@@ -75,6 +74,35 @@ export const ExcelImportModal = ({
     booleanFields.reduce((acc, field) => ({ ...acc, [field.key]: field.defaultValue }), {})
   );
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const displayFields = useMemo(() => {
+    let expanded: ImportField[] = [];
+    fields.forEach(f => {
+      if (f.key === 'kw_min') {
+        expanded.push({ ...f, key: 'kw_min_watt', label: `${f.label} (หน่วย Watt)` });
+        expanded.push({ ...f, key: 'kw_min_kw', label: `${f.label} (หน่วย kW)` });
+      } else if (f.key === 'kw_max') {
+        expanded.push({ ...f, key: 'kw_max_watt', label: `${f.label} (หน่วย Watt)` });
+        expanded.push({ ...f, key: 'kw_max_kw', label: `${f.label} (หน่วย kW)` });
+      } else {
+        expanded.push(f);
+      }
+    });
+    return expanded;
+  }, [fields]);
+
+  const getAvailableFields = (currentColIdx: number) => {
+    const otherSelectedKeys = Object.entries(columnMapping)
+      .filter(([idx]) => Number(idx) !== currentColIdx)
+      .map(([_, key]) => key);
+
+    return displayFields.filter(opt => {
+      if (otherSelectedKeys.includes(opt.key)) return false;
+      if (opt.key.startsWith('kw_min_') && otherSelectedKeys.some(k => k.startsWith('kw_min_'))) return false;
+      if (opt.key.startsWith('kw_max_') && otherSelectedKeys.some(k => k.startsWith('kw_max_'))) return false;
+      return true;
+    });
+  };
 
   const guessEnumValue = (excelVal: string, options: { label: string; value: string }[]) => {
     if (!excelVal) return "";
@@ -108,7 +136,11 @@ export const ExcelImportModal = ({
       const newMapping: Record<string, Record<string, string>> = { ...prevMapping };
       let hasChanges = false;
       
-      Object.entries(columnMapping).forEach(([colIndex, fieldKey]) => {
+      Object.entries(columnMapping).forEach(([colIndex, mappedKey]) => {
+          let fieldKey = mappedKey;
+          if (mappedKey.startsWith('kw_min_')) fieldKey = 'kw_min';
+          if (mappedKey.startsWith('kw_max_')) fieldKey = 'kw_max';
+
           const fieldConfig = fields.find(f => f.key === fieldKey);
           
           if (fieldConfig?.type === "enum" && fieldConfig.enumOptions) {
@@ -133,15 +165,12 @@ export const ExcelImportModal = ({
     });
   }, [columnMapping, fullData, fields]);
 
-  // 🌟 ฟังก์ชันแยกสำหรับประมวลผลข้อมูลใน Sheet ที่เลือก
   const processSheetData = (wb: XLSX.WorkBook, sheetName: string) => {
     const ws = wb.Sheets[sheetName];
     if (!ws) return;
 
-    // เคลียร์ค่า Mapping เก่าทิ้งเมื่อเปลี่ยนชีท
     setEnumValueMapping({});
 
-    // จัดการเซลล์ที่ถูก Merge (ถ้ามี)
     if (ws["!merges"]) {
       ws["!merges"].forEach((merge) => {
         const startRef = XLSX.utils.encode_cell({ c: merge.s.c, r: merge.s.r });
@@ -168,12 +197,20 @@ export const ExcelImportModal = ({
       const initialMapping: Record<number, string> = {};
       data[0].forEach((headerVal: any, index: number) => {
           const h = String(headerVal).toLowerCase();
-          const found = fields.find(f => 
+          const found = displayFields.find(f => 
               h.includes(f.label.toLowerCase()) || 
-              h.includes(f.key.toLowerCase())
+              h.includes(f.key.toLowerCase()) ||
+              f.label.toLowerCase().includes(h)
           );
           if (found) {
-              initialMapping[index] = found.key;
+              const alreadySelected = Object.values(initialMapping);
+              if (!alreadySelected.includes(found.key)) {
+                  const isMinConflict = found.key.startsWith('kw_min_') && alreadySelected.some(k => k.startsWith('kw_min_'));
+                  const isMaxConflict = found.key.startsWith('kw_max_') && alreadySelected.some(k => k.startsWith('kw_max_'));
+                  if (!isMinConflict && !isMaxConflict) {
+                      initialMapping[index] = found.key;
+                  }
+              }
           }
       });
       setColumnMapping(initialMapping);
@@ -193,11 +230,9 @@ export const ExcelImportModal = ({
       const bstr = evt.target?.result;
       const wb = XLSX.read(bstr, { type: "binary" });
       
-      // 🌟 เก็บ Workbook และรายชื่อชีทเอาไว้
       setWorkbook(wb);
       setSheetNames(wb.SheetNames);
       
-      // 🌟 เลือกชีทแรกเป็นค่าเริ่มต้น และดึงข้อมูลมาแสดง
       const initialSheet = wb.SheetNames[0];
       setSelectedSheet(initialSheet);
       processSheetData(wb, initialSheet);
@@ -207,16 +242,22 @@ export const ExcelImportModal = ({
 
   const handleConfirm = () => {
     const processedData = fullData.slice(1).map((row) => {
-        // 🌟 ดักจับแถวว่าง ถ้าแถวไหนไม่มีข้อมูลเลย ให้ข้ามไป
-        const isEmptyRow = row.every(cell => 
-            cell === undefined || cell === null || String(cell).trim() === ""
-        );
+        const isEmptyRow = row.every(cell => cell === undefined || cell === null || String(cell).trim() === "");
         if (isEmptyRow) return null;
 
         const item: any = {};
         
-        Object.entries(columnMapping).forEach(([colIndex, fieldKey]) => {
+        Object.entries(columnMapping).forEach(([colIndex, mappedKey]) => {
             let rawValue = row[Number(colIndex)];
+            
+            let fieldKey = mappedKey;
+            let multiplier = 1;
+
+            if (mappedKey === 'kw_min_kw') { fieldKey = 'kw_min'; multiplier = 1000; }
+            if (mappedKey === 'kw_min_watt') { fieldKey = 'kw_min'; multiplier = 1; }
+            if (mappedKey === 'kw_max_kw') { fieldKey = 'kw_max'; multiplier = 1000; }
+            if (mappedKey === 'kw_max_watt') { fieldKey = 'kw_max'; multiplier = 1; }
+
             const fieldConfig = fields.find(f => f.key === fieldKey);
 
             if (fieldConfig?.type === "enum" && rawValue !== undefined && rawValue !== null && String(rawValue).trim() !== "") {
@@ -224,15 +265,28 @@ export const ExcelImportModal = ({
                 const mappedVal = enumValueMapping[fieldKey]?.[strVal];
                 item[fieldKey] = mappedVal || fieldConfig.enumOptions?.[0]?.value || strVal; 
             } else {
-                item[fieldKey] = (rawValue === undefined || String(rawValue).trim() === "") ? null : rawValue;
+                let finalVal = (rawValue === undefined || String(rawValue).trim() === "") ? null : rawValue;
+                if (finalVal !== null && multiplier !== 1) {
+                    const num = parseFloat(finalVal);
+                    if (!isNaN(num)) finalVal = num * multiplier;
+                }
+                item[fieldKey] = finalVal;
             }
         });
+
+        // 🌟 กฎพิเศษ: ถ้าขนาด >= 20,000 Watt ให้เป็น 3 Phase อัตโนมัติ 🌟
+        const minW = Number(item['kw_min']) || 0;
+        const maxW = Number(item['kw_max']) || 0;
+        
+        if (minW >= 20000 || maxW >= 20000) {
+            item['phase'] = 'three_phase'; // บังคับเป็น 3 Phase ทันที
+        }
+
         return item;
     }).filter(item => item !== null && Object.keys(item).length > 0);
 
     onImport(processedData, booleanValues);
     
-    // เคลียร์ค่าเมื่อปิด Modal
     setWorkbook(null);
     setSheetNames([]);
     setSelectedSheet("");
@@ -248,18 +302,13 @@ export const ExcelImportModal = ({
       }
       onClose();
     }}>
-      {/* 🌟 1. จำกัดความกว้าง Dialog สูงสุดที่ 95vw เพื่อไม่ให้หน้าต่างล้นจอเด็ดขาด */}
-      <DialogContent className="max-w-3xl w-[70vw] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-5xl w-[95vw] max-h-[90vh] overflow-y-auto overflow-x-hidden">
         <DialogHeader>
           <DialogTitle>นำเข้าข้อมูล: {title}</DialogTitle>
         </DialogHeader>
 
-        {/* 🌟 2. ใส่ min-w-0 เพื่อบังคับให้ Flex ไม่ขยายตัวตามเนื้อหาด้านใน */}
         <div className="flex flex-col gap-4 w-full max-w-full min-w-0">
-          {/* อัปโหลดไฟล์ */}
           <div className="flex flex-col md:flex-row items-end gap-4 p-5 border-2 border-dashed rounded-xl bg-muted/20 w-full">
-            
-            {/* ฝั่งซ้าย: เลือกไฟล์ */}
             <div className="flex-1 w-full space-y-2 min-w-0">
               <Label className="flex items-center gap-2 text-sm font-semibold text-foreground">
                 <div className="p-1.5 bg-green-100 text-green-700 rounded-md shadow-sm shrink-0">
@@ -276,7 +325,6 @@ export const ExcelImportModal = ({
               />
             </div>
 
-            {/* ฝั่งขวา: เลือกชีท */}
             <div className="flex-1 w-full space-y-2 min-w-0">
               <Label className="flex items-center gap-2 text-sm font-semibold text-foreground">
                 <div className="p-1.5 bg-blue-100 text-blue-700 rounded-md shadow-sm shrink-0">
@@ -304,7 +352,6 @@ export const ExcelImportModal = ({
                 </SelectContent>
               </Select>
             </div>
-            
           </div>
 
           {headers.length > 0 && (
@@ -329,20 +376,17 @@ export const ExcelImportModal = ({
                 </div>
               )}
 
-              {/* 🌟 3. ตารางถูกจับใส่กรง (overflow-hidden) แล้วให้ Scroll วิ่งเฉพาะด้านใน */}
               <div className="border rounded-md flex flex-col w-full overflow-hidden">
                 <div className="bg-muted px-4 py-2 text-sm font-semibold border-b shrink-0">
                     1. จับคู่หัวตาราง (Mapping Columns)
                 </div>
-                {/* 👇 ใช้ overflow-x-auto เพื่อให้ตารางมี Scroll ซ้าย-ขวา */}
                 <div className="w-full overflow-x-auto pb-1">
-                    {/* 👇 whitespace-nowrap ห้ามข้อความตกบรรทัด เพื่อบังคับให้ตารางกว้างออกไป และเกิด Scroll bar */}
                     <table className="w-full text-sm text-left whitespace-nowrap">
                         <thead className="bg-gray-50 text-gray-700">
                             <tr>
                                 {headers.map((header, idx) => (
-                                    <th key={idx} className="p-3 border-b min-w-[80px] max-w-[100px]">
-                                        <div className="mb-1 text-xs text-muted-foreground truncate" title={header}>{header}</div>
+                                    <th key={idx} className="p-3 border-b min-w-[160px] max-w-[250px]">
+                                        <div className="mb-2 text-xs text-muted-foreground truncate" title={header}>{header}</div>
                                         <Select 
                                             value={columnMapping[idx] || "ignore"}
                                             onValueChange={(val) => {
@@ -357,7 +401,7 @@ export const ExcelImportModal = ({
                                             </SelectTrigger>
                                             <SelectContent>
                                                 <SelectItem value="ignore" className="text-xs text-muted-foreground">-- ไม่นำเข้า --</SelectItem>
-                                                {fields.map(f => (
+                                                {getAvailableFields(idx).map(f => (
                                                     <SelectItem key={f.key} value={f.key} className="text-xs">{f.label}</SelectItem>
                                                 ))}
                                             </SelectContent>
@@ -373,7 +417,7 @@ export const ExcelImportModal = ({
                                 return (
                                   <tr key={rIdx} className="border-b last:border-0 hover:bg-gray-50 opacity-60">
                                       {headers.map((_, cIdx) => (
-                                          <td key={cIdx} className="p-3 truncate max-w-[150px] text-xs" title={row[cIdx]}>{row[cIdx]}</td>
+                                          <td key={cIdx} className="p-3 truncate max-w-[250px] text-xs" title={row[cIdx]}>{row[cIdx]}</td>
                                       ))}
                                   </tr>
                                 )
@@ -383,7 +427,6 @@ export const ExcelImportModal = ({
                 </div>
               </div>
 
-              {/* 🌟 4. Value Mapping ถูกจับใส่กรอบให้เป็นระเบียบ */}
               {Object.keys(enumValueMapping).length > 0 && (
                 <div className="border rounded-md flex flex-col w-full overflow-hidden mt-2">
                     <div className="bg-orange-50 px-4 py-2 text-sm font-semibold border-b border-orange-100 text-orange-800 flex items-center gap-2 shrink-0">
@@ -401,7 +444,6 @@ export const ExcelImportModal = ({
                                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 w-full">
                                         {Object.entries(mapping).map(([excelVal, systemVal]) => (
                                             <div key={excelVal} className="flex items-center gap-2 p-1.5 border rounded bg-white text-sm w-full overflow-hidden">
-                                                {/* min-w-0 ตรงนี้สำคัญมาก เพื่อให้ข้อความยาวๆ โดนตัดด้วย ... แทนที่จะดันกล่องให้พัง */}
                                                 <span className="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded truncate flex-1 min-w-0" title={excelVal}>
                                                     {excelVal}
                                                 </span>
@@ -418,7 +460,7 @@ export const ExcelImportModal = ({
                                                         }));
                                                     }}
                                                 >
-                                                    <SelectTrigger className="h-7 w-[150px] shrink-0 text-xs">
+                                                    <SelectTrigger className="h-7 w-[120px] shrink-0 text-xs">
                                                         <SelectValue />
                                                     </SelectTrigger>
                                                     <SelectContent>
@@ -450,4 +492,5 @@ export const ExcelImportModal = ({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );};
+  );
+};
