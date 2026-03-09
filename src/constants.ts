@@ -5,7 +5,7 @@ export const SYSTEM_CATEGORIES = [
   "Standard DC Box",
   "Standard PV Mounting Structure",
   "Standard Cable & Connector",
-  "Standard Operation & Maintenance",
+  "Standard Operation",
   "Standard Service",
   "Standard Optimizer",
   "Standard Support Inverter",

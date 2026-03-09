@@ -9,24 +9,22 @@ import { toast } from "@/hooks/use-toast";
 
 type DatabaseSubTab = "company" | "sales" | "equipment";
 
-// 🌟 1. เปลี่ยนจาก Object เป็น Array ธรรมดา (โค้ดคลีนขึ้นเยอะ!)
 const STANDARD_CATEGORIES = [
   "STANDARD Solar Panel",
-  "STANDARD Inverter / Zero Export / Smart Logger",
-  "STANDARD Cable",
   "STANDARD PV Mounting Structure",
+  "STANDARD Inverter / Zero Export / Smart Logger",
+  "STANDARD Huawei Optimizer",
   "STANDARD AC Box",
   "STANDARD DC Box",
-  "STANDARD Operation & Maintenance",
-  "STANDARD Huawei Optimizer",
+  "STANDARD Cable",
+  "STANDARD Operation & Maintenance", // (ใช้ชื่อเต็มตามที่ตกลงกันไว้นะครับ)
   "STANDARD Included Price Items",
   "STANDARD Excluded Price Items"
 ];
 
-// 🌟 2. ฟังก์ชันเช็ค System Category สั้นลงเหลือแค่นี้พอ
 const checkIsSystemCategory = (val: string | null | undefined) => {
   if (!val) return false;
-  return STANDARD_CATEGORIES.includes(val);
+  return STANDARD_CATEGORIES.includes(val); 
 };
 
 export const DatabaseTabContent = () => {
@@ -116,6 +114,9 @@ export const DatabaseTabContent = () => {
       });
 
       uniqueCategories.sort((a, b) => {
+        if (a.isSystem && b.isSystem) {
+          return STANDARD_CATEGORIES.indexOf(a.name) - STANDARD_CATEGORIES.indexOf(b.name);
+        }
         if (a.isSystem && !b.isSystem) return -1;
         if (!a.isSystem && b.isSystem) return 1;
         return a.name.localeCompare(b.name);

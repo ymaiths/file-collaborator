@@ -92,10 +92,10 @@ export const ListItemRow = ({
 
   // 🌟 หน้าตาปกติ (เป็นปุ่มกด)
   return (
-    <div className="flex items-center justify-between p-4 bg-card hover:bg-accent/50 transition-colors border-b border-border group">
+    <div className="flex items-center justify-between p-1 bg-card hover:bg-accent/50 transition-colors border-b border-border group">
       <button
         onClick={onClick}
-        className="flex-1 text-left text-base font-medium text-foreground hover:text-primary transition-colors"
+        className="flex-1 text-left text-sm font-medium text-foreground hover:text-primary transition-colors"
       >
         {name}
       </button>
