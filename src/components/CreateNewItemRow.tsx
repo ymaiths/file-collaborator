@@ -64,16 +64,6 @@ export const CreateNewItemRow = ({
                 รวมในราคาขาย
               </label>
             </div>
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="required"
-                checked={isRequired}
-                onCheckedChange={(checked) => setIsRequired(checked as boolean)}
-              />
-              <label htmlFor="required" className="text-sm cursor-pointer">
-                required
-              </label>
-            </div>
           </>
         )}
         <Button onClick={handleConfirm} size="sm">

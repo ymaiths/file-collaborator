@@ -24,7 +24,6 @@ import { Upload, FileSpreadsheet, ArrowRight, RefreshCw, Layers } from "lucide-r
 export interface ImportField {
   key: string;
   label: string;
-  required?: boolean;
   type?: "text" | "number" | "enum"; 
   enumOptions?: { label: string; value: string }[]; 
 }

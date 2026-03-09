@@ -151,7 +151,6 @@ export type Database = {
           is_fixed_cost: boolean | null;
           is_fixed_installation_cost: boolean | null;
           is_price_included: boolean | null;
-          is_required_product: boolean | null;
           max_kw: number | null;
           min_kw: number | null;
           name: string;
@@ -172,7 +171,6 @@ export type Database = {
           is_fixed_cost?: boolean | null;
           is_fixed_installation_cost?: boolean | null;
           is_price_included?: boolean | null;
-          is_required_product?: boolean | null;
           max_kw?: number | null;
           min_kw?: number | null;
           name: string;
@@ -193,7 +191,6 @@ export type Database = {
           is_fixed_cost?: boolean | null;
           is_fixed_installation_cost?: boolean | null;
           is_price_included?: boolean | null;
-          is_required_product?: boolean | null;
           max_kw?: number | null;
           min_kw?: number | null;
           name?: string;

@@ -48,7 +48,6 @@ interface Product {
   max_kw: number | null;
   is_exact_kw: boolean;
   is_price_included: boolean;
-  is_required_product: boolean;
   product_category: ProductCategory;
   electrical_phase: string | null;
 }
@@ -94,7 +93,6 @@ export const EquipmentCategoryDetail = ({
   useEffect(() => {
     if (products.length > 0) {
       setIsPriceIncluded(products[0]?.is_price_included ?? true);
-      setIsRequired(products[0]?.is_required_product ?? false);
       setIsFixedCost(products[0]?.is_fixed_cost ?? true);
       setIsExactKw(products[0]?.is_exact_kw ?? true);
       setIsFixedInstallationCost(products[0]?.is_fixed_installation_cost ?? true);
@@ -134,7 +132,6 @@ export const EquipmentCategoryDetail = ({
       is_dynamic_install: !isFixedInstallationCost,
       is_range_kw: !isExactKw,
       is_price_included: isPriceIncluded,
-      is_required_product: isRequired,
     });
     setIsImportModalOpen(true);
   };
@@ -150,7 +147,6 @@ export const EquipmentCategoryDetail = ({
     const _isExactKw = isReplace ? !booleanValues.is_range_kw : isExactKw;
     
     const _isPriceIncluded = isReplace ? booleanValues.is_price_included : isPriceIncluded;
-    const _isRequired = isReplace ? booleanValues.is_required_product : isRequired;
 
     const newItems = data.map((row) => {
       // เช็คว่ามีค่าติดตั้งส่งมาหรือไม่
@@ -181,7 +177,6 @@ export const EquipmentCategoryDetail = ({
         max_kw: !_isExactKw ? (parseFloat(row.kw_max) || 0) : null,
         
         is_price_included: _isPriceIncluded,
-        is_required_product: _isRequired,
         electrical_phase: isInverter ? (row.phase === "three_phase" ? "three_phase" : "single_phase") : null,
       };
     });
@@ -205,7 +200,6 @@ export const EquipmentCategoryDetail = ({
       setIsFixedInstallationCost(_isFixedInst);
       setIsExactKw(_isExactKw);
       setIsPriceIncluded(_isPriceIncluded);
-      setIsRequired(_isRequired);
 
       toast({ title: "แทนที่ตารางสำเร็จ", description: `นำเข้าข้อมูลใหม่ ${newItems.length} รายการ` });
     } else {
@@ -231,7 +225,6 @@ export const EquipmentCategoryDetail = ({
       max_kw: null,
       is_exact_kw: isExactKw,
       is_price_included: isPriceIncluded,
-      is_required_product: isRequired,
       product_category: currentCategory, 
       electrical_phase: null,
     };
@@ -261,10 +254,6 @@ export const EquipmentCategoryDetail = ({
   const handlePriceIncludedChange = (checked: boolean) => {
     setIsPriceIncluded(checked);
     setProducts(products.map((p) => ({ ...p, is_price_included: checked })));
-  };
-  const handleRequiredChange = (checked: boolean) => {
-    setIsRequired(checked);
-    setProducts(products.map((p) => ({ ...p, is_required_product: checked })));
   };
   const handleFixedCostChange = (isFixed: boolean) => {
     setIsFixedCost(isFixed);
@@ -380,10 +369,6 @@ export const EquipmentCategoryDetail = ({
               <div className="flex items-center gap-2">
                 <Checkbox checked={isPriceIncluded} onCheckedChange={(c) => handlePriceIncludedChange(!!c)} />
                 <label className="text-sm text-foreground">รวมในราคาขาย</label>
-              </div>
-              <div className="flex items-center gap-2">
-                <Checkbox checked={isRequired} onCheckedChange={(c) => handleRequiredChange(!!c)} />
-                <label className="text-sm text-foreground">Required</label>
               </div>
             </div>
           )}
@@ -599,7 +584,6 @@ export const EquipmentCategoryDetail = ({
                 { key: "is_dynamic_install", label: "ค่าติดตั้งตามราคาอุปกรณ์ (%)", defaultValue: !isFixedInstallationCost },
                 { key: "is_range_kw", label: "ขนาดอุปกรณ์เป็นช่วง (Range)", defaultValue: !isExactKw },
                 { key: "is_price_included", label: "รวมในราคาขาย", defaultValue: isPriceIncluded },
-                { key: "is_required_product", label: "Required Item", defaultValue: isRequired },
             ]
             : []
         }

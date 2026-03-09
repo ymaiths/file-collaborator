@@ -65,8 +65,6 @@ export const isIncludedItem = (
   product: Product,
   projectSizeWatt: number
 ): boolean => {
-  // 2.1 Required Product (อุปกรณ์หลัก)
-  if (product.is_required_product) return true;
 
   // 2.2 Optimizer
   // เช็คทั้ง category และชื่อเผื่อไว้

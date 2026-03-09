@@ -1,15 +1,15 @@
 export const SYSTEM_CATEGORIES = [
-  "Solar Panel",
-  "Inverter",
-  "AC Box",
-  "DC Box",
-  "PV Mounting Structure",
-  "Cable & Connector",
-  "Operation & Maintenance",
-  "Service",
-  "Optimizer",
-  "Support Inverter",
-  "Electrical Management"
+  "Standard Solar Panel",
+  "Standard Inverter",
+  "Standard AC Box",
+  "Standard DC Box",
+  "Standard PV Mounting Structure",
+  "Standard Cable & Connector",
+  "Standard Operation & Maintenance",
+  "Standard Service",
+  "Standard Optimizer",
+  "Standard Support Inverter",
+  "Standard Electrical Management"
 ] as const;
 
 export const isSystemCategory = (categoryName: string): boolean => {

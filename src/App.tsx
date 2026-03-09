@@ -7,7 +7,6 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import CreateQuotation from "./pages/CreateQuotation";
 import NotFound from "./pages/NotFound"; 
-import ManageUsers from "./pages/ManageUsers";
 import Login from "./pages/Login";
 import { ProtectedRoute } from "./components/ProtectedRoute"; 
 import Users from "./pages/Users";
@@ -30,7 +29,6 @@ const App = () => (
             <Route path="/users" element={<Users />} />
             <Route path="/quotation/new" element={<CreateQuotation />} />
             <Route path="/quotation/:id" element={<CreateQuotation />} />
-            <Route path="/admin/users" element={<ManageUsers />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>

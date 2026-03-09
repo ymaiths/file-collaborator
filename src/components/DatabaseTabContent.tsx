@@ -9,25 +9,24 @@ import { toast } from "@/hooks/use-toast";
 
 type DatabaseSubTab = "company" | "sales" | "equipment";
 
-const enumToDisplayName: Record<string, string> = {
-  solar_panel: "Solar Panel",
-  inverter: "Inverter",
-  ac_box: "AC Box",
-  dc_box: "DC Box",
-  support_inverter: "Support Inverter",
-  pv_mounting_structure: "PV Mounting Structure",
-  cable: "Cable & Connector",
-  operation: "Operation & Maintenance",
-  service: "Service",
-  optimizer: "Optimizer",
-  electrical_management: "Electrical Management",
-  others: "Others"
-};
+// 🌟 1. เปลี่ยนจาก Object เป็น Array ธรรมดา (โค้ดคลีนขึ้นเยอะ!)
+const STANDARD_CATEGORIES = [
+  "STANDARD Solar Panel",
+  "STANDARD Inverter / Zero Export / Smart Logger",
+  "STANDARD Cable",
+  "STANDARD PV Mounting Structure",
+  "STANDARD AC Box",
+  "STANDARD DC Box",
+  "STANDARD Operation & Maintenance",
+  "STANDARD Huawei Optimizer",
+  "STANDARD Included Price Items",
+  "STANDARD Excluded Price Items"
+];
 
-// 🌟 สร้างฟังก์ชันเช็ค System Category ที่ปลอดภัย 100% ไม่พังแน่นอน
+// 🌟 2. ฟังก์ชันเช็ค System Category สั้นลงเหลือแค่นี้พอ
 const checkIsSystemCategory = (val: string | null | undefined) => {
-  if (!val || val === "others" || val === "Others") return false;
-  return Object.keys(enumToDisplayName).includes(val) || Object.values(enumToDisplayName).includes(val);
+  if (!val) return false;
+  return STANDARD_CATEGORIES.includes(val);
 };
 
 export const DatabaseTabContent = () => {
@@ -106,14 +105,12 @@ export const DatabaseTabContent = () => {
       // 🌟 เพิ่ม .filter(Boolean) เพื่อกรองค่า null, undefined หรือช่องว่างทิ้ง ป้องกันระบบแครช
       const dbCategories = Array.from(new Set(data?.map((p) => p.product_category).filter(Boolean) || [])) as string[];
 
-      const systemCategories = Object.keys(enumToDisplayName).filter(k => k !== "others");
-
-      const combinedCategoryIds = Array.from(new Set([...systemCategories, ...dbCategories]));
+      const combinedCategoryIds = Array.from(new Set([...STANDARD_CATEGORIES, ...dbCategories]));
 
       const uniqueCategories = combinedCategoryIds.map((catId) => {
         return {
             id: catId,
-            name: enumToDisplayName[catId] || catId,
+            name: catId,
             isSystem: checkIsSystemCategory(catId)
         };
       });
@@ -207,7 +204,7 @@ export const DatabaseTabContent = () => {
     }
   };
 
-  const handleCreateEquipmentCategory = async (name: string, includeInPrice: boolean, isRequired: boolean) => {
+  const handleCreateEquipmentCategory = async (name: string, includeInPrice: boolean) => {
     if (!canEdit) return;
     try {
       const { error } = await supabase.from("products").insert({
