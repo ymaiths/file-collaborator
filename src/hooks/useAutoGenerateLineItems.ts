@@ -201,7 +201,7 @@ export const useAutoGenerateLineItems = () => {
       // 7. การดำเนินการ (Operation)
       // ====================================================
       const operations = allProducts
-        .filter((p) => isCategory(p.product_category, ["operation", "Operation & Maintenance"]))
+        .filter((p) => isCategory(p.product_category, ["Operation"]))
         .filter(
           (p) =>
             (p.min_kw || 0) <= projectSizeWatt &&

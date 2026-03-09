@@ -322,7 +322,7 @@ const CreateQuotation = () => {
       const mappedItems = lineItems.map((item) => {
           const product = item.products;
           const categoryRaw = (product?.product_category || "") as string;
-          const isSectionB = categoryRaw === "operation" || categoryRaw === "Operation & Maintenance"; 
+          const isSectionB = categoryRaw === "Operation"; 
           const formatDeviceSize = (prod: any) => {
               if (!prod || (prod.min_kw === null && prod.max_kw === null)) return "";
               const formatVal = (val: number | null) => {
@@ -417,7 +417,7 @@ const CreateQuotation = () => {
       const mappedItems = lineItems?.map((item, index) => {
           const product = item.products;
           const categoryRaw = (product?.product_category || "") as string;
-          const isSectionB = categoryRaw === "operation" || categoryRaw === "Operation & Maintenance";
+          const isSectionB = categoryRaw === "Operation";
           const finalName = item.edited_name || product?.name || "Unknown";
           const finalBrand = item.edited_brand || product?.brand || "-";
           const qty = item.quantity || 0;

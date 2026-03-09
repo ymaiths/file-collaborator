@@ -17,7 +17,7 @@ const STANDARD_CATEGORIES = [
   "STANDARD AC Box",
   "STANDARD DC Box",
   "STANDARD Cable",
-  "STANDARD Operation & Maintenance", // (ใช้ชื่อเต็มตามที่ตกลงกันไว้นะครับ)
+  "STANDARD Operation", // (ใช้ชื่อเต็มตามที่ตกลงกันไว้นะครับ)
   "STANDARD Included Price Items",
   "STANDARD Excluded Price Items"
 ];
