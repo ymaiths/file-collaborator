@@ -78,13 +78,9 @@ export const useAutoGenerateAdditionalItems = () => {
           if (!dynamicCategories.includes(p.product_category)) return false;
           if (!isWithinRange(p, projectSizeWatt)) return false;
 
-          const pName = p.name.toLowerCase();
-          const pBrand = p.brand?.toLowerCase().trim() || "";
-
-          if (pName.includes("rapid shutdown")) {
-              if (!brand.includes("huawei")) return false;
-          } else {
-              if (pBrand !== "" && !brand.includes(pBrand)) return false;
+          // ยกเว้น Rapid Shutdown ต้องใช้ Inverter Huawei เท่านั้น
+          if (p.name.toLowerCase().includes("rapid shutdown") && !brand.includes("huawei")) {
+              return false;
           }
 
           return true;

@@ -19,30 +19,26 @@ interface CalculatedLineItem extends DbLineItem {
   finalPriceInst: number;
 }
 
-// ✅ Interface to handle all 3 edit cases
 interface PricingOverrides {
-  manualNetTotal?: number;   // Target Net Total (Sum of Items)
-  manualGrandTotal?: number; // Target Grand Total (Net - Discount + VAT)
-  manualDiscount?: number;   // Target Discount
+  manualNetTotal?: number;   
+  manualGrandTotal?: number; 
+  manualDiscount?: number;   
 }
 
 export const useCalculatePricing = () => {
   const [isLoading, setIsLoading] = useState(false);
 
-  // Helper: Rounding
   const roundNearestHundred = (num: number) => Math.round(num / 100) * 100;
   const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
 
   const calculateAndSavePricing = async (
       quotationId: string, 
-      overrides: PricingOverrides = {} // ✅ Accepts object for flexibility
+      overrides: PricingOverrides = {} 
   ) => {
     setIsLoading(true);
-    // console.clear();
-    console.group("🚀 PRICING: UNIFIED LOGIC (Net / Grand / Discount)");
+    console.group("🚀 PRICING: UNIFIED LOGIC (Phase 4 - Data Driven)");
 
     try {
-      // 1. Fetch Data
       const { data: quote, error: quoteError } = await supabase
         .from("quotations")
         .select(`*, sale_packages(*)`)
@@ -53,71 +49,8 @@ export const useCalculatePricing = () => {
       const projectSizeWatt = quote.kw_size || 0;
       const VAT_RATE = 0.07;
 
-      // =========================================================
-      // 2. Determine "DISCOUNT"
-      // =========================================================
-      let CURRENT_DISCOUNT = quote.edited_discount || 0;
-      let shouldUpdateDiscount = false;
+      let CURRENT_DISCOUNT = overrides.manualDiscount !== undefined ? overrides.manualDiscount : (quote.edited_discount || 0);
 
-      // If manual discount is provided, use it
-      if (overrides.manualDiscount !== undefined && overrides.manualDiscount !== null) {
-          CURRENT_DISCOUNT = overrides.manualDiscount;
-          shouldUpdateDiscount = true;
-          console.log(`📉 NEW DISCOUNT: ${CURRENT_DISCOUNT.toLocaleString()}`);
-      }
-
-      // =========================================================
-      // 3. Determine "TARGET NET TOTAL" (Sum of Items)
-      // =========================================================
-      let TARGET_NET_TOTAL = 0;
-      let GOAL_GRAND_TOTAL = 0; // Calculated for verification/logging
-
-      // 🟢 CASE A: User Edited "Grand Total"
-      // Formula: Net = (Grand / 1.07) + Discount
-      if (overrides.manualGrandTotal !== undefined && overrides.manualGrandTotal !== null) {
-          GOAL_GRAND_TOTAL = overrides.manualGrandTotal;
-          const priceBeforeVat = GOAL_GRAND_TOTAL / (1 + VAT_RATE);
-          TARGET_NET_TOTAL = round2(priceBeforeVat + CURRENT_DISCOUNT);
-          console.log(`🔄 Reverse Calc: Grand(${GOAL_GRAND_TOTAL.toLocaleString()}) -> Net(${TARGET_NET_TOTAL.toLocaleString()})`);
-      }
-      // 🔵 CASE B: User Edited "Net Total"
-      // Formula: Grand = (Net - Discount) * 1.07
-      else if (overrides.manualNetTotal !== undefined && overrides.manualNetTotal !== null) {
-          TARGET_NET_TOTAL = overrides.manualNetTotal;
-          GOAL_GRAND_TOTAL = (TARGET_NET_TOTAL - CURRENT_DISCOUNT) * (1 + VAT_RATE);
-          console.log(`➡️ Direct Input: Net(${TARGET_NET_TOTAL.toLocaleString()})`);
-      }
-      // 🟡 CASE C: No Price Edit (e.g., only Discount changed or re-calc) -> Use Saved DB Net Total
-      else {
-          // We agreed that 'edited_price' in DB stores 'Net Total'
-          TARGET_NET_TOTAL = quote.edited_price || 0;
-          
-          // Safety: If DB is 0 (New Quote), calculate Standard Price
-          if (TARGET_NET_TOTAL === 0) {
-              const brand = quote.inverter_brand || "";
-              const phase = quote.electrical_phase || "single_phase";
-              const { data: priceList } = await supabase.from("sale_package_prices").select("*")
-                  .eq("sale_package_id", quote.sale_package_id).eq("inverter_brand", brand as any).eq("electronic_phase", phase as any);
-              const matchedPrice = priceList?.find((p) => p.is_exact_kw ? p.kw_min === projectSizeWatt : (p.kw_min||0) <= projectSizeWatt && (p.kw_max||0) >= projectSizeWatt);
-              
-              if (matchedPrice) {
-                  const pData = matchedPrice as any;
-                  TARGET_NET_TOTAL = pData.is_exact_price ? (pData.price_exact||0) : Math.round((pData.price_percentage||0) * projectSizeWatt);
-              }
-          }
-          
-          // Recalculate Grand Total based on this preserved Net Total
-          GOAL_GRAND_TOTAL = (TARGET_NET_TOTAL - CURRENT_DISCOUNT) * (1 + VAT_RATE);
-          console.log(`⏹️ Keep Current Net: ${TARGET_NET_TOTAL.toLocaleString()}`);
-      }
-
-      console.log(`🧮 CALCULATION SUMMARY:`);
-      console.log(`   Target Net Total (Items): ${TARGET_NET_TOTAL.toLocaleString()}`);
-      console.log(`   - Discount: ${CURRENT_DISCOUNT.toLocaleString()}`);
-      console.log(`   * VAT 7%: ${((TARGET_NET_TOTAL - CURRENT_DISCOUNT) * VAT_RATE).toLocaleString()}`);
-      console.log(`   = Grand Total: ${GOAL_GRAND_TOTAL.toLocaleString()}`);
-
-      // 4. Line Items Processing (Target = TARGET_NET_TOTAL)
       const { data: lineItems } = await supabase
         .from("product_line_items")
         .select(`*, products(*)`)
@@ -126,7 +59,7 @@ export const useCalculatePricing = () => {
       if (!lineItems) throw new Error("No items found");
 
       // =========================================================
-      // Step 1: Base Cost Setup
+      // Step 1: Base Cost Setup & 🌟 is_price_included Check
       // =========================================================
       let items: CalculatedLineItem[] = lineItems.map((item) => {
         const baseItem = {
@@ -139,6 +72,7 @@ export const useCalculatePricing = () => {
         };
         if (!item.products) return baseItem;
         const { costEq, costInst } = calculateItemCost(baseItem, projectSizeWatt);
+        // 🌟 ดึงค่ารวม/ไม่รวมในราคาขาย มาจาก Database 100%
         const isIncluded = isIncludedItem(item.products, projectSizeWatt);
         return { ...baseItem, costEq, costInst, isIncluded };
       });
@@ -147,8 +81,8 @@ export const useCalculatePricing = () => {
           if (!product) return false;
           const cat = product.product_category || "";
           const name = product.name.toLowerCase();
-          if (cat === "STANDARD Solar Panel" || cat === "STANDARD Inverter / Zero Export / Smart Logger" || cat === "zero_export_smart_logger") return true;
-          if (name.includes("STANDARD Huawei Optimizer") || name.includes("STANDARD Inverter / Zero Export / Smart Logger")) return true;
+          if (cat === "STANDARD Solar Panel" || cat === "STANDARD Inverter / Zero Export / Smart Logger") return true;
+          if (name.includes("optimizer") || name.includes("inverter")) return true;
           return false;
       };
       const checkIsMounting = (product: Product | null) => {
@@ -157,15 +91,22 @@ export const useCalculatePricing = () => {
           return cat === "STANDARD PV Mounting Structure" || product.name.toLowerCase().includes("mounting");
       };
 
-      // Step 2: Identify Locked Price
+      // =========================================================
+      // Step 2: แยกคำนวณราคา Option เสริม (Add-on) และ Base Package
+      // =========================================================
       let totalFixedPrice = 0;
       let totalVariableBaseCost = 0;
+      let totalAddonPrice = 0; // 🌟 ยอดรวมของอุปกรณ์เสริมที่ต้อง "บวกเพิ่ม"
 
       items = items.map(item => {
+          // ถ้า is_price_included === false ถือว่าเป็น Option เสริม!
           if (!item.isIncluded || item.is_additional_item) {
               const finalEq = item.is_edited_product_price ? item.finalPriceEq : item.costEq;
               const finalInst = item.is_edited_installation_price ? item.finalPriceInst : item.costInst;
-              totalFixedPrice += finalEq + finalInst;
+              
+              totalAddonPrice += (finalEq + finalInst); // นำไปบวกเป็นยอด Add-on
+              totalFixedPrice += (finalEq + finalInst);
+              
               return { ...item, finalPriceEq: finalEq, finalPriceInst: finalInst };
           }
           return item;
@@ -184,7 +125,45 @@ export const useCalculatePricing = () => {
           }
       });
 
-      // ✅ Use TARGET_NET_TOTAL as the budget
+      // =========================================================
+      // Step 3: Determine "TARGET NET TOTAL"
+      // =========================================================
+      let TARGET_NET_TOTAL = 0;
+      let GOAL_GRAND_TOTAL = 0;
+
+      if (overrides.manualGrandTotal !== undefined && overrides.manualGrandTotal !== null) {
+          GOAL_GRAND_TOTAL = overrides.manualGrandTotal;
+          const priceBeforeVat = GOAL_GRAND_TOTAL / (1 + VAT_RATE);
+          TARGET_NET_TOTAL = round2(priceBeforeVat + CURRENT_DISCOUNT);
+      }
+      else if (overrides.manualNetTotal !== undefined && overrides.manualNetTotal !== null) {
+          TARGET_NET_TOTAL = overrides.manualNetTotal;
+          GOAL_GRAND_TOTAL = (TARGET_NET_TOTAL - CURRENT_DISCOUNT) * (1 + VAT_RATE);
+      }
+      else {
+          TARGET_NET_TOTAL = quote.edited_price || 0;
+          
+          // 🌟 ถ้าเพิ่งสร้างใบเสนอราคาใหม่ หรือกด Refresh (Net = 0)
+          if (TARGET_NET_TOTAL === 0) {
+              const brand = quote.inverter_brand || "";
+              const phase = quote.electrical_phase || "single_phase";
+              const { data: priceList } = await supabase.from("sale_package_prices").select("*")
+                  .eq("sale_package_id", quote.sale_package_id).eq("inverter_brand", brand as any).eq("electronic_phase", phase as any);
+              const matchedPrice = priceList?.find((p) => p.is_exact_kw ? p.kw_min === projectSizeWatt : (p.kw_min||0) <= projectSizeWatt && (p.kw_max||0) >= projectSizeWatt);
+              
+              let STANDARD_BASE = 0;
+              if (matchedPrice) {
+                  const pData = matchedPrice as any;
+                  STANDARD_BASE = pData.is_exact_price ? (pData.price_exact||0) : Math.round((pData.price_percentage||0) * projectSizeWatt);
+              }
+              
+              // 🌟 ทีเด็ด: ราคาเป้าหมาย = ราคาแพ็กเกจตั้งต้น + ราคาอุปกรณ์เสริมทั้งหมด (Add on top)
+              TARGET_NET_TOTAL = STANDARD_BASE + totalAddonPrice;
+          }
+          
+          GOAL_GRAND_TOTAL = (TARGET_NET_TOTAL - CURRENT_DISCOUNT) * (1 + VAT_RATE);
+      }
+
       const remainingBudget = round2(TARGET_NET_TOTAL - totalFixedPrice);
 
       // =========================================================
@@ -307,8 +286,7 @@ export const useCalculatePricing = () => {
           }
       }
       
-      const finalSum = items.reduce((sum, i) => sum + i.finalPriceEq + i.finalPriceInst, 0);
-      console.log(`🏁 Final Net Total: ${finalSum.toLocaleString()} (Target: ${TARGET_NET_TOTAL.toLocaleString()})`);
+      console.groupEnd();
 
       // =========================================================
       // 4. Save Updates
@@ -327,11 +305,9 @@ export const useCalculatePricing = () => {
 
       await supabase.from("quotations").update({
           updated_at: new Date().toISOString(),
-          edited_price: TARGET_NET_TOTAL,   // ✅ Net Total preserved
-          edited_discount: CURRENT_DISCOUNT  // ✅ Discount preserved
+          edited_price: TARGET_NET_TOTAL,
+          edited_discount: CURRENT_DISCOUNT
       }).eq("id", quotationId);
-      
-      toast({ title: "Updated", description: `Net: ${TARGET_NET_TOTAL.toLocaleString()} | Disc: ${CURRENT_DISCOUNT.toLocaleString()}` });
 
     } catch (error) {
       console.error("Pricing Error:", error);
