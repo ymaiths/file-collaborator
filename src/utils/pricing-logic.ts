@@ -69,15 +69,15 @@ export const isIncludedItem = (
   // 2.2 Optimizer
   // เช็คทั้ง category และชื่อเผื่อไว้
   if (
-    (product.product_category as any) === "optimizer" ||
-    product.name.toLowerCase().includes("optimizer")
+    (product.product_category as any) === "STANDARD Huawei Optimizer" ||
+    product.name.toLowerCase().includes("STANDARD Huawei Optimizer")
   ) {
     return true;
   }
 
   // 2.3 Walkway & Water Service (เฉพาะโครงการ >= 100kW)
   if (
-    (product.product_category as any) === "service" &&
+    (product.product_category as any) === "STANDARD Included Price Items" &&
     projectSizeWatt >= 100000
   ) {
     return true;

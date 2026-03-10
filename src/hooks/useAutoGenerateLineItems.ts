@@ -1,16 +1,14 @@
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
-import {
-  selectInverters,
-  selectInverterAccessories,
-} from "@/utils/equipment-logic";
+import { selectInverters } from "@/utils/equipment-logic"; // 🌟 เอา selectInverterAccessories ออก เพราะเราเขียนลอจิกใหม่แล้ว
 import { calculateSystemSpecs } from "@/utils/kwpcalculations";
 
-// Helper สำหรับเช็คหมวดหมู่ (รองรับทั้ง Key เก่า และชื่อใหม่)
-const isCategory = (productCat: string | null, keys: string[]) => {
-  if (!productCat) return false;
-  return keys.includes(productCat);
+// Helper เช็คช่วงขนาดโครงการ
+const isWithinRange = (p: any, size: number) => {
+  const min = p.min_kw || 0;
+  const max = p.max_kw === null ? Infinity : p.max_kw;
+  return size >= min && size <= max;
 };
 
 export const useAutoGenerateLineItems = () => {
@@ -19,7 +17,6 @@ export const useAutoGenerateLineItems = () => {
   const generateMainEquipment = async (quotationId: string) => {
     setIsGenerating(true);
     try {
-      // 1. ดึงข้อมูล Quotation
       const { data: quote, error: quoteError } = await supabase
         .from("quotations")
         .select("*")
@@ -33,205 +30,118 @@ export const useAutoGenerateLineItems = () => {
       const projectPhase = quote.electrical_phase || "single_phase";
       const brand = quote.inverter_brand;
 
-      // 2. ดึงข้อมูล Products ทั้งหมด
       const { data: allProducts, error: prodError } = await supabase
         .from("products")
         .select("*");
 
-      if (prodError || !allProducts)
-        throw new Error("Failed to fetch products");
+      if (prodError || !allProducts) throw new Error("Failed to fetch products");
 
       const lineItemsToInsert: any[] = [];
+      const pushItem = (productId: string, qty: number) => {
+        lineItemsToInsert.push({
+          quotation_id: quotationId,
+          product_id: productId,
+          quantity: qty,
+          is_edited_product_price: false,
+          is_edited_installation_price: false,
+          is_edited_quantity: false,
+        });
+      };
 
       // ====================================================
-      // 1. แผงโซลาร์เซลล์ (PV Module)
+      // 1. แผงโซลาร์เซลล์ (STANDARD Solar Panel)
       // ====================================================
       const solarPanel = allProducts.find(
-        (p) =>
-          // ✅ แก้ไข: เช็คทั้ง solar_panel และ Solar Panel
-          isCategory(p.product_category, ["solar_panel", "Solar Panel"]) && 
-          p.min_kw === panelSizeWatt
+        (p) => p.product_category === "STANDARD Solar Panel" && p.min_kw === panelSizeWatt
       );
-
       if (solarPanel) {
-        const { numberOfPanels } = calculateSystemSpecs(
-          projectSizeWatt,
-          panelSizeWatt
-        );
-
-        lineItemsToInsert.push({
-          quotation_id: quotationId,
-          product_id: solarPanel.id,
-          quantity: numberOfPanels,
-          is_edited_product_price: false,
-          is_edited_installation_price: false,
-          is_edited_quantity: false,
-        });
+        const { numberOfPanels } = calculateSystemSpecs(projectSizeWatt, panelSizeWatt);
+        pushItem(solarPanel.id, numberOfPanels);
       }
 
       // ====================================================
-      // 2. อินเวอร์เตอร์ (Inverter)
+      // 2. อินเวอร์เตอร์ (STANDARD Inverter / Zero Export / Smart Logger)
       // ====================================================
       let targetBrand = brand?.toLowerCase().trim() || "";
-      if (targetBrand.includes("huawei")) {
-        targetBrand = "huawei";
-      }
+      if (targetBrand.includes("huawei")) targetBrand = "huawei";
 
+      // 🌟 กรองเอาเฉพาะ Inverter แท้ๆ (ตัดพวกคำว่า Zero, Logger ออก) เพื่อไปคำนวณจำนวน
       const availableInverters = allProducts.filter(
         (p) =>
-          // ✅ แก้ไข: เช็คทั้ง inverter และ Inverter
-          isCategory(p.product_category, ["inverter", "Inverter"]) &&
-          p.brand?.toLowerCase().trim() === targetBrand
+          p.product_category === "STANDARD Inverter / Zero Export / Smart Logger" &&
+          p.brand?.toLowerCase().trim() === targetBrand &&
+          !p.name.toLowerCase().includes("logger") &&
+          !p.name.toLowerCase().includes("zero") &&
+          !p.name.includes("กันย้อน") &&
+          !p.name.includes("สมาร์ท")
       );
 
-      const selectedInverters = selectInverters(
-        availableInverters,
-        projectSizeWatt,
-        projectPhase
-      );
-
+      const selectedInverters = selectInverters(availableInverters, projectSizeWatt, projectPhase);
       let totalInverterQty = 0;
+      
       selectedInverters.forEach((item) => {
         totalInverterQty += item.quantity;
-        lineItemsToInsert.push({
-          quotation_id: quotationId,
-          product_id: item.product.id,
-          quantity: item.quantity,
-          is_edited_product_price: false,
-          is_edited_installation_price: false,
-          is_edited_quantity: false,
-        });
+        pushItem(item.product.id, item.quantity);
       });
 
       // ====================================================
-      // 3. โครงสร้างติดตั้ง (PV Mounting Structure)
+      // 3. Zero Export หรือ Smart Logger (ลอจิกใหม่ตามเงื่อนไข)
       // ====================================================
-      const mounting = allProducts.find(
-        (p) => isCategory(p.product_category, ["pv_mounting_structure", "PV Mounting Structure"])
-      );
-      if (mounting) {
-        lineItemsToInsert.push({
-          quotation_id: quotationId,
-          product_id: mounting.id,
-          quantity: projectSizeWatt,
-          is_edited_product_price: false,
-          is_edited_installation_price: false,
-          is_edited_quantity: false,
-        });
+      const invLoggerCategory = "STANDARD Inverter / Zero Export / Smart Logger";
+      if (totalInverterQty === 1) {
+         // กรณี Inverter 1 ตัว -> เลือก Zero Export ที่ Phase ตรงกัน
+         const zeroExport = allProducts.find(p => 
+             p.product_category === invLoggerCategory &&
+             (p.name.toLowerCase().includes("zero") || p.name.includes("กันย้อน")) &&
+             p.electrical_phase === projectPhase &&
+             (p.brand?.toLowerCase().trim() === targetBrand || !p.brand)
+         );
+         if (zeroExport) pushItem(zeroExport.id, 1);
+      } else if (totalInverterQty > 1) {
+         // กรณี Inverter > 1 ตัว -> เลือก Smart Logger
+         const smartLogger = allProducts.find(p => 
+             p.product_category === invLoggerCategory &&
+             (p.name.toLowerCase().includes("logger") || p.name.includes("สมาร์ท")) &&
+             (p.brand?.toLowerCase().trim() === targetBrand || !p.brand)
+         );
+         if (smartLogger) pushItem(smartLogger.id, 1);
       }
 
       // ====================================================
-      // 4. Zero Export or Smart Logger
+      // 4. โครงสร้างติดตั้ง (ดึงมาทั้งหมด)
       // ====================================================
-      const potentialAccessories = allProducts.filter(
-        (p) =>
-          isCategory(p.product_category, ["inverter", "Inverter"]) ||
-          isCategory(p.product_category, ["zero_export_smart_logger", "Zero Export & Smart Logger"])
+      const mountings = allProducts.filter((p) => p.product_category === "STANDARD PV Mounting Structure");
+      mountings.forEach((m) => pushItem(m.id, projectSizeWatt)); // 🌟 จำนวน = Watt ของโปรเจกต์
+
+      // ====================================================
+      // 5. สายไฟ (ดึงมาทั้งหมด ไม่จำกัดแค่ 3 แถวแล้ว)
+      // ====================================================
+      const cables = allProducts.filter((p) => p.product_category === "STANDARD Cable");
+      cables.forEach((cable) => pushItem(cable.id, 1));
+
+      // ====================================================
+      // 6. ตู้ AC/DC Box
+      // ====================================================
+      const acBox = allProducts.find((p) => p.product_category === "STANDARD AC Box" && isWithinRange(p, projectSizeWatt));
+      if (acBox) pushItem(acBox.id, 1);
+
+      const dcBox = allProducts.find((p) => p.product_category === "STANDARD DC Box" && isWithinRange(p, projectSizeWatt));
+      if (dcBox) pushItem(dcBox.id, 1);
+
+      // ====================================================
+      // 7. การดำเนินการ (Operation) (ดึงมาทั้งหมดในช่วงขนาด)
+      // ====================================================
+      const operations = allProducts.filter(
+        (p) => p.product_category === "STANDARD Operation" && isWithinRange(p, projectSizeWatt)
       );
-
-      const accessoryResult = selectInverterAccessories(
-        potentialAccessories,
-        totalInverterQty,
-        projectPhase
-      );
-
-      if (accessoryResult) {
-        lineItemsToInsert.push({
-          quotation_id: quotationId,
-          product_id: accessoryResult.product.id,
-          quantity: accessoryResult.quantity,
-          is_edited_product_price: false,
-          is_edited_installation_price: false,
-          is_edited_quantity: false,
-        });
-      }
-
-      // ====================================================
-      // 5. ตู้ AC/DC (AC Box, DC Box)
-      // ====================================================
-      const acBox = allProducts.find(
-        (p) =>
-          isCategory(p.product_category, ["ac_box", "AC Box"]) &&
-          (p.min_kw || 0) <= projectSizeWatt &&
-          (p.max_kw === null || (p.max_kw || 0) >= projectSizeWatt)
-      );
-      if (acBox)
-        lineItemsToInsert.push({
-          quotation_id: quotationId,
-          product_id: acBox.id,
-          quantity: 1,
-          is_edited_product_price: false,
-          is_edited_installation_price: false,
-          is_edited_quantity: false,
-        });
-
-      const dcBox = allProducts.find(
-        (p) =>
-          isCategory(p.product_category, ["dc_box", "DC Box"]) &&
-          (p.min_kw || 0) <= projectSizeWatt &&
-          (p.max_kw === null || (p.max_kw || 0) >= projectSizeWatt)
-      );
-      if (dcBox)
-        lineItemsToInsert.push({
-          quotation_id: quotationId,
-          product_id: dcBox.id,
-          quantity: 1,
-          is_edited_product_price: false,
-          is_edited_installation_price: false,
-          is_edited_quantity: false,
-        });
-
-      // ====================================================
-      // 6. สายไฟ (Cabling & Conduit Set)
-      // ====================================================
-      const cables = allProducts.filter((p) => isCategory(p.product_category, ["cable", "Cable & Connector"]));
-
-      cables.slice(0, 3).forEach((cable) => {
-        lineItemsToInsert.push({
-          quotation_id: quotationId,
-          product_id: cable.id,
-          quantity: 1,
-          is_edited_product_price: false,
-          is_edited_installation_price: false,
-          is_edited_quantity: false,
-        });
-      });
-
-      // ====================================================
-      // 7. การดำเนินการ (Operation)
-      // ====================================================
-      const operations = allProducts
-        .filter((p) => isCategory(p.product_category, ["Operation"]))
-        .filter(
-          (p) =>
-            (p.min_kw || 0) <= projectSizeWatt &&
-            (p.max_kw === null || (p.max_kw || 0) >= projectSizeWatt)
-        );
-
-      operations.slice(0, 6).forEach((op) => {
-        lineItemsToInsert.push({
-          quotation_id: quotationId,
-          product_id: op.id,
-          quantity: 1,
-          is_edited_product_price: false,
-          is_edited_installation_price: false,
-          is_edited_quantity: false,
-        });
-      });
+      operations.forEach((op) => pushItem(op.id, 1));
 
       // ====================================================
       // FINAL: บันทึกลง Database
       // ====================================================
       if (lineItemsToInsert.length > 0) {
-        await supabase
-          .from("product_line_items")
-          .delete()
-          .eq("quotation_id", quotationId);
-
-        const { error: insertError } = await supabase
-          .from("product_line_items")
-          .insert(lineItemsToInsert);
-
+        await supabase.from("product_line_items").delete().eq("quotation_id", quotationId);
+        const { error: insertError } = await supabase.from("product_line_items").insert(lineItemsToInsert);
         if (insertError) throw insertError;
 
         toast({
@@ -239,22 +149,11 @@ export const useAutoGenerateLineItems = () => {
           description: `เพิ่มอุปกรณ์หลักเรียบร้อยแล้ว (${lineItemsToInsert.length} รายการ)`,
         });
       } else {
-        toast({
-          title: "ไม่พบรายการอุปกรณ์",
-          description: "ไม่สามารถจับคู่อุปกรณ์ตามเงื่อนไขได้",
-          variant: "destructive",
-        });
+        toast({ title: "ไม่พบรายการอุปกรณ์", description: "ไม่สามารถจับคู่อุปกรณ์ตามเงื่อนไขได้", variant: "destructive" });
       }
     } catch (error) {
       console.error("Generate Equipment Error:", error);
-      toast({
-        title: "เกิดข้อผิดพลาด",
-        description:
-          error instanceof Error
-            ? error.message
-            : "ไม่สามารถสร้างรายการอุปกรณ์ได้",
-        variant: "destructive",
-      });
+      toast({ title: "เกิดข้อผิดพลาด", description: error instanceof Error ? error.message : "ไม่สามารถสร้างรายการอุปกรณ์ได้", variant: "destructive" });
     } finally {
       setIsGenerating(false);
     }

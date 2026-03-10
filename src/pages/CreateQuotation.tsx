@@ -322,7 +322,7 @@ const CreateQuotation = () => {
       const mappedItems = lineItems.map((item) => {
           const product = item.products;
           const categoryRaw = (product?.product_category || "") as string;
-          const isSectionB = categoryRaw === "Operation"; 
+          const isSectionB = categoryRaw === "STANDARD Operation"; 
           const formatDeviceSize = (prod: any) => {
               if (!prod || (prod.min_kw === null && prod.max_kw === null)) return "";
               const formatVal = (val: number | null) => {
@@ -357,7 +357,7 @@ const CreateQuotation = () => {
           };
       });
       
-      const sectionAOrder = ["solar_panel", "Solar Panel", "pv_mounting_structure", "PV Mounting Structure", "inverter", "Inverter", "optimizer", "Optimizer", "zero_export_smart_logger", "Zero Export & Smart Logger", "ac_box", "AC Box", "dc_box", "DC Box", "cable", "Cable & Connector", "service", "Service", "support_inverter", "Support Inverter", "electrical_management", "Electrical Management", "others", "Others"];
+      const sectionAOrder = ["STANDARD Solar Panel", "Solar Panel", "STANDARD PV Mounting Structure", "PV Mounting Structure", "STANDARD Inverter / Zero Export / Smart Logger", "STANDARD Inverter / Zero Export / Smart Logger", "STANDARD Huawei Optimizer", "STANDARD Huawei Optimizer", "zero_export_smart_logger", "Zero Export & Smart Logger", "STANDARD AC Box", "STANDARD AC Box", "STANDARD DC Box", "STANDARD DC Box", "STANDARD Cable", "Cable & Connector", "STANDARD Included Price Items", "STANDARD Included Price Items", "STANDARD Excluded Price Items", "Support Inverter", "STANDARD Excluded Price Items", "Electrical Management", "others", "Others"];
       const sectionBOrder = ["Electrical drawing, Facility system, layout and schematic", "Common Temporary Facilities, Construction Facilities", "Safety Operation", "Comissioning Test", "Commissioning Test", "Tempolary Utility Expense", "ดำเนินการยื่นเอกสารขออนุญาตการไฟฟ้า/กกพ."];
 
       const itemsA = mappedItems.filter(i => i.category === "A").sort((a, b) => {
@@ -417,7 +417,7 @@ const CreateQuotation = () => {
       const mappedItems = lineItems?.map((item, index) => {
           const product = item.products;
           const categoryRaw = (product?.product_category || "") as string;
-          const isSectionB = categoryRaw === "Operation";
+          const isSectionB = categoryRaw === "STANDARD Operation";
           const finalName = item.edited_name || product?.name || "Unknown";
           const finalBrand = item.edited_brand || product?.brand || "-";
           const qty = item.quantity || 0;
@@ -440,7 +440,7 @@ const CreateQuotation = () => {
           };
         }) || [];
 
-      const sectionAOrder = ["solar_panel", "pv_mounting_structure", "inverter", "optimizer", "zero_export_smart_logger", "ac_box", "dc_box", "cable", "service", "support_inverter", "electrical_management", "other"];
+      const sectionAOrder = ["STANDARD Solar Panel", "STANDARD PV Mounting Structure", "STANDARD Inverter / Zero Export / Smart Logger", "STANDARD Huawei Optimizer", "zero_export_smart_logger", "STANDARD AC Box", "STANDARD DC Box", "STANDARD Cable", "STANDARD Included Price Items", "STANDARD Excluded Price Items", "STANDARD Excluded Price Items", "other"];
       const itemsA = mappedItems.filter((i) => i.category === "A").sort((a, b) => {
         const indexA = sectionAOrder.indexOf(a._rawCategory); const indexB = sectionAOrder.indexOf(b._rawCategory);
         return (indexA === -1 ? 999 : indexA) - (indexB === -1 ? 999 : indexB);
@@ -880,7 +880,7 @@ const CreateQuotation = () => {
         const { data, error } = await supabase
           .from("products")
           .select("min_kw, product_category")
-          .in("product_category", ["solar_panel", "Solar Panel"]) 
+          .in("product_category", ["STANDARD Solar Panel", "Solar Panel"]) 
           .not("min_kw", "is", null);
 
         if (error) throw error;

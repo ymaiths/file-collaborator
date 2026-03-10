@@ -147,14 +147,14 @@ export const useCalculatePricing = () => {
           if (!product) return false;
           const cat = product.product_category || "";
           const name = product.name.toLowerCase();
-          if (cat === "solar_panel" || cat === "inverter" || cat === "zero_export_smart_logger") return true;
-          if (name.includes("optimizer") || name.includes("inverter")) return true;
+          if (cat === "STANDARD Solar Panel" || cat === "STANDARD Inverter / Zero Export / Smart Logger" || cat === "zero_export_smart_logger") return true;
+          if (name.includes("STANDARD Huawei Optimizer") || name.includes("STANDARD Inverter / Zero Export / Smart Logger")) return true;
           return false;
       };
       const checkIsMounting = (product: Product | null) => {
           if (!product) return false;
           const cat = product.product_category || "";
-          return cat === "pv_mounting_structure" || product.name.toLowerCase().includes("mounting");
+          return cat === "STANDARD PV Mounting Structure" || product.name.toLowerCase().includes("mounting");
       };
 
       // Step 2: Identify Locked Price
@@ -178,7 +178,7 @@ export const useCalculatePricing = () => {
 
           if (item.is_edited_installation_price) totalFixedPrice += item.finalPriceInst;
           else {
-              const isNoMarkupInst = ["solar_panel", "pv_mounting_structure"].includes(category);
+              const isNoMarkupInst = ["STANDARD Solar Panel", "STANDARD PV Mounting Structure"].includes(category);
               if (isNoMarkupInst) totalFixedPrice += item.costInst;
               else totalVariableBaseCost += item.costInst;
           }
@@ -203,7 +203,7 @@ export const useCalculatePricing = () => {
           const product = item.products;
           const isMajor = checkIsMajorItem(product);
           const isMounting = checkIsMounting(product);
-          const isNoMarkupInst = ["solar_panel", "pv_mounting_structure"].includes(product?.product_category || "");
+          const isNoMarkupInst = ["STANDARD Solar Panel", "STANDARD PV Mounting Structure"].includes(product?.product_category || "");
           const qty = item.quantity || 1;
 
           let finalEq = item.finalPriceEq;
@@ -259,7 +259,7 @@ export const useCalculatePricing = () => {
                        else item.finalPriceEq = roundNearestHundred(rawTotal);
                    }
                    if (!item.is_edited_installation_price) {
-                       const isNoMarkup = ["solar_panel", "pv_mounting_structure"].includes(item.products?.product_category||"");
+                       const isNoMarkup = ["STANDARD Solar Panel", "STANDARD PV Mounting Structure"].includes(item.products?.product_category||"");
                        if (!isNoMarkup) {
                            const rawTotal = item.finalPriceInst * ratio2;
                            if (isMajor) item.finalPriceInst = roundNearestHundred(rawTotal / qty) * qty;
@@ -281,7 +281,7 @@ export const useCalculatePricing = () => {
           const wireIndex = items.findIndex(item => 
               item.isIncluded && !item.is_additional_item &&
               !item.is_edited_product_price &&
-              (item.products?.product_category === "cable" || (item.products?.name || "").includes("สายไฟ"))
+              (item.products?.product_category === "STANDARD Cable" || (item.products?.name || "").includes("สายไฟ"))
           );
           
           if (wireIndex !== -1) {

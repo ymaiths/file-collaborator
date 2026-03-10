@@ -91,11 +91,14 @@ export const EquipmentCategoryDetail = ({
   const canEdit = userRole === "admin" || userRole === "general";
 
   useEffect(() => {
-    if (products.length > 0 && !isRowLevelConfig) {
+    if (products.length > 0) {
       setIsPriceIncluded(products[0]?.is_price_included ?? true);
-      setIsFixedCost(products[0]?.is_fixed_cost ?? true);
-      setIsExactKw(products[0]?.is_exact_kw ?? true);
-      setIsFixedInstallationCost(products[0]?.is_fixed_installation_cost ?? true);
+      
+      if (!isRowLevelConfig) {
+        setIsFixedCost(products[0]?.is_fixed_cost ?? true);
+        setIsExactKw(products[0]?.is_exact_kw ?? true);
+        setIsFixedInstallationCost(products[0]?.is_fixed_installation_cost ?? true);
+      }
     }
   }, [products.length, isRowLevelConfig]);
 
@@ -190,11 +193,12 @@ export const EquipmentCategoryDetail = ({
          }
       }
       setProducts(newItems);
+      setIsPriceIncluded(_isPriceIncluded);
+  
       if (!isRowLevelConfig) {
         setIsFixedCost(_isFixedCost);
         setIsFixedInstallationCost(_isFixedInst);
         setIsExactKw(_isExactKw);
-        setIsPriceIncluded(_isPriceIncluded);
       }
       toast({ title: "แทนที่ตารางสำเร็จ", description: `นำเข้าข้อมูลใหม่ ${newItems.length} รายการ` });
     } else {
@@ -264,7 +268,7 @@ export const EquipmentCategoryDetail = ({
 
   const handlePriceIncludedChange = (checked: boolean) => {
     setIsPriceIncluded(checked);
-    if (!isRowLevelConfig) setProducts(products.map((p) => ({ ...p, is_price_included: checked })));
+    setProducts(products.map((p) => ({ ...p, is_price_included: checked }))); // 🌟 อัปเดตทุกแถวเสมอ
   };
   const handleFixedCostChange = (isFixed: boolean) => {
     setIsFixedCost(isFixed);
@@ -288,7 +292,7 @@ export const EquipmentCategoryDetail = ({
             // กลุ่ม 1: เช็คแค่ ยี่ห้อ + เฟส (ไม่สนชื่อ)
             key = `${p.brand}|${p.electrical_phase}`; 
         } else if (
-            currentCategory === "STANDARD Operation & Maintenance" || 
+            currentCategory === "STANDARD Operation" || 
             currentCategory === "STANDARD PV Mounting Structure" || 
             currentCategory === "STANDARD Cable" || 
             isRowLevelConfig
@@ -486,7 +490,7 @@ export const EquipmentCategoryDetail = ({
             </h2>
           )}
           
-          {isEditMode && !isRowLevelConfig && (
+          {isEditMode && (
             <div className="flex items-center gap-2 bg-muted/50 p-2 rounded-md">
               <Checkbox checked={isPriceIncluded} onCheckedChange={(c) => handlePriceIncludedChange(!!c)} />
               <label className="text-sm font-medium">รวมในราคาขาย</label>
@@ -523,9 +527,6 @@ export const EquipmentCategoryDetail = ({
               <th className="p-3 text-left font-medium">ระบบไฟ (Phase)</th>
               <th className="p-3 text-left font-medium">Brand</th>
               <th className="p-3 text-left font-medium">หน่วย</th>
-
-              {isRowLevelConfig && isEditMode && <th className="p-3 text-left font-medium text-blue-600">รวมในราคาขาย</th>}
-
               <th className="p-3 text-left font-medium min-w-[150px]">
                 <div className="flex items-center gap-2">
                   ราคาทุนอุปกรณ์
@@ -624,12 +625,6 @@ export const EquipmentCategoryDetail = ({
                   ) : (<span>{product.unit || "-"}</span>)}
                 </td>
 
-                {/* 5. Row-level is_price_included (เฉพาะ Addon) */}
-                {isRowLevelConfig && isEditMode && (
-                  <td className="p-3 text-center">
-                    <Checkbox checked={product.is_price_included} onCheckedChange={(c) => handleUpdateProduct(product.id, "is_price_included", !!c)} />
-                  </td>
-                )}
 
                 {/* 6. Equipment Cost */}
                 <td className="p-3">
@@ -707,7 +702,6 @@ export const EquipmentCategoryDetail = ({
             ))}
             {isEditMode && (
               <tr className="border-t border-border">
-                {/* 🌟 ปรับ ColSpan ให้ครอบคลุมคอลัมน์ทั้งหมดแบบเป๊ะๆ */}
                 <td colSpan={isRowLevelConfig ? 9 : 8} className="p-3">
                   <button onClick={handleAddItem} className="flex items-center gap-2 text-sm text-primary font-medium hover:text-primary/80 transition-colors">
                     <Plus className="h-4 w-4" /> Add Item
