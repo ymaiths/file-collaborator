@@ -8,7 +8,7 @@ interface LineItemResult {
 }
 
 // ==========================================
-// 1. Logic สำหรับเลือก Inverter (Complex Algorithm)
+// 1. Logic สำหรับเลือก Inverter (Unified Algorithm)
 // ==========================================
 export const selectInverters = (
   availableInverters: Product[], // รายการ Inverter ยี่ห้อที่เลือกทั้งหมด
@@ -17,12 +17,10 @@ export const selectInverters = (
 ): LineItemResult[] => {
   const results: LineItemResult[] = [];
 
-  // ✅✅✅ แก้ไขจุดที่ผิดพลาดตรงนี้ ✅✅✅
-  // กรอง Inverter จริงๆ เท่านั้น:
-  // 1. ต้องไม่ใช่ Accessories (เราสมมติว่า Inverter จริงๆ ต้องมีขนาด > 100 Watt ขึ้นไป)
-  // 2. ชื่อต้องไม่มีคำว่า Smart Logger หรือ Zero Export
-  const mainInverters = availableInverters
-    .filter((p) => p.min_kw !== null && p.min_kw > 100) // แก้จาก > 0 เป็น > 100 (กัน Smart Logger ที่ค่าเป็น 2 หลุดเข้ามา)
+  // ✅ กรอง Inverter จริงๆ เท่านั้น:
+  // (เปลี่ยนจาก const เป็น let เพื่อให้สามารถ filter เฟสไฟทับได้ในขั้นตอนถัดไป)
+  let mainInverters = availableInverters
+    .filter((p) => p.min_kw !== null && p.min_kw > 100) // กัน Smart Logger ที่ค่าเป็น 2 หลุดเข้ามา
     .filter((p) => {
       const name = p.name.toLowerCase();
       return !name.includes("smart logger") && !name.includes("zero export");
@@ -34,27 +32,23 @@ export const selectInverters = (
     mainInverters.map((p) => `${p.name} (${p.min_kw}W)`)
   );
 
-  // --- กรณีที่ 1: โครงการ < 20kW (20,000 Watt) ---
+  // 🌟 เพิ่มเงื่อนไขใหม่: ถ้าโครงการ < 20kW บังคับให้เฟสไฟต้องตรงกันเท่านั้น
+  // (ถ้า >= 20kW โค้ดส่วนนี้จะไม่ทำงาน และยอมให้ใช้ Inverter ที่หาได้ทั้งหมดไปคำนวณ)
   if (projectSizeWatt < 20000) {
-    const match = mainInverters.find(
-      (p) => p.min_kw === projectSizeWatt && p.electrical_phase === projectPhase
+    mainInverters = mainInverters.filter(
+      (p) => p.electrical_phase === projectPhase
     );
-
-    if (match) {
-      results.push({ product: match, quantity: 1 });
-    }
-    return results;
   }
 
-  // --- กรณีที่ 2: โครงการ >= 20kW ---
+  // --- เริ่มการค้นหา (ใช้ Logic เดียวครอบคลุมทุกขนาดโครงการ) ---
 
-  // 2.1 เลือก 1 Inverter ที่มีขนาดเท่าขนาดโครงการ
+  // 1. เลือก 1 Inverter ที่มีขนาดเท่าขนาดโครงการ (Exact Match)
   const exactMatch = mainInverters.find((p) => p.min_kw === projectSizeWatt);
   if (exactMatch) {
     return [{ product: exactMatch, quantity: 1 }];
   }
 
-  // 2.2 เลือกหลาย Inverter ที่ขนาดเท่ากัน (หารลงตัว)
+  // 2. เลือกหลาย Inverter ที่ขนาดเท่ากัน (หารลงตัว - Divisor Match)
   const divisorMatch = mainInverters.find(
     (p) => projectSizeWatt % (p.min_kw || 1) === 0
   );
@@ -63,7 +57,7 @@ export const selectInverters = (
     return [{ product: divisorMatch, quantity: qty }];
   }
 
-  // 2.3 Greedy Algorithm
+  // 3. Greedy Algorithm (ถ้าไม่ลงตัว เอาตัวใหญ่สุดยัดไปก่อน แล้วเติมเศษ)
   let remainingWatt = projectSizeWatt;
   const greedySelection: Map<string, { product: Product; qty: number }> =
     new Map();
@@ -83,9 +77,7 @@ export const selectInverters = (
       });
       remainingWatt -= bestFit.min_kw || 0;
     } else {
-      // ถ้าไม่ลงตัว (เศษเหลือ) ให้แจ้งเตือน หรือหยุด loop
-      // ในเคส 199kW ถ้าไม่มี Inverter ที่รวมกันได้ 199kW เป๊ะๆ อาจจะเหลือเศษ
-      // แนะนำ: ถ้าเหลือเศษเล็กน้อย ให้หยุด (Break)
+      // ถ้าไม่มี Inverter ตัวไหนเล็กพอจะใส่เศษที่เหลือได้แล้ว ให้หยุด loop
       break;
     }
   }
