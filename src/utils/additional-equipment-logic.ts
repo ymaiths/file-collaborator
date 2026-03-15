@@ -29,6 +29,11 @@ export const determineOptimizerSize = (
     return 1300;
   }
 
+  if (inverterKw > 50) {
+    if (panelWatt < 600) return 1100;
+    return 1300;
+  }
+
   return null; // ไม่เข้าเงื่อนไขใดเลย
 };
 

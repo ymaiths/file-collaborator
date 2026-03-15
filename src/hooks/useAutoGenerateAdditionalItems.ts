@@ -61,6 +61,9 @@ export const useAutoGenerateAdditionalItems = () => {
       // =========================================================
       // 1. Optimizer (STANDARD Huawei Optimizer)
       // =========================================================
+      // =========================================================
+      // 1. Optimizer (STANDARD Huawei Optimizer)
+      // =========================================================
       if (brand.includes("optimizer")) {
         const targetOptSize = determineOptimizerSize(inverterKw, panelWatt);
         if (targetOptSize) {
