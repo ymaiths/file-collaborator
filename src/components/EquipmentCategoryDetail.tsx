@@ -726,11 +726,11 @@ export const EquipmentCategoryDetail = ({
             { key: "install_cost", label: "ค่าติดตั้ง" },
             ...( (importMode === "replace" ? importBooleans.is_range_kw : !isExactKw) 
               ? [
-                  { key: "kw_min", label: "ขนาด MIN (Watt)" }, 
-                  { key: "kw_max", label: "ขนาด MAX (Watt)" }
+                  { key: "kw_min", label: "ขนาด MIN" }, 
+                  { key: "kw_max", label: "ขนาด MAX" }
                 ] 
               : [
-                  { key: "kw_min", label: "ขนาด (Watt)" }
+                  { key: "kw_min", label: "ขนาด" }
                 ]
             ),
             // 🌟 นำเงื่อนไข isInverter ออก เพื่อให้หมวดหมู่อื่นนำเข้า Phase ได้
