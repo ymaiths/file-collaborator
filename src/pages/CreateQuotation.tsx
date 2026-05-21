@@ -67,7 +67,7 @@ interface ProgramWithRange {
   prices: {
     kw_min: number | null;
     kw_max: number | null;
-    inverter_brand: string;      
+    inverter_brand: string;
     electronic_phase: string;
   }[];
 }
@@ -81,7 +81,7 @@ const CreateQuotation = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
-  
+
   const [currentQuotationId, setCurrentQuotationId] = useState<string | null>(null);
   const [currentCustomerId, setCurrentCustomerId] = useState<string | null>(null);
 
@@ -99,7 +99,7 @@ const CreateQuotation = () => {
 
   const [formData, setFormData] = useState({
     customerName: "",
-    customerTaxId: "", 
+    customerTaxId: "",
     installLocation: "",
     projectSize: "",
     solarPanelSize: "",
@@ -114,12 +114,12 @@ const CreateQuotation = () => {
   const [previewData, setPreviewData] = useState<PreviewData | null>(null);
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [conflictData, setConflictData] = useState<{ id: string; oldName: string; newName: string } | null>(null);
-  
+
   const SYNCED_GROUP_KEYWORDS = [
     "Common Temporary Facilities, Construction Facilities",
     "Electrical drawing, Facility system, layout and schematic",
-    "Commissioning test", 
-    "Tempolary Utility Expense", 
+    "Commissioning test",
+    "Tempolary Utility Expense",
     "Safety Operation"
   ];
 
@@ -131,7 +131,7 @@ const CreateQuotation = () => {
     if (!canEdit) return;
     if (!currentQuotationId) return;
     try {
-      const projectSizeVal = parseFloat(formData.projectSize) || 0; 
+      const projectSizeVal = parseFloat(formData.projectSize) || 0;
       const defaults = calculateDefaultLineItem(selectedProduct, projectSizeVal, 1);
 
       const { error } = await supabase
@@ -142,7 +142,7 @@ const CreateQuotation = () => {
           quantity: defaults.quantity,
           product_price: defaults.product_price,
           installation_price: defaults.installation_price,
-          is_additional_item: true, 
+          is_additional_item: true,
         });
 
       if (error) throw error;
@@ -188,13 +188,13 @@ const CreateQuotation = () => {
         const projectSizeVal = parseFloat(formData.projectSize) || 0;
 
         const getNewPrice = (currentTotal: number, isEdited: boolean, type: 'product' | 'installation') => {
-            if (isEdited) {
-                const unitPrice = (currentTotal || 0) / oldQty;
-                return unitPrice * newQty;
-            } else {
-                const defaults = calculateDefaultLineItem(currentItem.products, projectSizeVal, newQty);
-                return type === 'product' ? defaults.product_price : defaults.installation_price;
-            }
+          if (isEdited) {
+            const unitPrice = (currentTotal || 0) / oldQty;
+            return unitPrice * newQty;
+          } else {
+            const defaults = calculateDefaultLineItem(currentItem.products, projectSizeVal, newQty);
+            return type === 'product' ? defaults.product_price : defaults.installation_price;
+          }
         };
 
         updateData = {
@@ -204,10 +204,10 @@ const CreateQuotation = () => {
         };
       } else {
         if (["edited_name", "edited_brand", "edited_unit"].includes(field)) {
-            updateData[field] = value;
+          updateData[field] = value;
         } else if (["product_price", "installation_price"].includes(field)) {
-            updateData[field] = value;
-            updateData[`is_edited_${field}`] = true; 
+          updateData[field] = value;
+          updateData[`is_edited_${field}`] = true;
         }
       }
 
@@ -216,24 +216,24 @@ const CreateQuotation = () => {
         const isSyncedItem = SYNCED_GROUP_KEYWORDS.some(keyword => itemName.toLowerCase().includes(keyword.toLowerCase()));
 
         if (isSyncedItem) {
-            const { data: allItems } = await supabase.from("product_line_items").select("*, products(name)").eq("quotation_id", currentQuotationId);
-            if (allItems) {
-                const itemsToUpdate = allItems.filter(i => SYNCED_GROUP_KEYWORDS.some(k => i.products?.name?.toLowerCase().includes(k.toLowerCase())));
-                const updates = itemsToUpdate.map(i => ({ id: i.id, product_price: value, is_edited_product_price: true }));
-                await Promise.all(updates.map(u => supabase.from("product_line_items").update(u).eq("id", u.id)));
-            }
+          const { data: allItems } = await supabase.from("product_line_items").select("*, products(name)").eq("quotation_id", currentQuotationId);
+          if (allItems) {
+            const itemsToUpdate = allItems.filter(i => SYNCED_GROUP_KEYWORDS.some(k => i.products?.name?.toLowerCase().includes(k.toLowerCase())));
+            const updates = itemsToUpdate.map(i => ({ id: i.id, product_price: value, is_edited_product_price: true }));
+            await Promise.all(updates.map(u => supabase.from("product_line_items").update(u).eq("id", u.id)));
+          }
         } else {
-            await supabase.from("product_line_items").update(updateData).eq("id", itemId);
+          await supabase.from("product_line_items").update(updateData).eq("id", itemId);
         }
       } else {
         await supabase.from("product_line_items").update(updateData).eq("id", itemId);
       }
 
       if (["quantity", "product_price", "installation_price"].includes(field)) {
-         await calculateAndSavePricing(currentQuotationId!); 
-         await loadPreviewData(currentQuotationId!);
+        await calculateAndSavePricing(currentQuotationId!);
+        await loadPreviewData(currentQuotationId!);
       } else {
-         await loadPreviewData(currentQuotationId!);
+        await loadPreviewData(currentQuotationId!);
       }
     } catch (err) {
       console.error("Update Error:", err);
@@ -242,30 +242,30 @@ const CreateQuotation = () => {
   };
 
   const handleUpdateTotalOverride = async (type: 'net' | 'grand', value: number) => {
-     if (!currentQuotationId || !canEdit) return;
-     try {
-       if (type === 'net') {
-           await calculateAndSavePricing(currentQuotationId, { manualNetTotal: value });
-       } else {
-           await calculateAndSavePricing(currentQuotationId, { manualGrandTotal: value });
-       }
-       await loadPreviewData(currentQuotationId);
-       toast({ title: "Pricing Updated", description: "Re-calculated based on new total." });
-     } catch (error) {
-       console.error("Total Override Error:", error);
-       toast({ title: "Error", description: "Failed to update total.", variant: "destructive" });
-     }
+    if (!currentQuotationId || !canEdit) return;
+    try {
+      if (type === 'net') {
+        await calculateAndSavePricing(currentQuotationId, { manualNetTotal: value });
+      } else {
+        await calculateAndSavePricing(currentQuotationId, { manualGrandTotal: value });
+      }
+      await loadPreviewData(currentQuotationId);
+      toast({ title: "Pricing Updated", description: "Re-calculated based on new total." });
+    } catch (error) {
+      console.error("Total Override Error:", error);
+      toast({ title: "Error", description: "Failed to update total.", variant: "destructive" });
+    }
   };
 
   const handleUpdateTerms = async (field: string, value: string) => {
     if (!canEdit) return;
     try {
-       const { error } = await supabase.from("quotations").update({ [field]: value }).eq("id", currentQuotationId);
-       if (error) throw error;
-       await loadPreviewData(currentQuotationId!);
+      const { error } = await supabase.from("quotations").update({ [field]: value }).eq("id", currentQuotationId);
+      if (error) throw error;
+      await loadPreviewData(currentQuotationId!);
     } catch (err) {
-       console.error("Update Terms Error:", err);
-       toast({ title: "Update Failed", variant: "destructive" });
+      console.error("Update Terms Error:", err);
+      toast({ title: "Update Failed", variant: "destructive" });
     }
   };
 
@@ -286,17 +286,17 @@ const CreateQuotation = () => {
       const { data: lineItems } = await supabase.from("product_line_items").select(`*, products(*)`).eq("quotation_id", quotationId);
       if (!quoteData || !lineItems) return;
 
-      let defaultPayment = "-"; 
-      let defaultWarranty = "-"; 
+      let defaultPayment = "-";
+      let defaultWarranty = "-";
       let defaultNote = "-";
-      
+
       if (quoteData.sale_package_id) {
-          const { data: pkgData } = await supabase.from("sale_packages").select("payment_terms, warranty_terms, note").eq("id", quoteData.sale_package_id).maybeSingle();
-          if (pkgData) { 
-            defaultPayment = pkgData.payment_terms || "-"; 
-            defaultWarranty = pkgData.warranty_terms || "-"; 
-            defaultNote = pkgData.note || "-"; 
-          }
+        const { data: pkgData } = await supabase.from("sale_packages").select("payment_terms, warranty_terms, note").eq("id", quoteData.sale_package_id).maybeSingle();
+        if (pkgData) {
+          defaultPayment = pkgData.payment_terms || "-";
+          defaultWarranty = pkgData.warranty_terms || "-";
+          defaultNote = pkgData.note || "-";
+        }
       }
 
       const finalPayment = quoteData.edited_payment_terms !== null ? quoteData.edited_payment_terms : defaultPayment;
@@ -305,90 +305,90 @@ const CreateQuotation = () => {
       const finalDiscount = quoteData.edited_discount || 0;
       // 🌟 นำฟังก์ชันแปลงหน่วยมาใส่ไว้ด้านบนของ map
       const formatDeviceSize = (prod: any) => {
-          if (!prod || (prod.min_kw === null && prod.max_kw === null)) return "";
-          
-          const formatVal = (val: number | null) => {
-              if (val === null) return "";
-              return val >= 1000 ? `${val / 1000} kW` : `${val} W`;
-          };
+        if (!prod || (prod.min_kw === null && prod.max_kw === null)) return "";
 
-          if (prod.is_exact_kw || prod.min_kw === prod.max_kw || prod.max_kw === null) {
-              return formatVal(prod.min_kw);
-          } else {
-              return `${formatVal(prod.min_kw)} - ${formatVal(prod.max_kw)}`;
-          }
+        const formatVal = (val: number | null) => {
+          if (val === null) return "";
+          return val >= 1000 ? `${val / 1000} kW` : `${val} W`;
+        };
+
+        if (prod.is_exact_kw || prod.min_kw === prod.max_kw || prod.max_kw === null) {
+          return formatVal(prod.min_kw);
+        } else {
+          return `${formatVal(prod.min_kw)} - ${formatVal(prod.max_kw)}`;
+        }
       };
 
       const mappedItems = lineItems.map((item) => {
-          const product = item.products;
-          const categoryRaw = (product?.product_category || "") as string;
-          const isSectionB = categoryRaw === "STANDARD Operation"; 
-          const formatDeviceSize = (prod: any) => {
-              if (!prod || (prod.min_kw === null && prod.max_kw === null)) return "";
-              const formatVal = (val: number | null) => {
-                  if (val === null) return "";
-                  return val >= 1000 ? `${val / 1000} kW` : `${val} W`;
-              };
-              if (prod.is_exact_kw || prod.min_kw === prod.max_kw || prod.max_kw === null) {
-                  return formatVal(prod.min_kw);
-              } else {
-                  return `${formatVal(prod.min_kw)} - ${formatVal(prod.max_kw)}`;
-              }
+        const product = item.products;
+        const categoryRaw = (product?.product_category || "") as string;
+        const isSectionB = categoryRaw === "STANDARD Operation";
+        const formatDeviceSize = (prod: any) => {
+          if (!prod || (prod.min_kw === null && prod.max_kw === null)) return "";
+          const formatVal = (val: number | null) => {
+            if (val === null) return "";
+            return val >= 1000 ? `${val / 1000} kW` : `${val} W`;
           };
-          const defaultName = product?.name || "Unknown";
-          const finalName = item.edited_name || defaultName;
-          const finalBrand = item.edited_brand || product?.brand || "-";
-          const qty = item.quantity || 0;
+          if (prod.is_exact_kw || prod.min_kw === prod.max_kw || prod.max_kw === null) {
+            return formatVal(prod.min_kw);
+          } else {
+            return `${formatVal(prod.min_kw)} - ${formatVal(prod.max_kw)}`;
+          }
+        };
+        const defaultName = product?.name || "Unknown";
+        const finalName = item.edited_name || defaultName;
+        const finalBrand = item.edited_brand || product?.brand || "-";
+        const qty = item.quantity || 0;
 
-          return {
-             id: item.id,
-             name: item.edited_name || defaultName, // <--- ใช้ชื่อที่ประกอบร่างแล้ว
-             brand: item.edited_brand || product?.brand || "-",
-             edited_name: item.edited_name,
-             edited_brand: item.edited_brand,
-             edited_unit: item.edited_unit,
-             category: isSectionB ? "B" : "A",
-             _rawCategory: categoryRaw,
-             qty: item.quantity || 0,
-             unit: item.edited_unit || product?.unit || "Unit",
-             matUnit: item.product_price, 
-             labUnit: item.installation_price,
-             total: (item.product_price || 0) + (item.installation_price || 0)
-          };
+        return {
+          id: item.id,
+          name: item.edited_name || defaultName, // <--- ใช้ชื่อที่ประกอบร่างแล้ว
+          brand: item.edited_brand || product?.brand || "-",
+          edited_name: item.edited_name,
+          edited_brand: item.edited_brand,
+          edited_unit: item.edited_unit,
+          category: isSectionB ? "B" : "A",
+          _rawCategory: categoryRaw,
+          qty: item.quantity || 0,
+          unit: item.edited_unit || product?.unit || "Unit",
+          matUnit: item.product_price,
+          labUnit: item.installation_price,
+          total: (item.product_price || 0) + (item.installation_price || 0)
+        };
       });
-      
+
       const sectionAOrder = ["STANDARD Solar Panel", "Solar Panel", "STANDARD PV Mounting Structure", "PV Mounting Structure", "STANDARD Inverter / Zero Export / Smart Logger", "STANDARD Inverter / Zero Export / Smart Logger", "STANDARD Huawei Optimizer", "STANDARD Huawei Optimizer", "zero_export_smart_logger", "Zero Export & Smart Logger", "STANDARD AC Box", "STANDARD AC Box", "STANDARD DC Box", "STANDARD DC Box", "STANDARD Cable", "Cable & Connector", "STANDARD Included Price Items", "STANDARD Included Price Items", "STANDARD Excluded Price Items", "Support Inverter", "STANDARD Excluded Price Items", "Electrical Management", "others", "Others"];
       const sectionBOrder = ["Electrical drawing, Facility system, layout and schematic", "Common Temporary Facilities, Construction Facilities", "Safety Operation", "Comissioning Test", "Commissioning Test", "Tempolary Utility Expense", "ดำเนินการยื่นเอกสารขออนุญาตการไฟฟ้า/กกพ."];
 
       const itemsA = mappedItems.filter(i => i.category === "A").sort((a, b) => {
-          const idxA = sectionAOrder.indexOf(a._rawCategory); const idxB = sectionAOrder.indexOf(b._rawCategory);
-          return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);
+        const idxA = sectionAOrder.indexOf(a._rawCategory); const idxB = sectionAOrder.indexOf(b._rawCategory);
+        return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);
       });
 
       const itemsB = mappedItems.filter(i => i.category === "B").sort((a, b) => {
-          const getOrderIndex = (name: string) => {
-             const index = sectionBOrder.findIndex(key => name.toLowerCase().includes(key.toLowerCase()));
-             return index === -1 ? 999 : index;
-          };
-          return getOrderIndex(a.name) - getOrderIndex(b.name);
+        const getOrderIndex = (name: string) => {
+          const index = sectionBOrder.findIndex(key => name.toLowerCase().includes(key.toLowerCase()));
+          return index === -1 ? 999 : index;
+        };
+        return getOrderIndex(a.name) - getOrderIndex(b.name);
       });
 
       setPreviewData({
-         customerName: formData.customerName,
-         projectName: `โซลาร์เซลล์ ${((quoteData.kw_size||0)/1000)} kW`,
-         docNumber: quoteData.document_num || "DRAFT",
-         date: new Date().toLocaleDateString("th-TH"),
-         quotationId: quoteData.id,
-         items: [...itemsA, ...itemsB],
-         paymentTerms: parseTerms(finalPayment),
-         warrantyTerms: parseTerms(finalWarranty),
-         remarks: finalNote || "",
-         rawPaymentTerms: finalPayment || "",
-         rawWarrantyTerms: finalWarranty || "",
-         vatRate: 0.07,
-         discount: finalDiscount,
-         electricalPhase: formData.electricalPhase,
-         inverterBrand: formData.brand
+        customerName: formData.customerName,
+        projectName: `โซลาร์เซลล์ ${((quoteData.kw_size || 0) / 1000)} kW`,
+        docNumber: quoteData.document_num || "DRAFT",
+        date: new Date().toLocaleDateString("th-TH"),
+        quotationId: quoteData.id,
+        items: [...itemsA, ...itemsB],
+        paymentTerms: parseTerms(finalPayment),
+        warrantyTerms: parseTerms(finalWarranty),
+        remarks: finalNote || "",
+        rawPaymentTerms: finalPayment || "",
+        rawWarrantyTerms: finalWarranty || "",
+        vatRate: 0.07,
+        discount: finalDiscount,
+        electricalPhase: formData.electricalPhase,
+        inverterBrand: formData.brand
       });
     } catch (e) { console.error("Preview Error", e); }
   };
@@ -413,32 +413,32 @@ const CreateQuotation = () => {
       const { data: companyData } = await supabase.from("company_info").select("*").maybeSingle();
       const projectKw = (quoteData.kw_size || 0) / 1000;
       const peakKw = (quoteData.kw_peak || 0) / 1000;
-      
-      const mappedItems = lineItems?.map((item, index) => {
-          const product = item.products;
-          const categoryRaw = (product?.product_category || "") as string;
-          const isSectionB = categoryRaw === "STANDARD Operation";
-          const finalName = item.edited_name || product?.name || "Unknown";
-          const finalBrand = item.edited_brand || product?.brand || "-";
-          const qty = item.quantity || 0;
-          const matPrice = item.product_price || 0;
-          const labPrice = item.installation_price || 0;
 
-          return {
-            no: index + 1,
-            name: finalName,
-            brand: finalBrand,
-            qty: qty,
-            unit: item.edited_unit || product?.unit || "Unit",
-            matUnit: isSectionB ? 0 : qty > 0 ? matPrice / qty : 0,
-            matTotal: isSectionB ? 0 : matPrice,
-            labUnit: isSectionB ? 0 : qty > 0 ? labPrice / qty : 0,
-            labTotal: isSectionB ? 0 : labPrice,
-            total: matPrice + labPrice,
-            category: isSectionB ? "B" : "A",
-            _rawCategory: categoryRaw,
-          };
-        }) || [];
+      const mappedItems = lineItems?.map((item, index) => {
+        const product = item.products;
+        const categoryRaw = (product?.product_category || "") as string;
+        const isSectionB = categoryRaw === "STANDARD Operation";
+        const finalName = item.edited_name || product?.name || "Unknown";
+        const finalBrand = item.edited_brand || product?.brand || "-";
+        const qty = item.quantity || 0;
+        const matPrice = item.product_price || 0;
+        const labPrice = item.installation_price || 0;
+
+        return {
+          no: index + 1,
+          name: finalName,
+          brand: finalBrand,
+          qty: qty,
+          unit: item.edited_unit || product?.unit || "Unit",
+          matUnit: isSectionB ? 0 : qty > 0 ? matPrice / qty : 0,
+          matTotal: isSectionB ? 0 : matPrice,
+          labUnit: isSectionB ? 0 : qty > 0 ? labPrice / qty : 0,
+          labTotal: isSectionB ? 0 : labPrice,
+          total: matPrice + labPrice,
+          category: isSectionB ? "B" : "A",
+          _rawCategory: categoryRaw,
+        };
+      }) || [];
 
       const sectionAOrder = ["STANDARD Solar Panel", "STANDARD PV Mounting Structure", "STANDARD Inverter / Zero Export / Smart Logger", "STANDARD Huawei Optimizer", "zero_export_smart_logger", "STANDARD AC Box", "STANDARD DC Box", "STANDARD Cable", "STANDARD Included Price Items", "STANDARD Excluded Price Items", "STANDARD Excluded Price Items", "other"];
       const itemsA = mappedItems.filter((i) => i.category === "A").sort((a, b) => {
@@ -454,15 +454,15 @@ const CreateQuotation = () => {
         "Tempolary Utility Expense",
         "ดำเนินการยื่นเอกสารขออนุญาตการไฟฟ้า/กกพ."
       ];
-      const itemsB = mappedItems  
+      const itemsB = mappedItems
         .filter((i) => i.category === "B")
         .sort((a, b) => {
           const getOrderIndex = (name: string) => {
-              const index = sectionBOrder.findIndex(key => name.toLowerCase().includes(key.toLowerCase()));
-              return index === -1 ? 999 : index;
+            const index = sectionBOrder.findIndex(key => name.toLowerCase().includes(key.toLowerCase()));
+            return index === -1 ? 999 : index;
           };
           return getOrderIndex(a.name) - getOrderIndex(b.name);
-      });
+        });
 
       const exportData = {
         companyName: companyData?.name || "Company Name",
@@ -471,7 +471,7 @@ const CreateQuotation = () => {
         companyTaxId: companyData?.id_tax || "-",
         customerName: formData.customerName || "-",
         customerAddress: formData.installLocation || "-",
-        customerID: "-",
+        customerID: formData.customerTaxId || "-",
         projectName: `โซลาร์เซลล์ ${projectKw} kW`,
         maxPower: `กำลังไฟสูงสุด ( ${peakKw.toFixed(2)} kWp )`,
         inverterBrand: (quoteData.inverter_brand || "-").toUpperCase(),
@@ -498,7 +498,7 @@ const CreateQuotation = () => {
   const handleNameBlur = async () => {
     const name = formData.customerName.trim();
     if (!name) return;
-    if (formData.customerTaxId) return; 
+    if (formData.customerTaxId) return;
 
     try {
       const { data } = await supabase
@@ -541,7 +541,7 @@ const CreateQuotation = () => {
 
   const handleConfirmRename = async () => {
     if (!conflictData || !canEdit) return;
-    
+
     try {
       setIsLoading(true);
       const { error } = await supabase
@@ -552,12 +552,12 @@ const CreateQuotation = () => {
       if (error) throw error;
 
       toast({ title: "Updated", description: "Customer name updated successfully." });
-      
+
       setShowRenameDialog(false);
       setConflictData(null);
       setCurrentCustomerId(conflictData.id);
 
-      handleCreateQuotation(true); 
+      handleCreateQuotation(true);
 
     } catch (error) {
       console.error("Rename error:", error);
@@ -582,43 +582,43 @@ const CreateQuotation = () => {
     if (!isValidProgram) {
       toast({ title: "Required", description: "Please fill all required fields (*)", variant: "destructive" });
       setFormData(prev => ({ ...prev, salesProgram: "", brand: "" }));
-      return; 
+      return;
     }
-    
+
     if (!skipCheck) {
-        const inputName = formData.customerName.trim();
-        const inputTaxId = formData.customerTaxId ? formData.customerTaxId.trim() : "";
+      const inputName = formData.customerName.trim();
+      const inputTaxId = formData.customerTaxId ? formData.customerTaxId.trim() : "";
 
-        if (inputTaxId) {
-            const { data: taxMatch } = await supabase
-                .from("customers")
-                .select("*")
-                .eq("id_tax", inputTaxId)
-                .maybeSingle();
+      if (inputTaxId) {
+        const { data: taxMatch } = await supabase
+          .from("customers")
+          .select("*")
+          .eq("id_tax", inputTaxId)
+          .maybeSingle();
 
-            if (taxMatch) {
-                if (taxMatch.customer_name.trim() !== inputName) {
-                    setConflictData({ id: taxMatch.id, oldName: taxMatch.customer_name, newName: inputName });
-                    setShowRenameDialog(true);
-                    return; 
-                }
-            } else {
-                 const { data: nameMatch } = await supabase
-                    .from("customers")
-                    .select("*")
-                    .eq("customer_name", inputName)
-                    .maybeSingle();
-                 
-                 if (nameMatch && nameMatch.id_tax && nameMatch.id_tax !== inputTaxId) {
-                      toast({ 
-                         title: "ชื่อลูกค้าซ้ำ!", 
-                         description: `ชื่อ "${inputName}" มีอยู่ในระบบแล้ว (Tax ID: ${nameMatch.id_tax}) กรุณาเปลี่ยนชื่อ`,
-                         variant: "destructive" 
-                      });
-                    return;
-                 }
-            }
+        if (taxMatch) {
+          if (taxMatch.customer_name.trim() !== inputName) {
+            setConflictData({ id: taxMatch.id, oldName: taxMatch.customer_name, newName: inputName });
+            setShowRenameDialog(true);
+            return;
+          }
+        } else {
+          const { data: nameMatch } = await supabase
+            .from("customers")
+            .select("*")
+            .eq("customer_name", inputName)
+            .maybeSingle();
+
+          if (nameMatch && nameMatch.id_tax && nameMatch.id_tax !== inputTaxId) {
+            toast({
+              title: "ชื่อลูกค้าซ้ำ!",
+              description: `ชื่อ "${inputName}" มีอยู่ในระบบแล้ว (Tax ID: ${nameMatch.id_tax}) กรุณาเปลี่ยนชื่อ`,
+              variant: "destructive"
+            });
+            return;
+          }
         }
+      }
     }
 
     setIsLoading(true);
@@ -628,37 +628,37 @@ const CreateQuotation = () => {
       let finalCustomerId = currentCustomerId;
       const inputName = formData.customerName.trim();
       const inputTaxId = formData.customerTaxId ? formData.customerTaxId.trim() : "";
-      
+
       let finalName = inputName;
       let finalTaxId = inputTaxId;
 
       if (inputName) {
-         if (!finalCustomerId) {
-            let match = null;
-            if (inputTaxId) {
-                const { data } = await supabase.from("customers").select("*").eq("id_tax", inputTaxId).maybeSingle();
-                match = data;
-            } else {
-                const { data } = await supabase.from("customers").select("*").eq("customer_name", inputName).maybeSingle();
-                match = data;
-            }
-            if (match) finalCustomerId = match.id;
-         }
+        if (!finalCustomerId) {
+          let match = null;
+          if (inputTaxId) {
+            const { data } = await supabase.from("customers").select("*").eq("id_tax", inputTaxId).maybeSingle();
+            match = data;
+          } else {
+            const { data } = await supabase.from("customers").select("*").eq("customer_name", inputName).maybeSingle();
+            match = data;
+          }
+          if (match) finalCustomerId = match.id;
+        }
 
-         if (finalCustomerId) {
-             await supabase.from("customers").update({ 
-                customer_name: finalName,
-                id_tax: finalTaxId || null
-             }).eq("id", finalCustomerId);
-         } else {
-             const { data: newCust, error } = await supabase.from("customers").insert({ 
-                 customer_name: finalName || "-", 
-                 id_tax: finalTaxId || null
-             }).select("id").single();
-             if (error) throw error;
-             finalCustomerId = newCust.id;
-         }
-         setCurrentCustomerId(finalCustomerId);
+        if (finalCustomerId) {
+          await supabase.from("customers").update({
+            customer_name: finalName,
+            id_tax: finalTaxId || null
+          }).eq("id", finalCustomerId);
+        } else {
+          const { data: newCust, error } = await supabase.from("customers").insert({
+            customer_name: finalName || "-",
+            id_tax: finalTaxId || null
+          }).select("id").single();
+          if (error) throw error;
+          finalCustomerId = newCust.id;
+        }
+        setCurrentCustomerId(finalCustomerId);
       }
 
       let newSalePackageId = null;
@@ -666,7 +666,7 @@ const CreateQuotation = () => {
         const selectedProgram = allPrograms.find((p) => p.name === formData.salesProgram);
         if (selectedProgram) newSalePackageId = selectedProgram.id;
       }
-      
+
       const newProjectSize = formData.projectSize ? parseFloat(formData.projectSize) : 0;
       const newPanelSize = formData.solarPanelSize ? parseFloat(formData.solarPanelSize) : 0;
       const { kwPeak } = calculateSystemSpecs(newProjectSize, newPanelSize);
@@ -693,49 +693,49 @@ const CreateQuotation = () => {
 
         if (!oldQuote) throw new Error("Quotation not found");
 
-        const isStructuralChange = 
-            oldQuote.kw_size !== newProjectSize ||          
-            oldQuote.kw_panel !== newPanelSize ||           
-            oldQuote.inverter_brand !== formData.brand ||    
-            oldQuote.electrical_phase !== formData.electricalPhase || 
-            oldQuote.sale_package_id !== newSalePackageId;   
+        const isStructuralChange =
+          oldQuote.kw_size !== newProjectSize ||
+          oldQuote.kw_panel !== newPanelSize ||
+          oldQuote.inverter_brand !== formData.brand ||
+          oldQuote.electrical_phase !== formData.electricalPhase ||
+          oldQuote.sale_package_id !== newSalePackageId;
 
         // 🌟 Payload ใหม่: ถ้าโครงสร้างเปลี่ยน ให้ล้างราคาที่แก้ไขไปแล้วทิ้งให้หมด
-        const updatePayload: any = { 
-            ...quotationData, 
-            updated_at: new Date().toISOString() 
+        const updatePayload: any = {
+          ...quotationData,
+          updated_at: new Date().toISOString()
         };
 
         if (isStructuralChange) {
-            updatePayload.edited_price = null;
-            updatePayload.edited_discount = null;
+          updatePayload.edited_price = null;
+          updatePayload.edited_discount = null;
         }
 
         await supabase
-            .from("quotations")
-            .update(updatePayload)
-            .eq("id", currentQuotationId);
+          .from("quotations")
+          .update(updatePayload)
+          .eq("id", currentQuotationId);
 
         if (isStructuralChange) {
-            console.log("⚠️ Structural Change Detected: Regenerating All Items...");
-            await generateMainEquipment(currentQuotationId);      
-            await generateAdditionalEquipment(currentQuotationId); 
-            await calculateAndSavePricing(currentQuotationId);    
-            toast({ title: "Re-calculated", description: "สเปคเปลี่ยน: สร้างรายการสินค้าและคำนวณราคาใหม่เรียบร้อย" });
+          console.log("⚠️ Structural Change Detected: Regenerating All Items...");
+          await generateMainEquipment(currentQuotationId);
+          await generateAdditionalEquipment(currentQuotationId);
+          await calculateAndSavePricing(currentQuotationId);
+          toast({ title: "Re-calculated", description: "สเปคเปลี่ยน: สร้างรายการสินค้าและคำนวณราคาใหม่เรียบร้อย" });
         } else {
-            console.log("✅ Cosmetic Change Only: Updated Header, Preserved Items.");
-            toast({ title: "Updated", description: "บันทึกข้อมูลทั่วไปเรียบร้อย (รายการสินค้าคงเดิม)" });
+          console.log("✅ Cosmetic Change Only: Updated Header, Preserved Items.");
+          toast({ title: "Updated", description: "บันทึกข้อมูลทั่วไปเรียบร้อย (รายการสินค้าคงเดิม)" });
         }
 
       } else {
         const { data: quotation, error: insertError } = await supabase
-            .from("quotations")
-            .insert({ ...quotationData, edited_price: 0 })
-            .select()
-            .single();
-        
+          .from("quotations")
+          .insert({ ...quotationData, edited_price: 0 })
+          .select()
+          .single();
+
         if (insertError) throw insertError;
-        
+
         targetId = quotation.id;
         setCurrentQuotationId(quotation.id);
 
@@ -758,7 +758,7 @@ const CreateQuotation = () => {
       setIsLoading(false);
     }
   };
-  
+
   const handleEditQuotation = async () => {
     if (!isEditMode) {
       setIsEditMode(true);
@@ -784,12 +784,12 @@ const CreateQuotation = () => {
   const executeReset = async () => {
     setIsLoading(true);
     setShowResetDialog(false);
-    
+
     try {
       const projectSizeVal = formData.projectSize ? parseFloat(formData.projectSize) : 0;
       const panelSizeVal = formData.solarPanelSize ? parseFloat(formData.solarPanelSize) : 0;
       const { kwPeak } = calculateSystemSpecs(projectSizeVal, panelSizeVal);
-      
+
       let salePackageId = null;
       if (formData.salesProgram) {
         const selectedProgram = allPrograms.find((p) => p.name === formData.salesProgram);
@@ -803,8 +803,8 @@ const CreateQuotation = () => {
         inverter_brand: formData.brand,
         electrical_phase: formData.electricalPhase,
         sale_package_id: salePackageId,
-        edited_price: null,       
-        edited_discount: null,    
+        edited_price: null,
+        edited_discount: null,
         edited_payment_terms: null,
         edited_warranty_terms: null,
         edited_note: null,
@@ -832,9 +832,9 @@ const CreateQuotation = () => {
   // useEffects
   // ------------------------------------------------------------------
   useEffect(() => {
-     if(currentQuotationId && showQuotation) {
-       loadPreviewData(currentQuotationId);
-     }
+    if (currentQuotationId && showQuotation) {
+      loadPreviewData(currentQuotationId);
+    }
   }, [currentQuotationId, showQuotation]);
 
   useEffect(() => {
@@ -855,22 +855,22 @@ const CreateQuotation = () => {
           .order("sale_name");
 
         if (error) throw error;
-        
+
         if (data) {
           const programs = data.map((p: any) => ({
             id: p.id,
             name: p.sale_name,
-            prices: p.sale_package_prices || [] 
+            prices: p.sale_package_prices || []
           }));
-          
+
           setAllPrograms(programs);
           setFilteredPrograms(programs);
         }
-      } catch (error) { 
-        console.error("Error loading programs:", error); 
+      } catch (error) {
+        console.error("Error loading programs:", error);
       }
     };
-    
+
     fetchSalesPrograms();
   }, []);
 
@@ -880,7 +880,7 @@ const CreateQuotation = () => {
         const { data, error } = await supabase
           .from("products")
           .select("min_kw, product_category")
-          .in("product_category", ["STANDARD Solar Panel", "Solar Panel"]) 
+          .in("product_category", ["STANDARD Solar Panel", "Solar Panel"])
           .not("min_kw", "is", null);
 
         if (error) throw error;
@@ -904,7 +904,7 @@ const CreateQuotation = () => {
         if (error) throw error;
         if (data) {
           setCurrentQuotationId(data.id);
-          setCurrentCustomerId(data.customer_id); 
+          setCurrentCustomerId(data.customer_id);
           setFormData({
             customerName: data.customers?.customer_name || "",
             customerTaxId: data.customers?.id_tax || "",
@@ -929,7 +929,7 @@ const CreateQuotation = () => {
 
   useEffect(() => {
     const sizeInWatt = parseFloat(formData.projectSize);
-    
+
     if (!formData.projectSize || isNaN(sizeInWatt)) {
       setFilteredPrograms(allPrograms);
       return;
@@ -937,12 +937,12 @@ const CreateQuotation = () => {
 
     const validPrograms = allPrograms.filter((prog) => {
       if (!prog.prices || prog.prices.length === 0) return false;
-      
+
       const isSupported = prog.prices.some((price) => {
         const min = Number(price.kw_min || 0);
-        const max = (price.kw_max !== null && Number(price.kw_max) > 0) 
-                    ? Number(price.kw_max) 
-                    : min; 
+        const max = (price.kw_max !== null && Number(price.kw_max) > 0)
+          ? Number(price.kw_max)
+          : min;
         return sizeInWatt >= min && sizeInWatt <= max;
       });
 
@@ -952,90 +952,90 @@ const CreateQuotation = () => {
     setFilteredPrograms(validPrograms);
 
     if (formData.salesProgram) {
-       const isStillValid = validPrograms.some(p => p.name === formData.salesProgram);
-       if (!isStillValid) {
-          setFormData(prev => ({ ...prev, salesProgram: "", brand: "", electricalPhase: "" }));
-       }
+      const isStillValid = validPrograms.some(p => p.name === formData.salesProgram);
+      if (!isStillValid) {
+        setFormData(prev => ({ ...prev, salesProgram: "", brand: "", electricalPhase: "" }));
+      }
     }
   }, [formData.projectSize, allPrograms]);
 
   useEffect(() => {
     if (!formData.projectSize) {
-        setAvailableBrands([]);
-        return;
+      setAvailableBrands([]);
+      return;
     }
 
     const sizeInWatt = parseFloat(formData.projectSize);
     let scopePrograms = allPrograms;
     if (formData.salesProgram) {
-        scopePrograms = allPrograms.filter(p => p.name === formData.salesProgram);
+      scopePrograms = allPrograms.filter(p => p.name === formData.salesProgram);
     }
 
     const validBrands: string[] = [];
     scopePrograms.forEach(prog => {
-        if (prog.prices) {
-            prog.prices.forEach(price => {
-                const min = price.kw_min || 0;
-                const max = (price.kw_max !== null && Number(price.kw_max) > 0) ? Number(price.kw_max) : min;
-                if (sizeInWatt >= min && sizeInWatt <= max) {
-                    validBrands.push(price.inverter_brand);
-                }
-            });
-        }
+      if (prog.prices) {
+        prog.prices.forEach(price => {
+          const min = price.kw_min || 0;
+          const max = (price.kw_max !== null && Number(price.kw_max) > 0) ? Number(price.kw_max) : min;
+          if (sizeInWatt >= min && sizeInWatt <= max) {
+            validBrands.push(price.inverter_brand);
+          }
+        });
+      }
     });
 
     const uniqueBrands = Array.from(new Set(validBrands));
     setAvailableBrands(uniqueBrands);
 
     if (formData.brand && !uniqueBrands.includes(formData.brand)) {
-         setFormData(prev => ({ ...prev, brand: "", electricalPhase: "" }));
+      setFormData(prev => ({ ...prev, brand: "", electricalPhase: "" }));
     }
 
   }, [formData.salesProgram, formData.projectSize, allPrograms]);
 
   useEffect(() => {
     if (!formData.projectSize) {
-        setAvailablePhases([]);
-        return;
+      setAvailablePhases([]);
+      return;
     }
 
     const sizeInWatt = parseFloat(formData.projectSize);
     let scopePrograms = allPrograms;
     if (formData.salesProgram) {
-        scopePrograms = allPrograms.filter(p => p.name === formData.salesProgram);
+      scopePrograms = allPrograms.filter(p => p.name === formData.salesProgram);
     }
 
     const validPhases: string[] = [];
     scopePrograms.forEach(prog => {
-        if (prog.prices) {
-            prog.prices.forEach(price => {
-                const min = price.kw_min || 0;
-                const max = (price.kw_max !== null && Number(price.kw_max) > 0) ? Number(price.kw_max) : min;
-                const isSizeMatch = sizeInWatt >= min && sizeInWatt <= max;
-                const isBrandMatch = !formData.brand || (price.inverter_brand === formData.brand);
+      if (prog.prices) {
+        prog.prices.forEach(price => {
+          const min = price.kw_min || 0;
+          const max = (price.kw_max !== null && Number(price.kw_max) > 0) ? Number(price.kw_max) : min;
+          const isSizeMatch = sizeInWatt >= min && sizeInWatt <= max;
+          const isBrandMatch = !formData.brand || (price.inverter_brand === formData.brand);
 
-                if (isSizeMatch && isBrandMatch) {
-                    validPhases.push(price.electronic_phase);
-                }
-            });
-        }
+          if (isSizeMatch && isBrandMatch) {
+            validPhases.push(price.electronic_phase);
+          }
+        });
+      }
     });
-    
+
     const uniquePhases = Array.from(new Set(validPhases));
     setAvailablePhases(uniquePhases);
 
     if (uniquePhases.length === 1) {
-        if (formData.electricalPhase !== uniquePhases[0]) {
-            setFormData(prev => ({ ...prev, electricalPhase: uniquePhases[0] }));
-        }
+      if (formData.electricalPhase !== uniquePhases[0]) {
+        setFormData(prev => ({ ...prev, electricalPhase: uniquePhases[0] }));
+      }
     } else if (uniquePhases.length === 0) {
-        if (formData.electricalPhase) {
-            setFormData(prev => ({ ...prev, electricalPhase: "" }));
-        }
+      if (formData.electricalPhase) {
+        setFormData(prev => ({ ...prev, electricalPhase: "" }));
+      }
     } else {
-        if (formData.electricalPhase && !uniquePhases.includes(formData.electricalPhase)) {
-             setFormData(prev => ({ ...prev, electricalPhase: "" }));
-        }
+      if (formData.electricalPhase && !uniquePhases.includes(formData.electricalPhase)) {
+        setFormData(prev => ({ ...prev, electricalPhase: "" }));
+      }
     }
 
   }, [formData.brand, formData.salesProgram, formData.projectSize, allPrograms]);
@@ -1053,27 +1053,27 @@ const CreateQuotation = () => {
       </Button>
 
       <div className={`grid gap-4 items-start ${showQuotation ? "grid-cols-1 lg:grid-cols-3" : "grid-cols-1 max-w-3xl mx-auto"}`}>
-        
+
         {/* INPUT FORM (Compact Version 1/3) */}
         <div className="w-full lg:col-span-1">
           <div className="bg-card rounded-lg shadow-sm p-5 border border-border">
             <h2 className="text-lg font-semibold mb-3 text-primary">Quotation Data</h2>
-            
+
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-1">
                 <Label className="text-xs text-muted-foreground">Customer</Label>
                 {canEdit ? (
-                  <CustomerAutocomplete 
+                  <CustomerAutocomplete
                     value={formData.customerName}
                     onInputChange={(text) => {
                       setFormData(prev => ({ ...prev, customerName: text }));
                       setCurrentCustomerId(null);
                     }}
                     onSelect={(customer) => {
-                      setFormData(prev => ({ 
-                          ...prev, 
-                          customerName: customer.customer_name,
-                          customerTaxId: customer.id_tax 
+                      setFormData(prev => ({
+                        ...prev,
+                        customerName: customer.customer_name,
+                        customerTaxId: customer.id_tax
                       }));
                       setCurrentCustomerId(customer.id);
                     }}
@@ -1109,10 +1109,10 @@ const CreateQuotation = () => {
               <div className="col-span-1">
                 <Label className="text-xs text-muted-foreground">Phase*</Label>
                 {canEdit ? (
-                  <Select 
-                    value={formData.electricalPhase} 
+                  <Select
+                    value={formData.electricalPhase}
                     onValueChange={(value) => handleInputChange("electricalPhase", value)}
-                    disabled={availablePhases.length <= 1} 
+                    disabled={availablePhases.length <= 1}
                   >
                     <SelectTrigger className="h-9 mt-1"><SelectValue placeholder={availablePhases.length === 0 ? "Enter Project Size first" : "Select"} /></SelectTrigger>
                     <SelectContent>
@@ -1122,7 +1122,7 @@ const CreateQuotation = () => {
                         </SelectItem>
                       ))}
                       {availablePhases.length === 0 && (
-                          <div className="p-2 text-xs text-muted-foreground text-center">No options</div>
+                        <div className="p-2 text-xs text-muted-foreground text-center">No options</div>
                       )}
                     </SelectContent>
                   </Select>
@@ -1134,10 +1134,10 @@ const CreateQuotation = () => {
               <div className="col-span-1">
                 <Label className="text-xs text-muted-foreground">Program*</Label>
                 {canEdit ? (
-                  <Select 
-                    value={formData.salesProgram} 
+                  <Select
+                    value={formData.salesProgram}
                     onValueChange={(value) => handleInputChange("salesProgram", value)}
-                    disabled={!formData.projectSize} 
+                    disabled={!formData.projectSize}
                   >
                     <SelectTrigger className="h-9 mt-1">
                       <SelectValue placeholder={formData.projectSize ? "Select Program" : "Enter Project Size first"} />
@@ -1151,7 +1151,7 @@ const CreateQuotation = () => {
                         ))
                       ) : (
                         <div className="p-2 text-xs text-muted-foreground text-center">
-                            ไม่มีโปรแกรมสำหรับขนาด {formData.projectSize} Watt
+                          ไม่มีโปรแกรมสำหรับขนาด {formData.projectSize} Watt
                         </div>
                       )}
                     </SelectContent>
@@ -1181,7 +1181,7 @@ const CreateQuotation = () => {
                     <SelectContent>
                       {availablePanelSizes.map((size) => (
                         <SelectItem key={size} value={size.toString()}>
-                          {size >= 1000 ? `${size / 1000} kW` : `${size} W`} 
+                          {size >= 1000 ? `${size / 1000} kW` : `${size} W`}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -1218,7 +1218,7 @@ const CreateQuotation = () => {
               <div className="absolute top-3 right-3 flex gap-2 z-10">
                 {canEdit && (
                   <>
-                    <Button variant="outline" size="sm" onClick={handleReset} className="border-dashed"> 
+                    <Button variant="outline" size="sm" onClick={handleReset} className="border-dashed">
                       <RotateCcw className="h-4 w-4" />
                     </Button>
                     <Button variant="outline" size="sm" onClick={handleEditQuotation}>
@@ -1231,15 +1231,15 @@ const CreateQuotation = () => {
               <div className="flex flex-col items-center justify-center min-h-[400px] overflow-auto mt-12">
                 {previewData ? (
                   <div className="origin-top scale-97 transition-transform w-full flex justify-center">
-                    <QuotationPreview 
-                        data={previewData} 
-                        isEditMode={isEditMode}
-                        onUpdateItem={handleUpdateItem}
-                        onUpdateTerms={handleUpdateTerms}
-                        onUpdateTotalOverride={handleUpdateTotalOverride}
-                        onAddItem={handleAddItem}
-                        onUpdateDiscount={handleUpdateDiscount}
-                        onDeleteItem={handleDeleteItem}
+                    <QuotationPreview
+                      data={previewData}
+                      isEditMode={isEditMode}
+                      onUpdateItem={handleUpdateItem}
+                      onUpdateTerms={handleUpdateTerms}
+                      onUpdateTotalOverride={handleUpdateTotalOverride}
+                      onAddItem={handleAddItem}
+                      onUpdateDiscount={handleUpdateDiscount}
+                      onDeleteItem={handleDeleteItem}
                     />
                   </div>
                 ) : (
@@ -1255,8 +1255,8 @@ const CreateQuotation = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>ยืนยันการเปลี่ยนชื่อลูกค้า</AlertDialogTitle>
             <AlertDialogDescription>
-              หมายเลขผู้เสียภาษี <b>{formData.customerTaxId}</b><br/>
-              เดิมชื่อ: <b className="text-destructive">{conflictData?.oldName}</b><br/><br/>
+              หมายเลขผู้เสียภาษี <b>{formData.customerTaxId}</b><br />
+              เดิมชื่อ: <b className="text-destructive">{conflictData?.oldName}</b><br /><br />
               ต้องการเปลี่ยนชื่อเป็น: <b className="text-green-600">{conflictData?.newName}</b> หรือไม่?
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -1271,14 +1271,14 @@ const CreateQuotation = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>ยืนยันการรีเซ็ตข้อมูล</AlertDialogTitle>
             <AlertDialogDescription className="text-sm">
-              คุณต้องการรีเซ็ตรายการสินค้าทั้งหมดกลับเป็นค่าเริ่มต้นหรือไม่?<br/><br/>
+              คุณต้องการรีเซ็ตรายการสินค้าทั้งหมดกลับเป็นค่าเริ่มต้นหรือไม่?<br /><br />
               <span className="text-destructive font-semibold">⚠️ คำเตือน: ส่วนลด, ข้อมูลที่แก้ไขในตาราง, และรายการที่เพิ่มเข้ามาเอง จะหายไปทั้งหมด</span>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={executeReset} 
+            <AlertDialogAction
+              onClick={executeReset}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               ยืนยันรีเซ็ต
