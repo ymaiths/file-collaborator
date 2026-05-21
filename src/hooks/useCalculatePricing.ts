@@ -190,7 +190,7 @@ export const useCalculatePricing = () => {
               const rawTotal = item.costEq * ratio1;
               if (isMajor) finalEq = roundNearestHundred(rawTotal / qty) * qty;
               else if (isMounting) finalEq = Math.round(rawTotal / qty) * qty;
-              else finalEq = roundNearestHundred(rawTotal);
+              else finalEq = roundNearestHundred(rawTotal / qty) * qty;
           }
 
           let finalInst = item.finalPriceInst;
@@ -198,7 +198,7 @@ export const useCalculatePricing = () => {
               const rawTotalInst = isNoMarkupInst ? item.costInst : (item.costInst * ratio1);
               if (isMajor) finalInst = roundNearestHundred(rawTotalInst / qty) * qty;
               else if (isMounting) finalInst = Math.round(rawTotalInst / qty) * qty;
-              else finalInst = roundNearestHundred(rawTotalInst);
+              else finalInst = roundNearestHundred(rawTotalInst / qty) * qty;
           }
           sumRound1 += finalEq + finalInst;
           return { ...item, finalPriceEq: finalEq, finalPriceInst: finalInst };
@@ -235,7 +235,7 @@ export const useCalculatePricing = () => {
                        const rawTotal = item.finalPriceEq * ratio2;
                        if (isMajor) item.finalPriceEq = roundNearestHundred(rawTotal / qty) * qty;
                        else if (isMounting) item.finalPriceEq = Math.round(rawTotal / qty) * qty;
-                       else item.finalPriceEq = roundNearestHundred(rawTotal);
+                       else item.finalPriceEq = roundNearestHundred(rawTotal / qty) * qty;
                    }
                    if (!item.is_edited_installation_price) {
                        const isNoMarkup = ["STANDARD Solar Panel", "STANDARD PV Mounting Structure"].includes(item.products?.product_category||"");
@@ -243,7 +243,7 @@ export const useCalculatePricing = () => {
                            const rawTotal = item.finalPriceInst * ratio2;
                            if (isMajor) item.finalPriceInst = roundNearestHundred(rawTotal / qty) * qty;
                            else if (isMounting) item.finalPriceInst = Math.round(rawTotal / qty) * qty;
-                           else item.finalPriceInst = roundNearestHundred(rawTotal);
+                           else item.finalPriceInst = roundNearestHundred(rawTotal / qty) * qty;
                        }
                    }
                    return item;
