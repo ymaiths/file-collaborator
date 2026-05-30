@@ -485,6 +485,15 @@ const CreateQuotation = () => {
         vatRate: 0.07,
       };
       await generateQuotationExcel(exportData);
+      
+      const now = new Date().toISOString();
+      const { error: updateError } = await supabase
+        .from("quotations")
+        .update({ exported_at: now })
+        .eq("id", currentQuotationId);
+        
+      if (updateError) throw updateError;
+      
       toast({ title: "Success", description: "Excel downloaded." });
     } catch (error) {
       console.error("Export Excel Error:", error);
